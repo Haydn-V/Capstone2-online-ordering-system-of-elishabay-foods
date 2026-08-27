@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard — Elisha Bay</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../../assets/css/public/styles.css" />
+    <link rel="stylesheet" href="../../assets/css/public/profile.css" />
+  </head>
+  <body>
+
+    <!-- ===== NAVBAR ===== -->
+    <header class="nav scrolled" id="nav">
+      <div class="nav-inner">
+        <a href="../index.html" class="brand" aria-label="Elisha Bay home">
+          <svg class="mark" id="brand-mark" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <circle cx="22" cy="22" r="21" fill="rgba(232,163,23,0.08)"/>
+            <ellipse cx="20" cy="22" rx="12" ry="8" stroke="#e8a317" stroke-width="1.8" fill="rgba(232,163,23,0.07)"/>
+            <path d="M37 17L32 22L37 27" stroke="#e8a317" stroke-width="1.8" stroke-linecap="butt" stroke-linejoin="round"/>
+          </svg>
+          <span class="name">Elisha&nbsp;Bay<small>Juris Bay Foods</small></span>
+        </a>
+
+        <nav class="nav-links" id="navlinks" aria-label="Primary">
+          <span class="nav-indicator" id="nav-indicator"></span>
+          <a href="../index.html">Home</a>
+          <a href="../index.html#best">Best Sellers</a>
+          <a href="../shop.html">Shop</a>
+          <a href="../index.html#about">About Us</a>
+          <a href="../index.html#contact">Contact</a>
+        </nav>
+
+        <div class="nav-actions">
+          <button class="icon-btn theme-toggle" id="theme-btn" aria-label="Toggle theme">
+            <svg class="icon moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="butt" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            <svg class="icon sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="butt" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+          </button>
+          <button class="nav-cart-btn icon-btn" id="cart-btn" aria-label="Open cart">
+            <svg class="icon" id="cart-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="butt" stroke-linejoin="round">
+              <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+              <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+            </svg>
+            <span class="cart-badge" id="cart-badge">0</span>
+          </button>
+          <div id="account-slot"></div>
+          <button class="icon-btn hamburger" id="hamburger" aria-label="Open menu" aria-expanded="false"></button>
+        </div>
+      </div>
+    </header>
+
+    <!-- ===== SCAFFOLDING required by site.js ===== -->
+    <div id="modal-scrim" class="modal-scrim">
+      <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <button class="modal-close" id="modal-close" aria-label="Close">&times;</button>
+        <div id="modal-body"></div>
+      </div>
+    </div>
+    <div class="scrim" id="cart-scrim"></div>
+    <aside class="drawer" id="cart-drawer" role="dialog" aria-modal="true" aria-label="Shopping cart">
+      <div class="drawer-head">
+        <h3>Your Cart</h3>
+        <button class="modal-close" id="cart-close" aria-label="Close cart">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="butt" stroke-linejoin="round" width="20" height="20"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="drawer-body" id="cart-body"></div>
+      <div class="drawer-foot" id="cart-foot"></div>
+    </aside>
+    <div id="toast-root" class="toast-root" aria-live="polite"></div>
+
+    <!-- ===== PAGE ===== -->
+    <main class="mp-page" id="mp-page">
+      <div class="container">
+
+        <!-- Auth guard -->
+        <div class="mp-guard" id="mp-guard" style="display:none">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <h2>Sign in to see your dashboard</h2>
+          <p>Your orders, deliveries and payments live on your account.</p>
+          <button class="btn btn-gold" id="guard-login-btn">Sign In</button>
+        </div>
+
+        <div id="mp-content" style="display:none">
+          <div class="mp-account-layout">
+
+            <!-- Rendered by EbProfileShell. The sidebar markup used to be
+                 repeated in full on every account page, which is how the same
+                 person came to be labelled "CUSTOMER" here and "Retail
+                 Partner" one page over. -->
+            <aside class="mp-account-sidebar" id="mp-sidebar"></aside>
+
+            <div class="mp-account-main">
+              <div class="mp-header">
+                <div class="mp-breadcrumb">
+                  <a href="../index.html">Home</a>
+                  <span class="sep">/</span>
+                  <span>Dashboard</span>
+                </div>
+                <h1 class="mp-title">Your <span class="accent">Dashboard</span></h1>
+                <p class="mp-sub" id="db-sub">Everything on your account at a glance.</p>
+              </div>
+
+              <!-- Every panel below is filled by JS. They are declared here
+                   rather than built as one innerHTML string so the page has a
+                   shape before the request lands, and so a panel that fails to
+                   fill degrades on its own instead of blanking the dashboard. -->
+              <div class="db-stats" id="db-stats"></div>
+
+              <div class="db-grid">
+                <section class="db-panel db-panel-track" aria-labelledby="db-track-h">
+                  <div class="db-panel-head">
+                    <h2 class="db-panel-title" id="db-track-h">Order Tracking</h2>
+                    <a class="db-panel-link" href="my-orders.html">All orders</a>
+                  </div>
+                  <div class="db-panel-body" id="db-tracking"></div>
+                </section>
+
+                <section class="db-panel db-panel-pay" aria-labelledby="db-pay-h">
+                  <div class="db-panel-head">
+                    <h2 class="db-panel-title" id="db-pay-h">Payment History</h2>
+                    <a class="db-panel-link hide" href="my-payments.html" id="db-pay-link">All payments</a>
+                  </div>
+                  <div class="db-panel-body" id="db-payments"></div>
+                </section>
+
+                <section class="db-panel db-panel-recent" aria-labelledby="db-recent-h">
+                  <div class="db-panel-head">
+                    <h2 class="db-panel-title" id="db-recent-h">Recent Orders</h2>
+                    <a class="db-panel-link" href="my-orders.html">View all</a>
+                  </div>
+                  <div class="db-panel-body" id="db-recent"></div>
+                </section>
+              </div>
+            </div>
+
+          </div><!-- /mp-account-layout -->
+        </div>
+
+      </div>
+    </main>
+
+    <script type="module" src="../../assets/js/core/index.js"></script>
+    <script defer src="../../assets/js/public/site.js"></script>
+    <script defer src="../../assets/js/public/profile-shell.js"></script>
+    <script>
+    /* WRAPPED IN AN IIFE, and it has to be.
+
+       This is a classic script sharing a global scope with site.js, which
+       already declares `peso` as a top-level const and `esc` as a top-level
+       function. A second top-level `const esc` is not a shadow — it is a
+       SyntaxError that kills the ENTIRE script before a line of it runs, and
+       takes site.js's globals with it. assets/js/core/format.js records the
+       same trap in its own header: it is why EbFormat is published as one
+       object rather than as bare globals.
+
+       Everything below is therefore private to this page. Nothing here needs
+       to be reachable from anywhere else. */
+    (function () {
+    /* ── Dashboard page logic ──────────────────────────────────────────
+       One request, one render. api/shop/dashboard.php returns the counts, the
+       tracking timeline, the recent orders and the payment history together —
+       see that file's header for why this is one endpoint and not four.
+
+       Nothing here computes a figure. Totals, penalties, due dates and the
+       tracking step order all arrive decided; the page's job is to lay them
+       out. A dashboard that does its own arithmetic is a dashboard that
+       eventually disagrees with the screen the number came from. */
+
+    const esc  = v => EbFormat.escHtml(v == null ? "" : v);
+    const peso = n => EbFormat.peso(n);
+
+    const STATUS_LABEL = {
+      pending: "Pending", "on-hold": "On Hold", accepted: "Accepted",
+      shipping: "Shipping", delivered: "Delivered",
+      completed: "Completed", cancelled: "Cancelled",
+    };
+    /* The same .status-* classes My Orders uses, from profile.css. A second
+       palette for the same seven statuses would mean an order that is amber on
+       one page and orange on the next. */
+    const statusClass = st => "status-" + String(st).replace(" ", "-");
+    const STEP_LABEL = {
+      pending: "Placed", accepted: "Accepted", shipping: "Shipping",
+      delivered: "Delivered", completed: "Completed",
+    };
+    const PAY_LABEL = {
+      cash: "Cash", gcash: "GCash", bank: "Bank Transfer",
+      net30: "Net 30", net60: "Net 60", net90: "Net 90",
+    };
+
+    const ICON = {
+      active:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>',
+      pending:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+      total:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18M16 10a4 4 0 0 1-8 0"/></svg>',
+      overdue:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
+      box:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>',
+      wallet:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M16 14h2"/></svg>',
+      owed:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>',
+    };
+
+    /* ---------- STAT TILES ---------------------------------------------
+       Each tile has a FIXED identity — a key that decides its colour — and the
+       value decides only whether it is quieted. See the note above .db-stat in
+       profile.css for why the previous value-driven tone was wrong in both
+       directions.
+
+       Both account types render the same component in the same row. A retailer
+       has four things worth knowing, an ordinary customer three. */
+    function renderStats(d) {
+      const tiles = [
+        { key: "active",  label: "Active Orders",  value: d.counts.active,
+          hint: d.counts.active ? "On the way to you" : "Nothing in transit",
+          icon: ICON.active, quiet: !d.counts.active },
+        { key: "pending", label: "Pending Orders", value: d.counts.pending,
+          hint: d.counts.pending ? "Awaiting confirmation" : "Nothing waiting",
+          icon: ICON.pending, quiet: !d.counts.pending },
+      ];
+
+      if (d.credit) {
+        tiles.push({
+          key: "overdue", label: "Overdue", value: d.credit.overdueCount,
+          hint: d.credit.overdueCount ? "Settle to keep credit terms" : "Nothing past due",
+          icon: ICON.overdue, quiet: !d.credit.overdueCount,
+        });
+        tiles.push({
+          key: "owed", label: "Total Outstanding", value: peso(d.credit.totalOutstanding),
+          hint: d.credit.nextDueDate
+            ? "Next due " + EbFormat.fmtDate(d.credit.nextDueDate)
+            : "Nothing outstanding",
+          icon: ICON.owed, quiet: !d.credit.totalOutstanding,
+        });
+      } else {
+        tiles.push({
+          key: "total", label: "Total Orders", value: d.counts.total,
+          hint: d.counts.total
+            ? peso(d.counts.lifetimeSpend) + " spent to date"
+            : "No orders yet",
+          icon: ICON.total, quiet: !d.counts.total,
+        });
+      }
+
+      const wrap = document.getElementById("db-stats");
+      wrap.className = "db-stats " + (d.credit ? "db-stats-credit" : "db-stats-plain");
+      wrap.innerHTML = tiles.map(t => `
+        <div class="db-stat db-stat-${t.key}${t.quiet ? " db-stat-quiet" : ""}">
+          <span class="db-stat-ic" aria-hidden="true">${t.icon}</span>
+          <div class="db-stat-body">
+            <span class="db-stat-label">${esc(t.label)}</span>
+            <strong class="db-stat-value">${esc(String(t.value))}</strong>
+            <span class="db-stat-hint">${esc(t.hint)}</span>
+          </div>
+        </div>`).join("");
+    }
+
+    /* ---------- ORDER TRACKING -----------------------------------------
+       One order — the most recent that has not finished — as a step track.
+       The sequence and which step is current both come from the server, so
+       adding a status does not mean editing an order hardcoded in a template. */
+    function renderTracking(d) {
+      const box = document.getElementById("db-tracking");
+      const t = d.tracking;
+
+      if (!t) {
+        box.innerHTML = `
+          <div class="db-empty">
+            <span class="db-empty-ic" aria-hidden="true">${ICON.box}</span>
+            <p><strong>No orders in progress</strong></p>
+            <p>When you place one, you can follow it from here —<br>from confirmation through to delivery.</p>
+            <a class="btn btn-primary" href="../shop.html">Browse the shop</a>
+          </div>`;
+        return;
+      }
+
+      const steps = t.steps.map(s => `
+        <li class="db-step${s.done ? " is-done" : ""}${s.now ? " is-now" : ""}">
+          <span class="db-step-dot" aria-hidden="true"></span>
+          <span class="db-step-label">${esc(STEP_LABEL[s.key] || s.key)}</span>
+        </li>`).join("");
+
+      box.innerHTML = `
+        <div class="db-track-head">
+          <div>
+            <a class="db-track-id" href="my-orders.html">#${esc(t.id)}</a>
+            <div class="db-track-meta">
+              ${EbFormat.fmtDateTime(t.placedAt)} ·
+              ${t.orderType === "delivery" ? "Delivery" : "Pickup"} ·
+              ${peso(t.total)}
+            </div>
+          </div>
+          <span class="order-status ${statusClass(t.status)}">${esc(STATUS_LABEL[t.status] || t.status)}</span>
+        </div>
+
+        <ol class="db-steps">${steps}</ol>
+
+        ${t.held ? `
+          <div class="db-note db-note-warn">
+            This order is <strong>on hold</strong>. Our team will contact you — it has not been cancelled.
+          </div>` : ""}
+
+        ${t.trackingNumber ? `
+          <div class="db-note">
+            <strong>Tracking number:</strong> <span class="mono">${esc(t.trackingNumber)}</span><br>
+            <small>Track it on your courier's own site — we do not read updates from their system.</small>
+          </div>` : ""}`;
+    }
+
+    /* ---------- PAYMENT HISTORY ----------------------------------------
+       Two different things behind one heading, and the server says which by
+       `paymentsKind` rather than leaving the page to infer it from the shape
+       of an array that may be empty.
+
+       A RETAILER sees credit accounts: scheme, balance, due date, standing.
+       A REGULAR CUSTOMER has none and never will, so they see what they
+       actually paid and whether staff have verified it — the question "did my
+       GCash transfer go through?" had no answer anywhere on this site. */
+    function renderPayments(d) {
+      const box = document.getElementById("db-payments");
+      document.getElementById("db-pay-link").classList.toggle("hide", d.paymentsKind !== "credit");
+
+      if (!d.payments.length) {
+        box.innerHTML = `
+          <div class="db-empty">
+            <span class="db-empty-ic" aria-hidden="true">${ICON.wallet}</span>
+            ${d.paymentsKind === "credit"
+              ? `<p><strong>No credit accounts yet</strong></p>
+                 <p>Orders placed on Net terms will appear here with their due dates.</p>`
+              : `<p><strong>No payments yet</strong></p>
+                 <p>Once you order, what you paid and whether we have verified it shows here.</p>`}
+          </div>`;
+        return;
+      }
+
+      if (d.paymentsKind === "credit") {
+        box.innerHTML = `<ul class="db-list">${d.payments.map(p => `
+          <li class="db-list-row">
+            <div class="db-list-main">
+              <strong>${esc(p.scheme)}</strong>
+              <span class="db-list-sub">Due ${EbFormat.fmtDate(p.dueDate)}${
+                p.penalty > 0 ? ` · penalty ${peso(p.penalty)}` : ""
+              }</span>
+            </div>
+            <div class="db-list-side">
+              <span class="db-amt">${peso(p.totalDue || p.balance)}</span>
+              <span class="db-pill ${p.paid ? "db-pill-ok" : p.overdue ? "db-pill-bad" : "db-pill-warn"}">${
+                p.paid ? "Paid" : p.overdue ? "Overdue" : "Open"
+              }</span>
+            </div>
+          </li>`).join("")}</ul>`;
+        return;
+      }
+
+      box.innerHTML = `<ul class="db-list">${d.payments.map(p => `
+        <li class="db-list-row">
+          <div class="db-list-main">
+            <strong>${esc(PAY_LABEL[p.method] || p.method)}</strong>
+            <span class="db-list-sub">${EbFormat.fmtDate(p.placedAt)} · #${esc(p.orderId)}${
+              p.refNum ? ` · ref ${esc(p.refNum)}` : ""
+            }</span>
+          </div>
+          <div class="db-list-side">
+            <span class="db-amt">${peso(p.amount)}</span>
+            <span class="db-pill ${p.verified ? "db-pill-ok" : "db-pill-warn"}">${
+              p.verified ? "Verified" : "Checking"
+            }</span>
+          </div>
+        </li>`).join("")}</ul>`;
+    }
+
+    /* ---------- RECENT ORDERS ------------------------------------------ */
+    function renderRecent(d) {
+      const box = document.getElementById("db-recent");
+
+      if (!d.recentOrders.length) {
+        box.innerHTML = `
+          <div class="db-empty">
+            <span class="db-empty-ic" aria-hidden="true">${ICON.box}</span>
+            <p><strong>You have not ordered yet</strong></p>
+            <p>Your last five orders will be listed here.</p>
+            <a class="btn btn-primary" href="../shop.html">Browse the shop</a>
+          </div>`;
+        return;
+      }
+
+      box.innerHTML = `<ul class="db-list">${d.recentOrders.map(o => `
+        <li class="db-list-row">
+          <div class="db-list-main">
+            <strong>#${esc(o.id)}</strong>
+            <span class="db-list-sub">${
+              /* Named, not counted. "3 items" is not something anyone
+                 recognises their own order by. */
+              o.firstItem
+                ? esc(o.firstItem) + (o.itemCount > 1 ? ` +${o.itemCount - 1} more` : "")
+                : "No items"
+            } · ${EbFormat.fmtDate(o.placedAt)}</span>
+          </div>
+          <div class="db-list-side">
+            <span class="db-amt">${peso(o.total)}</span>
+            <span class="order-status ${statusClass(o.status)}">${esc(STATUS_LABEL[o.status] || o.status)}</span>
+          </div>
+        </li>`).join("")}</ul>`;
+    }
+
+    function renderLoading() {
+      /* Three placeholders on a plain three-across grid. Which layout applies
+         is not known until the response says whether this is a retailer, and
+         guessing would mean the tiles rearranging under the reader's eyes. */
+      const wrap = document.getElementById("db-stats");
+      wrap.className = "db-stats db-stats-plain";
+      wrap.innerHTML = '<div class="db-stat db-stat-skeleton"></div>'.repeat(3);
+      ["db-tracking", "db-payments", "db-recent"].forEach(id => {
+        document.getElementById(id).innerHTML = '<div class="db-empty"><p>Loading…</p></div>';
+      });
+    }
+
+    async function loadDashboard() {
+      renderLoading();
+      let d;
+      try {
+        d = (await EbApi.get("shop/dashboard.php")).data;
+      } catch (err) {
+        /* One failure, said once. Four panels each announcing the same outage
+           is four times the noise and no more information. */
+        document.getElementById("db-stats").innerHTML = "";
+        document.getElementById("db-tracking").innerHTML =
+          `<div class="db-empty"><p><strong>Could not load your dashboard.</strong></p>
+           <p>${esc(err.message)}</p></div>`;
+        document.getElementById("db-payments").innerHTML = "";
+        document.getElementById("db-recent").innerHTML = "";
+        return;
+      }
+
+      document.getElementById("db-sub").textContent = d.customer.isRetailer
+        ? "Your orders, deliveries and credit terms at a glance."
+        : "Your orders, deliveries and payments at a glance.";
+
+      renderStats(d);
+      renderTracking(d);
+      renderPayments(d);
+      renderRecent(d);
+    }
+
+    /* DOMContentLoaded, not immediately.
+
+       An inline classic script runs at PARSE time — before the three tags
+       above it, all of which are deferred or modules and therefore run later.
+       Calling mount() here directly meant EbProfileShell (and EbApi, and
+       state) did not exist yet. Deferred scripts finish before this event
+       fires, which is the same reason become-partner.html waits for it. */
+    window.addEventListener("DOMContentLoaded", () => {
+      EbProfileShell.mount({ page: "dashboard", onReady: loadDashboard });
+    });
+    })();
+    </script>
+  </body>
+</html>

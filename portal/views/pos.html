@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>pos module</title>
+  <!-- ============================================================
+       MODULE PARTIAL — section id="mod-pos".
+
+       Wrapped as a complete HTML document ON PURPOSE.
+
+       Dev servers inject a live-reload script into every .html file
+       they serve, placed just before the closing body tag. A bare
+       fragment has no closing body tag, so VS Code Live Server falls
+       back to injecting before the first closing svg tag instead —
+       which lands inside the Elisha Bay logo mark, corrupts the
+       parse, and leaves the portal showing "Portal failed to load".
+
+       With a real body element the injection lands harmlessly at the
+       end, and Core/module-loader.js strips every script element
+       before using this markup.
+
+       Keep the html/head/body wrapper. Also avoid writing a literal
+       closing body, head or svg tag anywhere in a comment in these
+       files — Live Server matches raw text and will inject there,
+       breaking the comment and everything after it.
+       ============================================================ -->
+  </head>
+  <body>
+<!-- ── POINT OF SALE: WALK-IN ORDER ── -->
+<section
+  id="mod-pos"
+  class="mod-panel walkin-module"
+  aria-label="Walk-In Order"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Point of Sale</div>
+      <h2>Walk-In Order</h2>
+    </div>
+    <div class="actions">
+      <button class="btn btn-ghost btn-sm" id="clear-cart-btn">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <polyline points="3 6 5 6 21 6" />
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+        </svg>
+        Clear
+      </button>
+      <button class="btn btn-gold" id="goto-payment-btn">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
+          <line x1="1" y1="10" x2="23" y2="10" />
+        </svg>
+        Proceed to Payment
+        <span class="cart-badge hide" id="cart-item-count">0</span>
+      </button>
+    </div>
+  </div>
+  <div class="walkin-split">
+    <div class="products-col">
+      <div class="products-toolbar">
+        <div class="search-box" style="max-width: 100%">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path d="M21 21l-4.35-4.35" />
+          </svg>
+          <input
+            type="search"
+            id="prod-search"
+            placeholder="Search products…"
+            aria-label="Search products"
+          />
+        </div>
+        <div
+          id="cat-filter"
+          class="cat-filter"
+          role="group"
+          aria-label="Category filter"
+        ></div>
+      </div>
+      <div id="products-grid" class="products-grid" role="list"></div>
+    </div>
+    <div class="cart-col">
+      <div class="cart-header">
+        <h3 class="cart-title">Current Order</h3>
+        <span class="badge badge-info" id="cart-items-badge"
+          >0 items</span
+        >
+      </div>
+      <div id="cart-items" class="cart-items"></div>
+      <div class="cart-footer">
+        <div class="cart-total-row">
+          <span>Total</span>
+          <strong class="cart-total" id="cart-total">₱0</strong>
+        </div>
+        <button
+          class="btn btn-gold btn-block"
+          id="cart-pay-btn"
+          style="margin-top: 12px"
+        >
+          Proceed to Payment
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+  </body>
+</html>

@@ -1,0 +1,1806 @@
+/* =================================================================
+   ELISHA BAY — Admin Dashboard Stylesheet
+   Design tokens identical to the public landing page.
+   Admin-specific layout and components added below.
+   ================================================================= */
+
+/* Enforce hidden attribute against display overrides */
+[hidden] { display: none !important; }
+
+/* =================================================================
+   PREMIUM AUTO-HIDING SCROLLBARS — applies to every scrollable area
+   (sidebar, tables, modals, textareas, etc.) across the whole app.
+   Invisible at rest, fades in on hover, gold on direct hover.
+   ================================================================= */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+*:hover {
+  scrollbar-color: var(--gold-line) transparent;
+}
+*::-webkit-scrollbar { width: 7px; height: 7px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-corner { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: transparent; border-radius: 99px;
+  transition: background var(--t) var(--ease);
+}
+*:hover::-webkit-scrollbar-thumb { background: var(--gold-line); }
+*::-webkit-scrollbar-thumb:hover { background: var(--gold); }
+
+/* =================================================================
+   0. KEYFRAMES
+   ================================================================= */
+@keyframes pageIn      { from{opacity:0;transform:translateY(14px);} to{opacity:1;transform:none;} }
+@keyframes toastIn     { from{opacity:0;transform:translateY(20px);} to{opacity:1;transform:none;} }
+@keyframes toastOut    { from{opacity:1;transform:none;} to{opacity:0;transform:translateY(20px);} }
+@keyframes spin        { to{transform:rotate(360deg);} }
+@keyframes shimmer     { from{transform:translateX(-100%);} to{transform:translateX(200%);} }
+@keyframes pop         { 0%{transform:scale(0.8);opacity:0;} 70%{transform:scale(1.04);} 100%{transform:scale(1);opacity:1;} }
+@keyframes fadeIn      { from{opacity:0;} to{opacity:1;} }
+@keyframes slideDown   { from{opacity:0;transform:translateY(-10px);} to{opacity:1;transform:none;} }
+@keyframes countUp     { from{opacity:0;transform:translateY(8px);} to{opacity:1;transform:none;} }
+
+/* =================================================================
+   1. DESIGN TOKENS (exact match to the public site)
+   ================================================================= */
+:root {
+  --red:        #d62828;
+  --red-deep:   #b01e1e;
+  --gold:       #e8a317;
+  /* --- text-safe ink steps (light theme) ---------------------------------
+     Brand gold is 1.98:1 on the cream surface and --warn is the same hex, so
+     neither may carry text; --ok is 2.80:1. These *-ink steps are the same
+     hues darkened to clear 4.5:1 on both light surfaces. --gold / --ok /
+     --warn keep their original values for fills, borders and focus rings,
+     where only 3:1 applies. The dark block below re-points each one, because
+     on the dark surface the originals already pass and the reds do not. */
+  --gold-ink:   #92670e;
+  --ok-ink:     #128042;
+  --warn-ink:   #92670e;
+  --out-ink:    #d82525;
+  --gold-soft:  #f6c86a;
+  --gold-dim:   rgba(232,163,23,.14);
+  --gold-line:  rgba(232,163,23,.22);
+
+  --bg:         #FAF4E8;
+  --bg-soft:    #F4ECDA;
+  --bg-tint:    #EDE3CA;
+  --surface:    #FFFFFF;
+  --surface-2:  #F9F3E6;
+  --text:       #1E1A0E;
+  --text-muted: #6B5E48;
+  --border:     rgba(30,20,8,.1);
+  --border-lift:rgba(30,20,8,.18);
+
+  --ink:        #0D0B08;
+  --ink-soft:   #161209;
+  --ink-card:   #1E1A0E;
+  --cream:      #F2E8D0;
+  --cream-dim:  rgba(242,232,208,.55);
+
+  --ok:   #18a957;
+  --warn: #e8a317;
+  --crit: #ea580c;
+  --out:  #dc2626;
+  --info: #3b82f6;
+
+  --shadow-sm: 0 1px 3px rgba(30,20,8,.07),0 1px 2px rgba(30,20,8,.05);
+  --shadow-md: 0 4px 14px rgba(30,20,8,.1),0 2px 6px rgba(30,20,8,.06);
+  --shadow-lg: 0 16px 48px rgba(30,20,8,.14),0 6px 16px rgba(30,20,8,.08);
+  --shadow-ink:0 16px 48px rgba(0,0,0,.55),0 4px 12px rgba(0,0,0,.35);
+
+  --r-sm:   6px;
+  --r-md:   12px;
+  --r-lg:   20px;
+  --r-xl:   28px;
+  --r-pill: 999px;
+
+  --t-fast: 140ms;
+  --t:      220ms;
+  --t-slow: 400ms;
+  --ease:   cubic-bezier(.22,.61,.36,1);
+
+  /* --font-display drives every h1-h5 plus the dashboard greeting,
+     modal headers, and brand name — that serif (Cormorant Garamond)
+     read thin/hard-to-read at these weights per feedback. Swapped to
+     Roboto for just this token; body copy (--font-body/--font-ui)
+     was already sans-serif and untouched. */
+  --font-display: "Sentient", Georgia, serif;
+  --font-body:    "Karla", "Montserrat", system-ui, sans-serif;
+  --font-ui:      "Montserrat", "Karla", sans-serif;
+  --font-mono:    ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+  --font-number:  "Montserrat", "Karla", system-ui, sans-serif;
+
+  --sidebar-w: 252px;
+  --sidebar-w-min: 64px;  /* collapsed, icon-only rail */
+  --topbar-h:  64px;
+  --shell-gap: 14px;      /* inset around the floating sidebar / top bar */
+
+  --z-sidebar: 100;
+  --z-modal:   300;
+  --z-toast:   400;
+  --z-overlay: 200;
+
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --warn-ink:  #e8a317;
+  --out-ink:   #f62b2b;
+  --ok-ink:    #18a957;
+  --gold-ink:  #e8a317;   /* 8.24:1 on the dark surface — no darkening needed */
+  --red:        #f04040;
+  --red-deep:   #c82020;
+  --gold:       #f2b441;
+  --gold-soft:  #ffd27a;
+  --gold-dim:   rgba(242,180,65,.12);
+  --gold-line:  rgba(242,180,65,.2);
+
+  /* Neutral black/white surfaces — the gold/red brand gradient
+     lives only in borders, accent bars and active states now. */
+  --bg:         #0A0A0A;
+  --bg-soft:    #121212;
+  --bg-tint:    #1C1C1C;
+  --surface:    #141414;
+  --surface-2:  #1A1A1A;
+  --text:       #F5F5F5;
+  --text-muted: #9CA0A6;
+  --border:     rgba(242,180,65,.16);
+  --border-lift:rgba(242,180,65,.32);
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.5);
+  --shadow-md: 0 4px 14px rgba(0,0,0,.6);
+  --shadow-lg: 0 16px 48px rgba(0,0,0,.7);
+
+  color-scheme: dark;
+}
+
+/* =================================================================
+   2. BASE RESET
+   ================================================================= */
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 1rem; line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  transition: background var(--t-slow) var(--ease), color var(--t-slow) var(--ease);
+}
+
+h1,h2,h3,h4,h5 {
+  font-family: var(--font-display);
+  font-weight: 700; line-height: 1.1; margin: 0;
+  letter-spacing: .005em;
+}
+p   { margin: 0; }
+a   { color: inherit; text-decoration: none; }
+img { max-width: 100%; display: block; }
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+ul,ol  { margin: 0; padding: 0; list-style: none; }
+:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; border-radius: var(--r-sm); }
+/* Pill-shaped controls: matching border-radius on the outline wasn't
+   enough — native `outline` doesn't reliably clip to an element's own
+   border-radius across engines (it's a comparatively recent, spotty
+   feature), so the ring drew as a near-rectangle poking out past the
+   pill's rounded corners regardless of what radius was set. box-shadow
+   has no such gap — it always follows the element's actual shape — so
+   these get a shadow-based ring instead of the native outline. */
+.tab-btn:focus-visible,
+.return-tab-btn:focus-visible,
+.alert-tab:focus-visible,
+.inv-action-btn:focus-visible,
+.range-btn:focus-visible,
+.btn:focus-visible,
+.icon-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--gold);
+}
+.nav-item:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--gold); border-radius: 10px; }
+.sr-only { position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0; }
+.hide { display: none !important; }
+
+/* =================================================================
+   3. SHARED COMPONENTS
+   ================================================================= */
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font-family: var(--font-ui); font-weight: 700; font-size: .82rem;
+  letter-spacing: .04em; text-transform: uppercase;
+  padding: 10px 22px; border-radius: var(--r-pill);
+  min-height: 40px; white-space: nowrap; cursor: pointer;
+  transition: transform var(--t-fast) var(--ease), box-shadow var(--t) var(--ease),
+              background var(--t) var(--ease), color var(--t) var(--ease);
+}
+.btn:active  { transform: translateY(1px) scale(.99); }
+.btn svg     { width: 15px; height: 15px; flex: none; }
+.btn-sm      { padding: 7px 14px; min-height: 32px; font-size: .75rem; }
+.btn-block   { width: 100%; }
+.btn:disabled{ opacity: .45; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+
+.btn-gold  { background: var(--gold); color: #1E1A0E; box-shadow: 0 6px 20px rgba(232,163,23,.28); }
+.btn-gold:hover { background: var(--gold-soft); transform: translateY(-2px); box-shadow: 0 10px 28px rgba(232,163,23,.4); }
+
+.btn-red   { background: var(--red); color: #fff; box-shadow: 0 4px 14px rgba(214,40,40,.22); }
+.btn-red:hover { background: var(--red-deep); transform: translateY(-2px); box-shadow: 0 8px 22px rgba(214,40,40,.34); }
+
+.btn-ghost { background: transparent; color: var(--text); border: 1.5px solid var(--border-lift); }
+.btn-ghost:hover { border-color: var(--gold); color: var(--out-ink); }
+
+.btn-ghost-danger { background: transparent; color: var(--out-ink); border: 1.5px solid rgba(220,38,38,.3); }
+.btn-ghost-danger:hover { background: rgba(220,38,38,.08); border-color: var(--out); }
+
+/* White on --ok is 3.06:1. The fix is a darker fill, not grey label text —
+   --ok-ink puts white at 5.01:1 and keeps the button reading as "success". */
+.btn-ok    { background: var(--ok-ink); color: #fff; }
+.btn-ok:hover { filter: brightness(1.1); transform: translateY(-2px); }
+
+/* Eyebrow label */
+.eyebrow {
+  display: inline-block; font-family: var(--font-ui);
+  font-size: .64rem; font-weight: 700; letter-spacing: .24em; text-transform: uppercase;
+  color: var(--out-ink); margin-bottom: 8px;
+}
+
+/* Badge */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 9px; border-radius: var(--r-pill);
+  font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  white-space: nowrap;
+}
+.badge-ok   { background: rgba(24,169,87,.14);  color: var(--ok-ink); }
+.badge-warn { background: rgba(232,163,23,.14); color: #8f600c; }
+.badge-crit { background: rgba(234,88,12,.14);  color: var(--crit); }
+.badge-out  { background: rgba(220,38,38,.12);  color: var(--out-ink); }
+.badge-info { background: rgba(59,130,246,.12); color: var(--info); }
+.badge-muted{ background: var(--bg-tint); color: var(--text-muted); }
+/* badge-muted was doing double duty for several unrelated things
+   (order-type, walk-in-type, partner tier) that all sit next to other
+   colored badges in the same row/table — same tan-on-tan made them
+   hard to tell apart. Each gets its own hue below instead of sharing
+   the "neutral/disabled" muted look. */
+.badge-purple { background: rgba(139,92,246,.14); color: #7C3AED; }
+[data-theme="dark"] .badge-purple { color: #B794F6; }
+.badge-teal { background: rgba(20,184,166,.14); color: #0D9488; }
+[data-theme="dark"] .badge-teal { color: #5EEAD4; }
+
+/* Partner account tiers — distinct per tier, not just "Gold" implying
+   color while Silver/Bronze stayed the same washed-out tan as Gold. */
+.badge-tier-gold   { background: rgba(232,163,23,.16); color: #9A6B0C; }
+.badge-tier-silver { background: rgba(120,135,155,.16); color: #55606E; }
+.badge-tier-bronze { background: rgba(180,95,45,.16);  color: #8A4A22; }
+[data-theme="dark"] .badge-tier-gold   { color: #7e6429; }
+[data-theme="dark"] .badge-tier-silver { color: #B8C2CC; }
+[data-theme="dark"] .badge-tier-bronze { color: #D98B5F; }
+
+[data-theme="dark"] .badge-warn { color: var(--gold-ink); }
+
+/* ── Order status chip (dot + tinted pill) ──────────────────────
+   Lived only in orders.css + admin-orders.css (byte-identical
+   duplicates), so Cashier had no access to it and fell back to flat
+   badges — that's why order status looked different per portal.
+   Moved here (the file all 5 portals load) so it's the one status
+   language system-wide. The dot carries the state at a glance even
+   before you read the label. */
+.status-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: var(--r-pill);
+  font-size: .72rem; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; font-family: var(--font-ui);
+}
+.status-pending   { background: rgba(232,163,23,.15); color: #b87800; border: 1px solid rgba(232,163,23,.3); }
+.status-accepted  { background: rgba(59,130,246,.1);  color: #2563eb; border: 1px solid rgba(59,130,246,.25); }
+.status-shipping  { background: rgba(139,92,246,.1);  color: #7c3aed; border: 1px solid rgba(139,92,246,.25); }
+.status-delivered { background: rgba(20,184,166,.1);  color: #0d9488; border: 1px solid rgba(20,184,166,.25); }
+.status-completed { background: rgba(24,169,87,.12);  color: #15803d; border: 1px solid rgba(24,169,87,.3); }
+.status-on-hold   { background: rgba(249,115,22,.1);  color: #c2410c; border: 1px solid rgba(249,115,22,.25); }
+.status-cancelled { background: rgba(214,40,40,.1);   color: var(--out-ink); border: 1px solid rgba(214,40,40,.2); }
+
+[data-theme="dark"] .status-pending   { background: rgba(232,163,23,.2); color: #e8a317; }
+[data-theme="dark"] .status-accepted  { background: rgba(59,130,246,.2); color: #93c5fd; }
+[data-theme="dark"] .status-shipping  { background: rgba(139,92,246,.2); color: #c4b5fd; }
+[data-theme="dark"] .status-delivered { background: rgba(20,184,166,.2); color: #5eead4; }
+[data-theme="dark"] .status-completed { background: rgba(24,169,87,.2);  color: #86efac; }
+[data-theme="dark"] .status-on-hold   { background: rgba(249,115,22,.2); color: #fdba74; }
+[data-theme="dark"] .status-cancelled { background: rgba(214,40,40,.2);  color: #fca5a5; }
+
+.status-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+}
+.status-dot.pending   { background: #e8a317; }
+.status-dot.accepted  { background: #3b82f6; }
+.status-dot.shipping  { background: #8b5cf6; }
+.status-dot.delivered { background: #14b8a6; }
+.status-dot.completed { background: var(--ok); }
+.status-dot.on-hold   { background: #f97316; }
+.status-dot.cancelled { background: var(--red); }
+
+/* Form Fields */
+.field { margin-bottom: 14px; }
+.field label {
+  display: block; font-size: .78rem; font-weight: 700;
+  margin-bottom: 6px; letter-spacing: .02em; color: var(--text-muted);
+}
+.field .control {
+  width: 100%; padding: 10px 14px; font-size: .92rem; font-family: inherit;
+  background: var(--surface); color: var(--text);
+  border: 1.5px solid var(--border-lift); border-radius: var(--r-md);
+  transition: border-color var(--t), box-shadow var(--t);
+  appearance: none;
+}
+.field .control:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-dim); }
+.field-error { color: var(--out-ink); font-size: .74rem; margin-top: 4px; display: block; min-height: 1.1em; }
+.field-hint  { color: var(--text-muted); font-size: .74rem; margin-top: 4px; }
+textarea.control { resize: vertical; min-height: 90px; }
+
+/* Card */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--t) var(--ease), transform var(--t) var(--ease), border-color var(--t);
+}
+.card:hover { box-shadow: var(--shadow-md); border-color: var(--border-lift); }
+
+/* Icon button */
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: var(--r-pill);
+  color: var(--text-muted); transition: background var(--t), color var(--t);
+  flex-shrink: 0;
+}
+.icon-btn:hover { background: var(--bg-tint); color: var(--text); }
+.icon-btn svg   { width: 18px; height: 18px; }
+
+/* Divider */
+.divider { height: 1px; background: var(--border); margin: 20px 0; }
+
+/* Section heading */
+/* Every module heading sits in its own banner card, matching the
+   dashboard's welcome panel. */
+.mod-header {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  background: linear-gradient(135deg, var(--surface) 0%, var(--gold-dim) 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 20px 24px;
+  margin-bottom: 22px;
+}
+.mod-header h2 { font-size: clamp(1.5rem,3vw,2rem); }
+.mod-header .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+/* One-line explainer under each module heading */
+.mod-desc {
+  margin-top: 6px; max-width: 74ch;
+  font-size: .86rem; line-height: 1.5; color: var(--text-muted);
+}
+
+/* =================================================================
+   4. LOGIN PAGE
+   ================================================================= */
+.login-view {
+  min-height: 100svh; display: flex; align-items: center; justify-content: center;
+  background: var(--ink);
+  background-image: radial-gradient(ellipse at 30% 60%, rgba(214,40,40,.12) 0%, transparent 60%),
+                    radial-gradient(ellipse at 70% 30%, rgba(232,163,23,.08) 0%, transparent 55%);
+  padding: 24px;
+}
+
+.login-card {
+  width: 100%; max-width: 420px;
+  background: var(--surface);
+  border: 1px solid var(--border-lift);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-ink);
+  padding: clamp(32px,6vw,52px) clamp(28px,6vw,48px);
+  animation: pop .4s var(--ease) both;
+}
+
+.login-brand {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 28px;
+}
+.login-brand .mark { width: 40px; height: 40px; flex-shrink: 0; }
+.login-brand .name {
+  font-family: var(--font-display); font-size: 1.4rem; font-weight: 700;
+  color: var(--text); line-height: 1;
+}
+.login-brand .name small {
+  display: block; font-family: var(--font-ui); font-size: .5rem;
+  font-weight: 600; letter-spacing: .26em; color: var(--gold-ink);
+  text-transform: uppercase; margin-top: 3px;
+}
+.login-eyebrow { font-size: .64rem; font-weight: 700; letter-spacing: .28em;
+  text-transform: uppercase; color: var(--out-ink); margin-bottom: 6px; }
+.login-title { font-size: 1.6rem; margin-bottom: 24px; color: var(--text); }
+
+.pw-wrap  { position: relative; }
+.pw-wrap .control { padding-right: 44px; }
+.pw-toggle {
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  color: var(--text-muted); transition: color var(--t);
+  background: none; border: none; cursor: pointer; padding: 4px;
+  display: flex; align-items: center;
+}
+.pw-toggle:hover { color: var(--gold-ink); }
+.pw-toggle svg { width: 17px; height: 17px; }
+
+.login-footer { text-align: center; margin-top: 20px; font-size: .8rem; color: var(--text-muted); }
+.login-error  { background: rgba(220,38,38,.08); border: 1px solid rgba(220,38,38,.2);
+  border-radius: var(--r-md); padding: 10px 14px; font-size: .84rem; color: var(--out-ink);
+  margin-bottom: 16px; display: none; }
+.login-error.show { display: block; }
+
+/* =================================================================
+   5. ADMIN APP SHELL
+   ================================================================= */
+/* Floating shell: the sidebar and top bar are detached, rounded panels
+   inset from the viewport edge by --shell-gap, with the page background
+   showing through around them. Collapsed widths are applied via class
+   overrides rather than a shared custom property — transitions stall
+   when the animated value itself comes from a changing var(). */
+.admin-app {
+  display: flex; height: 100svh; overflow: hidden;
+}
+
+/* ── Top bar — floats to the right of the sidebar ── */
+.app-topbar {
+  position: fixed;
+  top: var(--shell-gap);
+  left: calc(var(--sidebar-w) + var(--shell-gap) * 2);
+  right: var(--shell-gap);
+  height: var(--topbar-h);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 22px;
+  z-index: calc(var(--z-sidebar) + 1);
+  box-shadow: var(--shadow-sm);
+  box-sizing: border-box;
+}
+.app-topbar-brand {
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+}
+.app-topbar-brand .mark { width: 32px; height: 32px; flex-shrink: 0; }
+.app-topbar-brand .name {
+  font-family: var(--font-display); font-size: 1.1rem; font-weight: 700;
+  color: var(--text); line-height: 1.1;
+}
+.app-topbar-brand .name small {
+  display: block; font-family: var(--font-ui); font-size: .45rem;
+  font-weight: 600; letter-spacing: .24em; color: var(--gold-ink);
+  text-transform: uppercase; margin-top: 2px;
+}
+
+/* Brand block, now living at the top of the sidebar instead of the
+   topbar — same mark/name styling, just its own spacing + a divider
+   so it doesn't run straight into the nav list below it. */
+.sidebar-brand {
+  display: flex; align-items: center; gap: 10px;
+  padding: 16px 16px 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+.sidebar-brand .mark { width: 30px; height: 30px; flex-shrink: 0; }
+.sidebar-brand .name {
+  font-family: var(--font-display); font-size: 1.05rem; font-weight: 700;
+  color: var(--text); line-height: 1.1;
+}
+.sidebar-brand .name small {
+  display: block; font-family: var(--font-ui); font-size: .44rem;
+  font-weight: 600; letter-spacing: .2em; color: var(--gold-ink);
+  text-transform: uppercase; margin-top: 2px;
+}
+/* Collapsed rail: no room for the name, mark stays centered like the
+   collapsed nav-item icons do. */
+.admin-app.sidebar-collapsed .sidebar-brand { justify-content: center; padding: 16px 8px 14px; }
+.admin-app.sidebar-collapsed .sidebar-brand .name { display: none; }
+/* ── Sidebar (light — matches the public site's white-surface-on-cream theme) ── */
+.sidebar {
+  width: var(--sidebar-w);
+  background: var(--surface);
+  flex-shrink: 0;
+  position: fixed;
+  left: var(--shell-gap); top: var(--shell-gap); bottom: var(--shell-gap);
+  z-index: var(--z-sidebar);
+  display: flex; flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+  /* Only transform is animated — width/left/margin here resolve from
+     custom properties, and Chrome stalls those transitions mid-flight,
+     leaving the rail stuck at its expanded size. */
+  transition: transform var(--t-slow) var(--ease);
+  overflow-y: auto; overflow-x: hidden;
+}
+
+.sidebar-nav { flex: 1; padding: 14px 12px; }
+
+.nav-group { margin-bottom: 8px; }
+.nav-group + .nav-group { padding-top: 8px; border-top: 1px solid var(--border); }
+.nav-group-label {
+  font-family: var(--font-ui); font-size: .6rem; font-weight: 700;
+  letter-spacing: .26em; text-transform: uppercase;
+  color: var(--text-muted); padding: 10px 12px 6px;
+  display: flex; align-items: center; justify-content: space-between;
+  cursor: pointer; user-select: none;
+  transition: color var(--t);
+}
+.nav-group-label:hover { color: var(--gold-ink); }
+.nav-chevron { width: 11px; height: 11px; opacity: .5; flex-shrink: 0; transition: transform var(--t); }
+.nav-group.collapsed .nav-chevron { transform: rotate(-90deg); }
+.nav-group.collapsed .nav-item { display: none; }
+.nav-parent { justify-content: flex-start !important; }
+/* On a parent row the chevron is a CONTROL, not decoration: it collapses and
+   expands the drawer, while the rest of the row navigates. An 11px glyph is not
+   a target anyone can hit, so padding grows the hit area and the matching
+   negative margins keep the row's geometry exactly as it was. */
+.nav-parent .nav-chevron {
+  margin: -7px -7px -7px auto;
+  padding: 7px;
+  box-sizing: content-box;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: transform var(--t), opacity var(--t);
+}
+.nav-parent .nav-chevron:hover { opacity: 1; }
+.nav-parent.collapsed .nav-chevron { transform: rotate(-90deg); }
+.nav-sub-list { overflow: hidden; }
+.nav-parent.collapsed + .nav-sub-list { display: none; }
+
+/* ── Sidebar collapsed (icon-only) ── */
+.admin-app.sidebar-collapsed .sidebar { width: var(--sidebar-w-min); }
+.admin-app.sidebar-collapsed .app-topbar {
+  left: calc(var(--sidebar-w-min) + var(--shell-gap) * 2);
+}
+.admin-app.sidebar-collapsed .admin-main {
+  margin-left: calc(var(--sidebar-w-min) + var(--shell-gap) * 2);
+}
+.admin-app.sidebar-collapsed .sidebar-nav { padding: 14px 10px; }
+.admin-app.sidebar-collapsed .nav-group-label { display: none; }
+.admin-app.sidebar-collapsed .nav-sub-list { display: none; }
+.admin-app.sidebar-collapsed .nav-group { margin-bottom: 14px; }
+.admin-app.sidebar-collapsed .nav-item {
+  justify-content: center !important;
+  padding: 12px 0;
+  margin: 3px 0;
+  font-size: 0;
+  gap: 0;
+}
+.admin-app.sidebar-collapsed .nav-item > svg { width: 20px; height: 20px; flex-shrink: 0; }
+.admin-app.sidebar-collapsed .nav-chevron { display: none; }
+.admin-app.sidebar-collapsed .nav-item.sub { display: none; }
+.admin-app.sidebar-collapsed .nav-group + .nav-group {
+  border-top: none;
+  padding-top: 14px;
+  margin-top: 4px;
+  position: relative;
+}
+.admin-app.sidebar-collapsed .nav-group + .nav-group::before {
+  content: ""; position: absolute; top: 0; left: 12px; right: 12px;
+  height: 1px; background: var(--border-lift);
+}
+.admin-app.sidebar-collapsed .sidebar-user { margin: 8px 6px 12px; padding: 8px 4px; gap: 0; justify-content: center; }
+.admin-app.sidebar-collapsed .sidebar-user-info { display: none; }
+.admin-app.sidebar-collapsed .sidebar-logout { display: none; }
+
+.nav-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; margin: 1px 0; border-radius: 10px;
+  font-size: .88rem; font-weight: 600; letter-spacing: .01em;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--t), color var(--t), transform var(--t-fast) var(--ease);
+  border: none; background: none; width: 100%; text-align: left;
+  position: relative;
+}
+.nav-item svg { width: 18px; height: 18px; flex-shrink: 0; opacity: .85; stroke-width: 1.9; transition: opacity var(--t); }
+.nav-item:hover { background: var(--bg-soft); color: var(--text); transform: translateX(2px); }
+.nav-item:hover svg { opacity: 1; }
+.nav-item.active {
+  background: linear-gradient(90deg, rgba(232,163,23,.16) 0%, rgba(232,163,23,.04) 100%);
+  color: var(--gold-ink);
+  transform: none;
+}
+.nav-item.active::after {
+  content: ""; position: absolute; left: 0; top: 50%;
+  transform: translateY(-50%);
+  width: 3px; height: 18px; border-radius: 99px;
+  background: var(--gold);
+  box-shadow: 0 0 8px rgba(232,163,23,.4);
+}
+.nav-item.active svg { opacity: 1; }
+.nav-item.sub { padding-left: 40px; font-size: .82rem; color: var(--text-muted); }
+.nav-item.sub:hover, .nav-item.sub.active { color: var(--gold-ink); }
+.nav-item.sub::before {
+  content: ""; position: absolute; left: 22px; top: 50%;
+  transform: translateY(-50%);
+  width: 4px; height: 4px; border-radius: 50%;
+  background: currentColor; opacity: .7;
+}
+
+/* Standalone RBAC shortcut — sits above every nav-group, on its own,
+   not inside a section. Solid gold fill (not just an active-state
+   tint like regular items) so it reads as a distinct, permanent
+   action rather than one more item in a list. */
+/* Double-classed selectors (.nav-item.nav-item-rbac) deliberately —
+   glass.css (loaded after this file on the glass skin) sets a
+   plain `.nav-item { background: transparent }` at the same 1-class
+   specificity, which would otherwise win on load order and erase the
+   gold fill. Bumping to 2 classes beats that regardless of skin. */
+.nav-item.nav-item-rbac {
+  background: linear-gradient(135deg, var(--gold) 0%, #D99A0E 100%);
+  color: #1E1A0E;
+  font-weight: 800;
+  margin: 0 0 12px;
+  box-shadow: 0 3px 10px rgba(232,163,23,.35);
+}
+.nav-item.nav-item-rbac svg { opacity: 1; stroke-width: 2.2; }
+.nav-item.nav-item-rbac:hover {
+  background: linear-gradient(135deg, #F2C14E 0%, var(--gold) 100%);
+  color: #1E1A0E;
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(232,163,23,.45);
+}
+/* navigate() adds .active while RBAC is the open module — that pulls
+   in .nav-item.active from both this file and glass.css (same
+   0,2,0 specificity as the rule above), which would flatten the gold
+   fill back to a faint active-tint. One more class beats both. */
+.nav-item.nav-item-rbac.active {
+  background: linear-gradient(135deg, var(--gold) 0%, #D99A0E 100%);
+  color: #1E1A0E;
+  border-color: transparent;
+}
+.nav-item.nav-item-rbac.active::after { display: none; }
+.nav-item-rbac-badge {
+  margin-left: auto; flex-shrink: 0;
+  font-size: .6rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  background: rgba(30,26,14,.16); color: #1E1A0E;
+  padding: 2px 7px; border-radius: var(--r-pill);
+}
+/* Icon-only collapsed rail: badge has nowhere to sit, drop it. */
+.admin-app.sidebar-collapsed .nav-item-rbac-badge { display: none; }
+
+.sidebar-user {
+  margin: 10px 12px 14px; padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-soft);
+  display: flex; align-items: center; gap: 10px;
+  flex-shrink: 0;
+}
+.sidebar-avatar {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--gold-soft), var(--gold));
+  color: #1E1A0E;
+  font-size: .72rem; font-weight: 700;
+  box-shadow: 0 0 0 2px rgba(232,163,23,.22);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.sidebar-user-info { flex: 1; min-width: 0; }
+.sidebar-user-name { font-size: .84rem; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-user-role { font-size: .68rem; color: #b87800; letter-spacing: .04em; }
+.sidebar-logout {
+  color: var(--text-muted); transition: color var(--t);
+  background: none; border: none; cursor: pointer; padding: 4px; display: flex;
+}
+.sidebar-logout:hover { color: var(--out-ink); }
+.sidebar-logout svg { width: 17px; height: 17px; }
+
+/* ── Main area ── */
+.admin-main {
+  flex: 1;
+  margin-left: calc(var(--sidebar-w) + var(--shell-gap) * 2);
+  margin-right: var(--shell-gap);
+  margin-top: calc(var(--topbar-h) + var(--shell-gap) * 2);
+  height: calc(100svh - var(--topbar-h) - var(--shell-gap) * 3);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+
+.topbar-hamburger { display: flex; }
+.topbar-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+
+.notif-btn { position: relative; }
+.notif-badge {
+  position: absolute; top: 2px; right: 2px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--out); border: 2px solid var(--surface);
+}
+.notif-badge-count {
+  width: auto; height: 16px; min-width: 16px; top: -3px; right: -3px;
+  padding: 0 4px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .62rem; font-weight: 800; color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sidebar nav-item badge — sits inline after the label, not floated
+   off the edge of the (full-width, borderless) nav button. */
+.nav-item .notif-badge {
+  position: static; margin-left: auto; flex-shrink: 0;
+  width: auto; min-width: 18px; height: 18px;
+  padding: 0 5px; border-radius: 9px; border: none;
+  background: var(--out); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .66rem; font-weight: 800; font-variant-numeric: tabular-nums;
+}
+.nav-item .notif-badge:empty { display: none; }
+
+/* Collapsed (icon-only) sidebar: there's no label row for a count to sit
+   beside, so the badge degrades to a plain dot pinned to the bell's
+   top-right corner. Number returns when the sidebar expands. */
+.admin-app.sidebar-collapsed .nav-item .notif-badge {
+  position: absolute;
+  top: 7px; left: calc(50% + 5px); margin: 0;
+  width: 10px; height: 10px; min-width: 0;
+  padding: 0; border-radius: 50%;
+  border: 2px solid var(--surface); box-sizing: border-box;
+  font-size: 0; line-height: 0;
+}
+
+/* Topbar notifications dropdown (mirrors .user-dropdown) */
+.topbar-notif { position: relative; }
+.notif-dropdown {
+  position: absolute; top: calc(100% + 12px); right: -8px;
+  width: 380px; max-width: calc(100vw - 32px);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
+  z-index: var(--z-modal); overflow: hidden;
+  opacity: 0; pointer-events: none; transform: translateY(-6px) scale(.98);
+  transition: opacity var(--t) var(--ease), transform var(--t) var(--ease);
+}
+.topbar-notif.open .notif-dropdown { opacity: 1; pointer-events: auto; transform: none; }
+.nd-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px; border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.nd-header span {
+  font-family: var(--font-display); font-weight: 700; font-size: 1.02rem; color: var(--text);
+}
+.nd-mark-all {
+  background: var(--bg-soft); border: 1px solid var(--border-lift); border-radius: var(--r-pill);
+  cursor: pointer; font-size: .68rem; font-weight: 700; letter-spacing: .02em;
+  color: var(--gold-ink); padding: 5px 12px; transition: all var(--t);
+}
+.nd-mark-all:hover { background: var(--gold-dim); border-color: var(--gold); }
+.nd-list { max-height: 380px; overflow-y: auto; background: var(--surface); }
+.nd-item {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background var(--t);
+  background: var(--surface);
+}
+.nd-item:last-child { border-bottom: none; }
+.nd-item:hover { background: var(--bg-soft); }
+.nd-item-icon {
+  width: 34px; height: 34px; border-radius: var(--r-pill);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.nd-item-icon svg { width: 16px; height: 16px; }
+.nd-item-body { flex: 1; min-width: 0; }
+.nd-item-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.nd-item-msg {
+  font-size: .82rem; color: var(--text); line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.nd-item.unread .nd-item-msg { font-weight: 700; }
+/* Derived-alert dropdowns (Cashier / Inventory): keep one even weight so
+   long alert sentences stay legible; the dot still marks unread. */
+.nd-item.nd-alert .nd-item-msg { font-weight: 500; color: var(--text); }
+.nd-item-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--gold);
+  flex-shrink: 0; margin-top: 5px;
+}
+.nd-item-time { font-size: .7rem; color: var(--text-muted); margin-top: 4px; }
+.nd-empty { padding: 40px 18px; text-align: center; color: var(--text-muted); font-size: .84rem; background: var(--surface); }
+.nd-footer {
+  padding: 13px 18px; text-align: center; font-size: .78rem; font-weight: 700;
+  color: var(--gold-ink); cursor: pointer; border-top: 1px solid var(--border);
+  background: var(--surface); transition: background var(--t);
+}
+.nd-footer:hover { background: var(--bg-soft); }
+
+/* =================================================================
+   ALERT CENTER — Notifications page for the Cashier / Inventory
+   portals. Alerts there are derived live from stock, payment and
+   expiry data (no read/unread state), so they get their own row
+   treatment: title + detail + severity, filterable by category.
+   ================================================================= */
+.alert-panel { padding: 18px 22px 6px; }
+
+.alert-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 6px;
+}
+.alert-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.alert-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 16px; border-radius: var(--r-pill);
+  font-family: var(--font-ui); font-size: .72rem; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase;
+  border: 1.5px solid var(--border-lift); background: transparent;
+  color: var(--text-muted); cursor: pointer; transition: all var(--t);
+}
+.alert-tab:hover  { border-color: var(--gold); color: var(--text); }
+.alert-tab.active { background: var(--gold); color: #1E1A0E; border-color: var(--gold); }
+.alert-tab-count  { font-variant-numeric: tabular-nums; }
+
+.alert-row {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 16px 10px; border-bottom: 1px solid var(--border);
+  border-radius: var(--r-md);
+  cursor: pointer; transition: background var(--t);
+}
+.alert-row:last-child { border-bottom: none; }
+.alert-row:hover { background: var(--bg-soft); }
+/* Urgent (critical) alerts get the same tinted treatment unread
+   notifications use in the Online Orders portal. */
+.alert-row.urgent { background: var(--gold-dim); }
+.alert-row.urgent:hover { background: var(--gold-line); }
+
+.alert-icon {
+  width: 38px; height: 38px; border-radius: var(--r-pill); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.alert-icon svg { width: 18px; height: 18px; }
+.alert-icon.type-stock   { background: rgba(139,92,246,.12); color: #8b5cf6; }
+.alert-icon.type-payment { background: rgba(59,130,246,.12); color: #3b82f6; }
+.alert-icon.type-expiry  { background: rgba(234,88,12,.12);  color: var(--crit); }
+
+.alert-body { flex: 1; min-width: 0; }
+.alert-top {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+}
+/* Even, normal weight across all rows — the dot and tint carry the
+   unread signal, so bold text isn't needed and reads lighter. */
+.alert-msg { font-size: .88rem; color: var(--text); line-height: 1.45; font-weight: 500; }
+.alert-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--gold);
+  flex-shrink: 0; margin-top: 6px;
+}
+.alert-meta { display: flex; align-items: center; gap: 16px; margin-top: 5px; }
+.alert-sev { font-size: .74rem; color: var(--text-muted); }
+.alert-sev.critical { color: var(--out-ink); font-weight: 700; }
+.alert-action { font-size: .76rem; font-weight: 700; color: var(--gold-ink); cursor: pointer; }
+.alert-action:hover { text-decoration: underline; }
+
+.alert-empty { padding: 54px 20px; text-align: center; color: var(--text-muted); font-size: .88rem; }
+.alert-empty svg { width: 32px; height: 32px; opacity: .35; margin-bottom: 10px; }
+.alert-empty strong { display: block; color: var(--text); font-size: .95rem; margin-bottom: 4px; }
+
+.theme-toggle .sun  { display: none; }
+[data-theme="dark"] .theme-toggle .sun  { display: block; }
+[data-theme="dark"] .theme-toggle .moon { display: none; }
+
+.topbar-avatar {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--gold-soft), var(--gold)); color: #1E1A0E;
+  font-size: .72rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0;
+  border: none;
+}
+
+/* User dropdown (app-shell-3 pattern) */
+.topbar-user { position: relative; }
+.user-dropdown {
+  position: absolute; top: calc(100% + 10px); right: 0;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
+  min-width: 230px; z-index: var(--z-modal); overflow: hidden;
+  opacity: 0; pointer-events: none; transform: translateY(-6px);
+  transition: opacity var(--t) var(--ease), transform var(--t) var(--ease);
+}
+.topbar-user.open .user-dropdown { opacity: 1; pointer-events: auto; transform: none; }
+.ud-header { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.ud-name { font-weight: 700; font-size: .88rem; color: var(--text); }
+.ud-role { font-size: .72rem; color: var(--text-muted); margin-top: 2px; }
+.ud-sep { height: 1px; background: var(--border); margin: 4px 0; }
+.ud-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 16px; font-size: .84rem; font-weight: 500; color: var(--text);
+  cursor: pointer; background: none; border: none; width: 100%; text-align: left;
+  transition: background var(--t);
+}
+.ud-item:hover { background: var(--bg-soft); }
+.ud-item svg { width: 16px; height: 16px; opacity: .65; flex-shrink: 0; }
+.ud-item.danger { color: var(--out-ink); }
+.ud-item.danger:hover { background: rgba(220,38,38,.08); }
+
+/* ── Content area ── */
+.content {
+  /* No horizontal padding — the shell gap already insets this column, and
+     zero here keeps content edges flush with the floating top bar above. */
+  flex: 1; padding: clamp(14px,2vw,22px) 0 28px;
+  min-height: 0; overflow-y: auto;
+  /* Reserve the scrollbar gutter so the right edge doesn't shift between
+     short and long pages. */
+  scrollbar-gutter: stable;
+  animation: pageIn .35s var(--ease) both;
+}
+
+.mod-panel { display: none; }
+.mod-panel.active { display: block; animation: pageIn .3s var(--ease) both; }
+
+/* =================================================================
+   6. DASHBOARD MODULE
+   ================================================================= */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px; margin-bottom: 24px;
+}
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 22px 24px;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--t), transform var(--t), border-color var(--t);
+  position: relative; overflow: hidden;
+}
+.stat-card:hover {
+  box-shadow: var(--shadow-md), 0 0 0 1.5px var(--accent-color, var(--gold));
+  transform: translateY(-3px);
+}
+.stat-card::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  background: linear-gradient(90deg, var(--accent-color, var(--gold)) 60%, transparent);
+}
+.stat-card::after {
+  content: ""; position: absolute; top: -40px; right: -40px;
+  width: 120px; height: 120px; border-radius: 50%;
+  background: radial-gradient(circle, var(--accent-bg, var(--gold-dim)) 0%, transparent 70%);
+  pointer-events: none;
+}
+.stat-card .stat-icon {
+  width: 46px; height: 46px; border-radius: var(--r-md);
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent-bg, var(--gold-dim));
+  color: var(--accent-color, var(--gold));
+  margin-bottom: 14px;
+  box-shadow: 0 4px 12px var(--accent-bg, var(--gold-dim));
+}
+.stat-card .stat-icon svg { width: 22px; height: 22px; }
+.stat-label { font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
+.stat-value { font-family: var(--font-number); font-size: 1.9rem; font-weight: 800; color: var(--text); line-height: 1; animation: countUp .4s var(--ease) both; font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.01em; }
+.stat-sub   { font-size: .76rem; color: var(--text-muted); margin-top: 4px; }
+.stat-delta { font-size: .73rem; font-weight: 700; margin-top: 6px; display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: var(--r-pill); }
+.stat-delta.up   { background: rgba(24,169,87,.12);  color: var(--ok-ink);  }
+.stat-delta.down { background: rgba(220,38,38,.10);  color: var(--out-ink); }
+.stat-delta.flat { background: var(--bg-tint); color: var(--text-muted); }
+.stat-trend { display: inline-flex; align-items: center; gap: 3px; font-size: .72rem; font-weight: 700; }
+.stat-trend.up   { color: var(--ok-ink); }
+.stat-trend.down { color: var(--out-ink); }
+
+.dash-grid {
+  display: grid; grid-template-columns: 1fr 340px; gap: 20px;
+}
+@media (max-width: 900px) { .dash-grid { grid-template-columns: 1fr; } }
+
+.panel {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 22px;
+  box-shadow: var(--shadow-sm);
+}
+.panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 18px; flex-wrap: wrap; gap: 8px;
+  padding-bottom: 14px; border-bottom: 1px solid var(--border);
+}
+.panel-title { font-size: .92rem; font-weight: 700; color: var(--text); font-family: var(--font-ui); letter-spacing: .02em; }
+
+/* Sparkline SVG chart */
+.sparkline-wrap { overflow-x: auto; }
+.sparkline-chart { width: 100%; min-width: 260px; height: 140px; }
+
+/* Chart type toggle */
+.chart-toggle { display: flex; border: 1.5px solid var(--border-lift); border-radius: var(--r-md); overflow: hidden; }
+.chart-toggle-btn { width: 30px; height: 28px; display: flex; align-items: center; justify-content: center; background: transparent; border: none; cursor: pointer; color: var(--text-muted); transition: all var(--t); }
+.chart-toggle-btn + .chart-toggle-btn { border-left: 1.5px solid var(--border-lift); }
+.chart-toggle-btn:hover { background: var(--bg-tint); color: var(--text); }
+.chart-toggle-btn.active { background: var(--gold); color: #1E1A0E; }
+.chart-toggle-btn svg { width: 13px; height: 13px; }
+
+/* Welcome banner */
+.dash-welcome {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  background: linear-gradient(135deg, var(--surface) 0%, var(--gold-dim) 100%);
+  border: 1px solid var(--border); border-radius: var(--r-lg);
+  padding: 20px 24px; margin-bottom: 22px;
+  box-shadow: var(--shadow-sm);
+}
+.dash-greeting { font-family: var(--font-display); font-size: 1.5rem; font-weight: 700; color: var(--text); }
+.dash-date { font-size: .78rem; color: var(--text-muted); margin-top: 3px; }
+.dash-welcome-right { display: flex; gap: 18px; }
+.dash-quick-stat { text-align: center; }
+.dash-quick-stat-val { font-family: var(--font-number); font-size: 1.2rem; font-weight: 800; color: var(--gold-ink); font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.01em; }
+.dash-quick-stat-lbl { font-size: .66rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
+
+/* Solid gold fill (not just a tinted outline like the first pass) —
+   matches the sidebar's .nav-item-rbac treatment so the two shortcuts
+   to the same destination read as one consistent "this is RBAC"
+   language instead of two different button styles. */
+.dash-shortcut-btn {
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 11px 18px; border-radius: var(--r-pill);
+  background: linear-gradient(135deg, var(--gold) 0%, #D99A0E 100%);
+  border: none; color: #1E1A0E;
+  font-family: var(--font-ui); font-size: .72rem; font-weight: 800;
+  letter-spacing: .08em; text-transform: uppercase;
+  cursor: pointer; transition: all var(--t); white-space: nowrap;
+  box-shadow: 0 3px 10px rgba(232,163,23,.35);
+}
+.dash-shortcut-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+.dash-shortcut-btn:hover {
+  background: linear-gradient(135deg, #F2C14E 0%, var(--gold) 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(232,163,23,.45);
+}
+.dash-shortcut-badge {
+  font-size: .6rem; font-weight: 800; letter-spacing: .04em;
+  background: rgba(30,26,14,.16); color: #1E1A0E;
+  padding: 2px 7px; border-radius: var(--r-pill);
+}
+
+/* Notification list */
+.notif-list { display: flex; flex-direction: column; gap: 8px; }
+.notif-item {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 11px 13px; border-radius: var(--r-md);
+  border-left: 3px solid var(--notif-accent, var(--border));
+  background: var(--bg-soft);
+  transition: background var(--t), transform var(--t);
+}
+.notif-item:hover { background: var(--bg-tint); transform: translateX(2px); }
+.notif-item.red  { --notif-accent: var(--out);  }
+.notif-item.gold { --notif-accent: var(--gold); }
+.notif-item.ok   { --notif-accent: var(--ok);   }
+.notif-item.crit { --notif-accent: var(--crit); }
+.notif-dot { display: none; }
+.notif-text { flex: 1; min-width: 0; }
+.notif-text p { font-size: .83rem; color: var(--text); line-height: 1.4; }
+.notif-text small { font-size: .7rem; color: var(--text-muted); margin-top: 2px; display: block; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+
+/* Stock level bar */
+.stock-bars { display: flex; flex-direction: column; max-height: 266px; overflow-y: auto; }
+.stock-row {
+  display: grid;
+  grid-template-columns: 22px 1fr 160px 80px;
+  align-items: center; gap: 12px;
+  padding: 9px 12px; border-radius: 10px;
+  transition: background .15s;
+}
+.stock-row:hover { background: var(--bg-tint); }
+.stock-row + .stock-row { border-top: 1px solid var(--border); }
+.stock-row-rank {
+  font-size: .68rem; font-weight: 800; color: var(--text-muted);
+  text-align: right; opacity: .4; letter-spacing: .02em;
+}
+.stock-row-name { font-size: .82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; min-width: 0; }
+.stock-bar-wrap {
+  height: 10px;
+  background: var(--bg-tint); border-radius: var(--r-pill); overflow: hidden;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.08);
+}
+.stock-bar-fill { height: 100%; border-radius: var(--r-pill); transition: width .7s var(--ease); }
+.stock-row-right { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.stock-row-val { font-size: .82rem; font-weight: 800; }
+.stock-badge {
+  font-size: .6rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 99px; flex-shrink: 0;
+}
+.stock-badge.out  { background: rgba(239,68,68,.15);  color: #b63434; }
+.stock-badge.low  { background: rgba(239,68,68,.15);  color: #b63434; }
+.stock-badge.warn { background: rgba(234,179,8,.15);  color: #a16207; }
+
+/* =================================================================
+   7. DATA TABLE
+   ================================================================= */
+.table-wrap { overflow-x: auto; border-radius: var(--r-lg); border: 1px solid var(--border); }
+.table-wrap.scrollable { max-height: 280px; overflow-y: auto; }
+
+/* Bounded to viewport: table scrolls inside, page doesn't */
+.table-wrap.viewport-bound {
+  max-height: calc(100svh - 330px);
+  min-height: 240px;
+  overflow-y: auto;
+}
+.table-wrap.viewport-bound thead th,
+.table-wrap.scrollable thead th {
+  position: sticky; top: 0; z-index: 2;
+  box-shadow: 0 1px 0 var(--border);
+}
+.data-table {
+  width: 100%; border-collapse: collapse; font-size: .87rem;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+/* Mono utility — order IDs, batch codes, payment references */
+.mono, .mono-sm {
+  font-family: var(--font-mono);
+  font-size: .76rem;
+  font-weight: 600;
+  letter-spacing: .01em;
+  color: var(--text-muted);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+td.mono { white-space: nowrap; }
+.data-table thead th {
+  padding: 12px 14px; font-size: .68rem; font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted);
+  background: var(--bg-soft); border-bottom: 1px solid var(--border);
+  white-space: nowrap; text-align: left;
+}
+.data-table thead th:first-child { border-radius: var(--r-lg) 0 0 0; }
+.data-table thead th:last-child  { border-radius: 0 var(--r-lg) 0 0; }
+.data-table tbody tr { border-bottom: 1px solid var(--border); transition: background var(--t); }
+.data-table tbody tr:last-child { border-bottom: none; }
+.data-table tbody tr:hover { background: var(--bg-soft); }
+.data-table td { padding: 12px 14px; vertical-align: middle; color: var(--text); }
+.data-table td.muted { color: var(--text-muted); }
+.data-table .td-actions { display: flex; gap: 4px; align-items: center; }
+.td-name { font-weight: 600; }
+.td-email { color: var(--text-muted); font-size: .82rem; }
+.archived { opacity: .5; text-decoration: line-through; }
+
+/* Table toolbar */
+.table-toolbar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.search-box {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface); border: 1.5px solid var(--border-lift);
+  border-radius: var(--r-pill); padding: 7px 14px;
+  transition: border-color var(--t), box-shadow var(--t);
+  flex: 1; min-width: 200px; max-width: 360px;
+}
+.search-box:focus-within { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-dim); }
+.search-box svg { width: 16px; height: 16px; color: var(--text-muted); flex-shrink: 0; }
+.search-box input {
+  border: none; background: transparent; color: var(--text); font-family: inherit;
+  font-size: .88rem; outline: none; flex: 1; min-width: 0;
+}
+.search-box input::placeholder { color: var(--text-muted); }
+
+select.filter-select {
+  padding: 7px 32px 7px 14px; border-radius: var(--r-pill);
+  border: 1.5px solid var(--border-lift); background: var(--surface);
+  color: var(--text); font-family: inherit; font-size: .84rem; cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' fill='none' stroke='%236B5E48' stroke-width='2' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center; background-size: 15px;
+  transition: border-color var(--t);
+}
+select.filter-select:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-dim); }
+
+/* =================================================================
+   8. TABS
+   ================================================================= */
+.tabs { display: flex; gap: 2px; border-bottom: 2px solid var(--border); margin-bottom: 22px; }
+.tab-btn {
+  padding: 9px 18px; font-size: .82rem; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; font-family: var(--font-ui);
+  color: var(--text-muted); border: none; background: none; cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -2px;
+  transition: color var(--t), border-color var(--t);
+}
+.tab-btn:hover  { color: var(--text); }
+.tab-btn.active { color: var(--gold-ink); border-bottom-color: var(--gold-ink); }
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; animation: fadeIn .25s ease both; }
+
+/* =================================================================
+   9. MODAL
+   ================================================================= */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: var(--z-modal);
+  background: rgba(13,11,8,.72); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px; opacity: 0; pointer-events: none;
+  transition: opacity var(--t);
+}
+.modal-overlay.open { opacity: 1; pointer-events: auto; }
+.modal {
+  background: var(--surface); border-radius: var(--r-xl);
+  box-shadow: var(--shadow-ink); border: 1px solid var(--border-lift);
+  width: 100%; max-width: 520px; max-height: 90svh;
+  display: flex; flex-direction: column;
+  transform: translateY(20px) scale(.97);
+  transition: transform var(--t) var(--ease);
+}
+.modal-overlay.open .modal { transform: none; }
+.modal-lg { max-width: 720px; }
+
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 22px 26px 16px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.modal-header h3 { font-size: 1.2rem; }
+.modal-close { color: var(--text-muted); }
+.modal-close:hover { color: var(--text); }
+.modal-close svg { width: 20px; height: 20px; }
+
+/* ── Image lightbox (zoom view) ──
+   Sits ABOVE .modal-overlay, because the only thing that opens it so far is an
+   image inside a modal — same stack as the modal plus a step, still under the
+   toast layer so a failure message is never hidden behind it.
+
+   Motion is transition-only, so the global prefers-reduced-motion reset further
+   down this file flattens it without a second rule here. */
+.eb-lightbox {
+  position: fixed; inset: 0; z-index: calc(var(--z-modal) + 10);
+  background: rgba(13,11,8,.88); backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px; opacity: 0; pointer-events: none;
+  transition: opacity var(--t);
+}
+.eb-lightbox.open { opacity: 1; pointer-events: auto; }
+.eb-lightbox img {
+  max-width: 90vw; max-height: 90vh; object-fit: contain;
+  border-radius: var(--r-md); box-shadow: var(--shadow-ink);
+  transform: scale(.97);
+  transition: transform var(--t) var(--ease);
+}
+.eb-lightbox.open img { transform: none; }
+.eb-lightbox-close {
+  position: absolute; top: 18px; right: 20px;
+  width: 40px; height: 40px; border-radius: var(--r-sm);
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface); border: 1px solid var(--border-lift);
+  color: var(--text); cursor: pointer;
+  transition: background var(--t), color var(--t);
+}
+.eb-lightbox-close:hover { background: var(--bg-soft); color: var(--gold-ink); }
+.eb-lightbox-close svg { width: 20px; height: 20px; }
+
+/* ── Landing page live preview (near-fullscreen, in-app) ── */
+.preview-overlay {
+  position: fixed; inset: 0; z-index: var(--z-modal);
+  background: rgba(13,11,8,.72); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px; opacity: 0; pointer-events: none;
+  transition: opacity var(--t);
+}
+.preview-overlay.open { opacity: 1; pointer-events: auto; }
+.preview-panel {
+  width: 100%; height: 100%; max-width: 1400px;
+  background: var(--surface); border-radius: var(--r-xl);
+  box-shadow: var(--shadow-ink); border: 1px solid var(--border-lift);
+  display: flex; flex-direction: column; overflow: hidden;
+  transform: translateY(16px) scale(.98);
+  transition: transform var(--t) var(--ease);
+}
+.preview-overlay.open .preview-panel { transform: none; }
+.preview-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 18px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0; background: var(--bg-soft);
+}
+.preview-bar-label {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 700; font-size: .86rem; color: var(--text);
+}
+.preview-bar-label svg { width: 16px; height: 16px; color: var(--gold-ink); flex-shrink: 0; }
+.preview-bar-actions { display: flex; align-items: center; gap: 8px; }
+.preview-iframe { flex: 1; width: 100%; border: none; background: #fff; }
+
+.modal-body { padding: 22px 26px; overflow-y: auto; flex: 1; }
+.modal-footer {
+  display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap;
+  padding: 16px 26px 22px; border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* =================================================================
+   10. TOAST
+   ================================================================= */
+.toast-container {
+  position: fixed; bottom: 24px; right: 24px;
+  z-index: var(--z-toast); display: flex; flex-direction: column; gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 18px; border-radius: var(--r-lg);
+  background: var(--ink-card); color: var(--cream);
+  border: 1px solid var(--gold-line);
+  box-shadow: var(--shadow-lg);
+  font-size: .88rem; font-weight: 500;
+  pointer-events: auto; min-width: 240px; max-width: 360px;
+  animation: toastIn .28s var(--ease) both;
+}
+.toast.removing { animation: toastOut .28s var(--ease) forwards; }
+.toast svg { width: 17px; height: 17px; flex-shrink: 0; }
+.toast.t-ok   { border-color: rgba(24,169,87,.3); }
+.toast.t-ok svg   { color: var(--ok-ink); }
+.toast.t-err  { border-color: rgba(220,38,38,.3); }
+.toast.t-err svg  { color: var(--out-ink); }
+.toast.t-warn { border-color: rgba(232,163,23,.3); }
+.toast.t-warn svg { color: var(--gold-ink); }
+
+/* =================================================================
+   11. INVENTORY MODULE
+   ================================================================= */
+.inv-legend {
+  display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.inv-legend-item {
+  display: flex; align-items: center; gap: 6px; font-size: .78rem; font-weight: 600;
+}
+.inv-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+}
+.inv-ok   { background: var(--ok); }
+.inv-warn { background: var(--warn); }
+.inv-crit { background: var(--crit); }
+.inv-out  { background: var(--out); }
+
+/* =================================================================
+   12. SALES MODULE
+   ================================================================= */
+.date-range-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 20px; }
+.range-btn {
+  padding: 6px 14px; border-radius: var(--r-pill);
+  font-size: .76rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  font-family: var(--font-ui);
+  border: 1.5px solid var(--border-lift); background: transparent;
+  color: var(--text-muted); cursor: pointer; transition: all var(--t);
+}
+.range-btn:hover { border-color: var(--gold); color: var(--gold-ink); }
+.range-btn.active { background: var(--gold); color: #1E1A0E; border-color: var(--gold); }
+
+.sales-summary {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 14px;
+  margin-bottom: 22px;
+}
+.sales-sum-card {
+  background: var(--bg-soft); border-radius: var(--r-lg); padding: 16px 18px;
+  border: 1px solid var(--border);
+}
+.sales-sum-label { font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
+.sales-sum-val   { font-family: var(--font-number); font-size: 1.5rem; font-weight: 800; color: var(--text); font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.01em; }
+.sales-cmp-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: var(--r-pill); font-size: .72rem; font-weight: 700; margin-top: 5px; }
+.sales-cmp-badge.up   { background: rgba(24,169,87,.12);  color: var(--ok-ink);  }
+.sales-cmp-badge.down { background: rgba(220,38,38,.10);  color: var(--out-ink); }
+.sales-cmp-badge.flat { background: var(--bg-tint); color: var(--text-muted); }
+.sales-extra-controls {
+  display: flex; flex-direction: column; gap: 10px;
+  background: var(--bg-soft); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 14px 16px;
+  margin-bottom: 18px;
+}
+.custom-range-row { display: none; align-items: center; gap: 8px; flex-wrap: wrap; }
+.custom-range-row.show { display: flex; }
+.date-sep { font-size: .84rem; color: var(--text-muted); flex-shrink: 0; }
+.compare-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.compare-label { display: flex; align-items: center; gap: 6px; font-size: .84rem; font-weight: 600; color: var(--text-muted); cursor: pointer; white-space: nowrap; }
+.custom-range-row .control,
+.compare-row .control {
+  padding: 7px 12px; font-size: .84rem; font-family: inherit;
+  background: var(--surface); color: var(--text);
+  border: 1.5px solid var(--border-lift); border-radius: var(--r-md);
+  transition: border-color var(--t), box-shadow var(--t);
+}
+.custom-range-row .control:focus,
+.compare-row .control:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-dim); }
+
+/* =================================================================
+   13. PAYMENT SCHEME MODULE
+   ================================================================= */
+.penalty-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  background: var(--bg-soft); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 16px 20px; margin-bottom: 22px;
+}
+.penalty-row label { font-weight: 700; font-size: .84rem; }
+.penalty-input {
+  width: 90px; padding: 8px 12px; font-size: .92rem; font-family: inherit;
+  background: var(--surface); color: var(--text);
+  border: 1.5px solid var(--border-lift); border-radius: var(--r-md);
+  transition: border-color var(--t);
+}
+.penalty-input:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-dim); }
+
+.overdue-flag {
+  background: rgba(220,38,38,.06); border-left: 3px solid var(--out);
+}
+
+/* =================================================================
+   14. LANDING PAGE MAINTENANCE
+   ================================================================= */
+.lp-section {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 24px; margin-bottom: 16px;
+}
+.lp-section-title {
+  font-size: .78rem; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+}
+.lp-section-title svg { width: 15px; height: 15px; }
+
+.faq-entry {
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  padding: 14px; margin-bottom: 10px; position: relative;
+}
+.faq-remove {
+  position: absolute; top: 8px; right: 8px;
+  color: var(--text-muted); transition: color var(--t);
+}
+.faq-remove:hover { color: var(--out-ink); }
+.faq-remove svg { width: 15px; height: 15px; }
+
+/* =================================================================
+   15. PRODUCT MAINTENANCE
+   ================================================================= */
+.product-admin-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px;
+}
+.product-admin-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); overflow: hidden;
+  transition: box-shadow var(--t), transform var(--t);
+}
+.product-admin-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.product-admin-card.archived { opacity: .45; }
+
+.pac-thumb {
+  height: 120px; background: var(--bg-soft);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted);
+}
+.pac-thumb svg { width: 40px; height: 40px; opacity: .4; }
+/* A real photo fills the frame; without this it sits centred at its intrinsic
+   size inside the flex box and every card is a different-looking crop.
+   .product-admin-card carries overflow:hidden, so the top corners clip. */
+.pac-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* ---- Product image field (Add / Edit Product modal) ----
+   These five rules were inline style= attributes inside the template string in
+   productModalBody(). Moved out because an attribute cannot express :hover or
+   :focus-visible, and the field now has buttons and a zoom affordance that
+   need both. */
+.img-zone {
+  border: 2px dashed var(--border-lift); border-radius: var(--r-md);
+  padding: 20px; text-align: center; background: var(--bg-soft);
+  position: relative; overflow: hidden;
+  transition: border-color var(--t);
+}
+/* Only the EMPTY zone is a click target. With a photo in it the whole box used
+   to open the file picker, so clicking the photo to look at it replaced it. */
+.img-zone:not(.has-image) { cursor: pointer; }
+.img-zone:not(.has-image):hover { border-color: var(--gold-ink); }
+
+.img-zone .img-preview,
+.img-zone .img-actions   { display: none; }
+.img-zone.has-image .img-preview { display: block; }
+.img-zone.has-image .img-actions { display: flex; }
+.img-zone.has-image .img-placeholder { display: none; }
+
+.img-preview {
+  max-height: 120px; margin: 0 auto; border-radius: var(--r-md);
+  object-fit: cover;
+  /* It is a control now — it opens the zoom view — so it says so, takes focus
+     and shows the shared :focus-visible ring. */
+  cursor: zoom-in;
+  transition: box-shadow var(--t) var(--ease), transform var(--t) var(--ease);
+}
+.img-preview:hover { box-shadow: var(--shadow-md); transform: scale(1.02); }
+
+.img-placeholder {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  color: var(--text-muted);
+  /* Clicks belong to the zone, which owns the picker handler. */
+  pointer-events: none;
+}
+.img-placeholder svg { width: 32px; height: 32px; opacity: .4; }
+.img-ph-title { font-size: .8rem; font-weight: 600; }
+.img-ph-hint  { font-size: .72rem; }
+
+.img-actions { justify-content: center; gap: 8px; margin-top: 10px; }
+.img-status  { margin-top: 8px; font-size: .78rem; font-weight: 600; min-height: 1em; }
+.img-file    { display: none; }
+
+.pac-body { padding: 14px; }
+.pac-cat  { font-size: .65rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--out-ink); margin-bottom: 4px; }
+.pac-name { font-size: .95rem; font-weight: 700; margin-bottom: 4px; }
+.pac-price{ font-size: 1.1rem; font-weight: 700; color: var(--gold-ink); margin-bottom: 10px; }
+.pac-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* =================================================================
+   15b. BATCH TRACKING (sortable table, pagination, SKU/qty chips)
+   ================================================================= */
+/* Was --bg-tint/no color — every lot/batch/reference code sitewide
+   (Return Module, modal detail rows, receipts) rendered as a flat tan
+   chip with no visual weight, easy to miss next to actual content. */
+code {
+  font-family: var(--font-mono); font-size: .85em; font-weight: 700;
+  color: #9A6B0C; background: rgba(232,163,23,.16);
+  padding: 1px 6px; border-radius: 5px;
+}
+[data-theme="dark"] code { color: #7e6429; background: rgba(232,163,23,.16); }
+
+.sortable-table th[data-sort] {
+  cursor: pointer; user-select: none; white-space: nowrap;
+  transition: color var(--t);
+}
+.sortable-table th[data-sort]:hover { color: var(--text); }
+.sortable-table th[data-sort] .sort-arrow {
+  display: inline-flex; margin-left: 4px; opacity: .35; vertical-align: -2px;
+  transition: opacity var(--t), transform var(--t);
+}
+.sortable-table th[data-sort] .sort-arrow svg { width: 11px; height: 11px; }
+.sortable-table th[data-sort].sorted .sort-arrow { opacity: 1; color: var(--gold-ink); }
+.sortable-table th[data-sort].sorted.desc .sort-arrow { transform: rotate(180deg); }
+
+.sku-chip {
+  display: inline-block; font-family: var(--font-mono); font-size: .68rem;
+  font-weight: 700; letter-spacing: .01em; color: #9A6B0C;
+  background: rgba(232,163,23,.16); border: 1px solid rgba(232,163,23,.28);
+  padding: 1px 7px; border-radius: 6px; margin-left: 8px; vertical-align: 1px;
+}
+[data-theme="dark"] .sku-chip { color: #7e6429; background: rgba(232,163,23,.16); border-color: rgba(232,163,23,.30); }
+
+.qty-cell { display: flex; flex-direction: column; gap: 5px; min-width: 110px; }
+.qty-cell .qty-label { font-size: .78rem; font-weight: 700; font-variant-numeric: lining-nums tabular-nums; }
+.qty-cell .qty-label .of { color: var(--text-muted); font-weight: 500; }
+
+.pagination { display: flex; align-items: center; gap: 4px; }
+.pagination button {
+  min-width: 30px; height: 30px; padding: 0 8px; border-radius: var(--r-md);
+  border: 1.5px solid var(--border-lift); background: var(--surface); color: var(--text-muted);
+  font-size: .8rem; font-weight: 700; cursor: pointer; transition: all var(--t);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.pagination button:hover:not(:disabled) { border-color: var(--gold); color: var(--gold-ink); }
+.pagination button.active { background: var(--gold); border-color: var(--gold); color: #1E1A0E; }
+.pagination button:disabled { opacity: .4; cursor: not-allowed; }
+.pagination button svg { width: 15px; height: 15px; }
+
+/* =================================================================
+   16. SIDEBAR OVERLAY (mobile)
+   ================================================================= */
+.sidebar-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,.5); z-index: calc(var(--z-sidebar) - 1);
+}
+
+/* =================================================================
+   17. RESPONSIVE
+   ================================================================= */
+@media (max-width: 900px) {
+  /* Sidebar becomes an off-canvas drawer; the top bar spans the full
+     width of the inset, and content sits directly beneath it. */
+  .sidebar,
+  .admin-app.sidebar-collapsed .sidebar {
+    width: var(--sidebar-w);
+    /* Plain percentage, not a calc(): a var()-derived transform stalls the
+       transition, leaving the drawer stuck off-screen. -110% clears both
+       the panel and its inset. */
+    transform: translateX(-110%);
+  }
+  .sidebar.open {
+    transform: translateX(0);
+    box-shadow: var(--shadow-ink);
+  }
+  .sidebar-overlay.show { display: block; }
+  .app-topbar,
+  .admin-app.sidebar-collapsed .app-topbar { left: var(--shell-gap); }
+  .admin-main,
+  .admin-app.sidebar-collapsed .admin-main { margin-left: var(--shell-gap); }
+  .topbar-hamburger { display: flex; }
+  .content { padding: 14px 0 20px; }
+}
+
+@media (max-width: 600px) {
+  .stat-grid { grid-template-columns: 1fr 1fr; }
+  .modal { border-radius: var(--r-lg); }
+  .modal-header, .modal-body, .modal-footer { padding-inline: 18px; }
+}
+
+/* =================================================================
+   ROLES & PERMISSIONS — card grid
+   ================================================================= */
+.role-card-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 20px;
+}
+.role-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg, 16px); padding: 20px 22px;
+}
+.role-card-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  margin-bottom: 4px;
+}
+.role-card-head h3 { margin: 0; font-size: 1.05rem; font-weight: 800; }
+.role-slug-badge {
+  display: inline-block; margin-top: 6px; padding: 2px 9px;
+  border-radius: var(--r-pill); background: var(--gold-dim); color: var(--gold-ink);
+  font-family: monospace, monospace; font-size: .72rem; font-weight: 700;
+}
+.role-desc { font-size: .84rem; color: var(--text-muted); margin: 10px 0 16px; }
+.role-module-label {
+  font-size: .66rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--out-ink); border-bottom: 1px solid var(--border); padding-bottom: 6px; margin: 16px 0 8px;
+}
+.role-module-label:first-of-type { margin-top: 0; }
+.role-toggle-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 7px 0; font-size: .86rem; cursor: pointer;
+}
+.role-toggle-row.locked { cursor: default; color: var(--text-muted); }
+
+.switch { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
+.switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.switch input:disabled { cursor: default; }
+.switch-track {
+  position: absolute; inset: 0; background: var(--border-lift); border-radius: var(--r-pill);
+  transition: background var(--t);
+}
+.switch-thumb {
+  position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform var(--t);
+}
+.switch input:checked ~ .switch-track { background: var(--info, #3b82f6); }
+.switch input:checked ~ .switch-track .switch-thumb { transform: translateX(16px); }
+.switch input:disabled ~ .switch-track { opacity: .55; }
+
+.role-card-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);
+  font-size: .78rem; color: var(--text-muted);
+}
+.role-card-foot strong { color: var(--text); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+
+/* =================================================================
+   LANDING PAGE — hero images, best-seller picker, storage meter
+   ================================================================= */
+.lp-hint {
+  margin-left: auto; font-weight: 500; text-transform: none;
+  letter-spacing: 0; font-size: .72rem; color: var(--text-muted);
+}
+
+/* ---- hero image cards ---- */
+.lp-img-grid {
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+}
+.lp-img-card {
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  padding: 10px; background: var(--surface);
+}
+.lp-img-thumb {
+  position: relative; aspect-ratio: 4 / 3;
+  border-radius: var(--r-sm); overflow: hidden;
+  background: var(--surface-2);
+  display: flex; align-items: center; justify-content: center;
+}
+.lp-img-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lp-img-empty {
+  font-size: .72rem; color: var(--text-muted);
+  letter-spacing: .06em; text-transform: uppercase;
+}
+.lp-img-empty.sm { font-size: .8rem; }
+.lp-img-name {
+  margin: 8px 0 6px; font-weight: 700; font-size: .84rem;
+}
+.lp-img-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.lp-img-actions .btn { cursor: pointer; }
+.lp-img-clear { color: var(--out-ink); }
+
+/* ---- best sellers table ---- */
+.lp-bs-wrap { overflow-x: auto; }
+.lp-bs-table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+.lp-bs-table th {
+  text-align: left; padding: 8px 10px;
+  font-size: .68rem; font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--text-muted); border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.lp-bs-table td {
+  padding: 10px; border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.lp-bs-table .num { text-align: right; white-space: nowrap; }
+.lp-bs-table td small { display: block; color: var(--text-muted); font-size: .74rem; }
+.lp-bs-table .lp-rank { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.lp-bs-table tr.is-featured { background: rgba(232,163,23,.07); }
+.lp-bs-table input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
+.lp-cell-img { display: flex; align-items: center; gap: 6px; }
+.lp-cell-img img {
+  width: 40px; height: 40px; object-fit: cover;
+  border-radius: var(--r-sm); display: block;
+}
+
+/* ---- storage meter ---- */
+.lp-storage { margin-top: 14px; }
+.lp-storage small { color: var(--text-muted); font-size: .74rem; }
+.lp-storage-bar {
+  height: 6px; border-radius: 999px; overflow: hidden;
+  background: var(--surface-2); margin-bottom: 6px;
+}
+.lp-storage-bar span {
+  display: block; height: 100%;
+  background: var(--gold); transition: width var(--t) var(--ease);
+}
+.lp-storage-bar span.warn { background: var(--red); }
+
+
+
+
+/* White labels on coloured fills: darken the FILL, never the label.
+   Measured white-on-fill ratios were 3.06 / 3.81 in dark mode. */
+[data-theme="dark"] .btn-ok  { background: #138746; }
+[data-theme="dark"] .btn-red { background: #da3a3a; }
+[data-theme="dark"] .return-step.done .step-num { background: #138746; }
+
+/* ============================================================
+   LIST STATES — loading / empty / error
+   ------------------------------------------------------------
+   Rendered by EbUI.loadingRow / emptyRow / errorRow as a single
+   full-width row, so a list can show what it is doing without any
+   per-table layout special-casing. Before these existed a loading
+   table was simply an empty one, which is indistinguishable from
+   "there is no data" — and that ambiguity is exactly what makes a
+   silent failure look like a working screen.
+   ============================================================ */
+.state-cell {
+  padding: 2.25rem 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: .9rem;
+  line-height: 1.7;
+}
+.state-cell strong { color: var(--text); font-weight: 600; }
+.state-error .state-cell strong { color: var(--crit, #c43d2a); }
+.state-cell .btn-sm { margin-top: .6rem; padding: .35rem .8rem; font-size: .8rem; }
+
+/* Spinner. Respects prefers-reduced-motion — a permanently spinning
+   element is a genuine problem for some readers, so it falls back to a
+   static ring rather than simply stopping and looking broken. */
+.spinner {
+  display: inline-block;
+  width: 1em; height: 1em;
+  vertical-align: -.125em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: eb-spin .7s linear infinite;
+}
+@keyframes eb-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; opacity: .55; border-right-color: currentColor; }
+}
+
+/* Pagination gap marker for windowed page lists (1 … 7 8 9 … 42). */
+.pg-gap {
+  padding: 0 .35rem;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+/* Field-level validation, driven by EbUI.showFieldErrors from the API's
+   422 `fields` map. */
+.has-error { border-color: var(--crit, #c43d2a) !important; }

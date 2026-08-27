@@ -1,0 +1,146 @@
+/* =================================================================
+   ELISHA BAY — Inventory Management (Super Admin portal)
+   Extends: admin.css (shared tokens + components)
+   Only inventory-management-specific additions here.
+   ================================================================= */
+
+/* =================================================================
+   EXPIRY STATUS BADGES / INDICATORS
+   ================================================================= */
+.expiry-ok   { background: rgba(24,169,87,.12);  color: var(--ok-ink);   }
+.expiry-warn { background: rgba(232,163,23,.14); color: #b07a08;     }
+.expiry-crit { background: rgba(234,88,12,.14);  color: var(--crit); }
+.expiry-gone { background: rgba(220,38,38,.12);  color: var(--out-ink);  }
+
+[data-theme="dark"] .expiry-warn { color: var(--gold-ink); }
+
+/* Countdown chip */
+.days-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: var(--r-pill);
+  font-size: .72rem; font-weight: 700; letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+/* =================================================================
+   EXPIRY PROGRESS BAR
+   ================================================================= */
+.expiry-bar-wrap {
+  width: 100%; height: 5px; background: var(--bg-tint);
+  border-radius: var(--r-pill); overflow: hidden;
+}
+.expiry-bar-fill {
+  height: 100%; border-radius: var(--r-pill);
+  transition: width .5s var(--ease);
+}
+
+/* =================================================================
+   BULK REPLENISH TABLE
+   ================================================================= */
+.replenish-table {
+  width: 100%; border-collapse: collapse; font-size: .88rem;
+}
+.replenish-table thead th {
+  padding: 10px 12px; font-size: .66rem; font-weight: 700;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted);
+  background: var(--bg-soft); border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.replenish-table tbody tr { border-bottom: 1px solid var(--border); }
+.replenish-table tbody tr:last-child { border-bottom: none; }
+.replenish-table td { padding: 10px 12px; vertical-align: middle; }
+.replenish-table .qty-input {
+  width: 80px; padding: 6px 10px; font-size: .88rem; font-family: inherit;
+  background: var(--surface); color: var(--text);
+  border: 1.5px solid var(--border-lift); border-radius: var(--r-md);
+  transition: border-color var(--t); text-align: center;
+}
+.replenish-table .qty-input:focus {
+  outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-dim);
+}
+.replenish-table .check-col { width: 36px; }
+.replenish-table input[type="checkbox"] {
+  width: 17px; height: 17px; accent-color: var(--gold-ink); cursor: pointer;
+}
+
+/* =================================================================
+   ADJUSTMENT FORM
+   ================================================================= */
+.adj-type-row {
+  display: flex; gap: 10px; margin-bottom: 4px; flex-wrap: wrap;
+}
+.adj-type-btn {
+  flex: 1; padding: 10px 14px; border-radius: var(--r-md);
+  border: 2px solid var(--border-lift); background: transparent;
+  color: var(--text-muted); font-family: var(--font-ui);
+  font-size: .76rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  cursor: pointer; transition: all var(--t); text-align: center;
+}
+.adj-type-btn:hover { border-color: var(--gold); color: var(--text); }
+.adj-type-btn.active.disposal { border-color: var(--out); background: rgba(220,38,38,.07); color: var(--out-ink); }
+.adj-type-btn.active.return   { border-color: var(--ok);  background: rgba(24,169,87,.07);  color: var(--ok-ink); }
+
+/* =================================================================
+   EXPIRY ALERT LIST
+   ================================================================= */
+.expiry-alert-list { display: flex; flex-direction: column; gap: 10px; }
+.expiry-alert-item {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 14px; border-radius: var(--r-md);
+  background: var(--bg-soft); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent, var(--warn));
+  transition: background var(--t);
+}
+.expiry-alert-item:hover { background: var(--bg-tint); }
+.expiry-alert-item.crit  { --accent: var(--out); }
+.expiry-alert-item.warn  { --accent: var(--warn); }
+
+.ea-icon {
+  width: 34px; height: 34px; border-radius: var(--r-md); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-tint); color: var(--accent, var(--warn));
+}
+.ea-icon svg { width: 16px; height: 16px; }
+.ea-info { flex: 1; min-width: 0; }
+.ea-name { font-size: .84rem; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ea-batch { font-size: .72rem; color: var(--text-muted); margin: 2px 0; }
+.ea-days  { font-size: .76rem; font-weight: 700; color: var(--accent, var(--warn)); }
+
+/* =================================================================
+   ADJUSTMENTS LOG
+   ================================================================= */
+.adj-type-tag {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: var(--r-pill);
+  font-size: .7rem; font-weight: 700; text-transform: uppercase;
+}
+.adj-disposal { background: rgba(220,38,38,.1);  color: var(--out-ink); }
+.adj-return   { background: rgba(24,169,87,.1);  color: var(--ok-ink);  }
+.adj-restock  { background: rgba(59,130,246,.1); color: var(--info);}
+
+/* =================================================================
+   MODULE TAB VARIANTS
+   ================================================================= */
+.inv-action-tabs {
+  display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 22px;
+}
+.inv-action-btn {
+  display: flex; align-items: center; gap: 7px;
+  padding: 9px 18px; border-radius: var(--r-pill);
+  font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  font-family: var(--font-ui);
+  border: 1.5px solid var(--border-lift); background: transparent;
+  color: var(--text-muted); cursor: pointer; transition: all var(--t);
+}
+.inv-action-btn svg { width: 15px; height: 15px; }
+.inv-action-btn:hover  { border-color: var(--gold); color: var(--text); }
+.inv-action-btn.active { background: var(--gold); color: #1E1A0E; border-color: var(--gold); }
+
+/* =================================================================
+   RESPONSIVE
+   ================================================================= */
+@media (max-width: 600px) {
+  .replenish-table .qty-input { width: 60px; }
+  .inv-action-tabs { gap: 4px; }
+  .inv-action-btn  { padding: 7px 12px; font-size: .72rem; }
+}

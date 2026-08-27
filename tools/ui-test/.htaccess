@@ -1,0 +1,9 @@
+# Local machine only.
+#
+# This page carries the seeded test-account passwords and drives the portal as
+# each role, so it must never be reachable from another host. The parent
+# .htaccess exempts this folder from the blanket /tools/ 404 precisely so it can
+# be opened in a browser; this file is what keeps that exemption safe.
+#
+# Development tooling. Do not ship it.
+Require local

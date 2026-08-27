@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>roles module</title>
+  <!-- ============================================================
+       MODULE PARTIAL — section id="mod-roles".
+
+       Wrapped as a complete HTML document ON PURPOSE.
+
+       Dev servers inject a live-reload script into every .html file
+       they serve, placed just before the closing body tag. A bare
+       fragment has no closing body tag, so VS Code Live Server falls
+       back to injecting before the first closing svg tag instead —
+       which lands inside the Elisha Bay logo mark, corrupts the
+       parse, and leaves the portal showing "Portal failed to load".
+
+       With a real body element the injection lands harmlessly at the
+       end, and Core/module-loader.js strips every script element
+       before using this markup.
+
+       Keep the html/head/body wrapper. Also avoid writing a literal
+       closing body, head or svg tag anywhere in a comment in these
+       files — Live Server matches raw text and will inject there,
+       breaking the comment and everything after it.
+       ============================================================ -->
+  </head>
+  <body>
+<!-- ── ROLES & PERMISSIONS ── -->
+<section
+  id="mod-roles"
+  class="mod-panel"
+  aria-label="Roles and Permissions"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">System</div>
+      <h2>Role &amp; Permission Matrix</h2>
+      <p class="field-hint" style="margin-top: 6px">
+        Granular Role-Based Access Control (RBAC). Check or uncheck
+        capabilities for each role and save instantly.
+      </p>
+    </div>
+    <div class="actions">
+      <button class="btn btn-red" id="add-role-btn">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        Create New Role
+      </button>
+    </div>
+  </div>
+  <div id="roles-matrix" class="role-card-grid"></div>
+</section>
+  </body>
+</html>

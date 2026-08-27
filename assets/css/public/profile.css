@@ -1,0 +1,931 @@
+/* =================================================================
+   MyProfile shared styles — layered on ../styles.css
+   ================================================================= */
+
+/* Force nav always dark — overrides JS scroll handler */
+.nav::before { opacity: .96 !important; }
+.nav { box-shadow: 0 1px 0 rgba(232,163,23,.1) !important; }
+
+.mp-page {
+  min-height: 100vh;
+  background: var(--bg);
+  padding-top: calc(var(--nav-h) + clamp(28px,3.5vw,46px));
+  padding-bottom: clamp(60px,8vw,100px);
+}
+
+/* The account area gets its own width, wider than the marketing pages.
+   -------------------------------------------------------------------
+   .container caps at --maxw (1200px), which is right for a landing page —
+   prose has a comfortable measure and a hero does not want to be 1800px wide.
+   It is wrong for this: an account area is a DATA surface, and at 1200px on a
+   1920px screen it left roughly 360px of empty parchment down each side while
+   the order-tracking panel wrapped its own step labels.
+
+   Capped rather than full-bleed. Somewhere past ~1600px the sidebar and the
+   right-hand panel stop being scannable together, and a dashboard the eye has
+   to travel across is not more usable for being bigger. */
+.mp-page > .container {
+  max-width: 1560px;
+  padding-inline: clamp(18px,3vw,40px);
+}
+
+/* ── Page header ── */
+.mp-header {
+  margin-bottom: clamp(22px,2.6vw,32px);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: clamp(16px,2vw,24px);
+}
+.mp-breadcrumb {
+  display: flex; align-items: center; gap: 8px;
+  font-family: "Montserrat", sans-serif;
+  font-size: .66rem; font-weight: 600;
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 14px;
+}
+.mp-breadcrumb a { color: var(--text-muted); transition: color var(--t); }
+.mp-breadcrumb a:hover { color: var(--gold); }
+.mp-breadcrumb .sep { opacity: .4; }
+/* Down from clamp(2rem, 4.5vw, 3.4rem). At 3.4rem the title was taller than
+   the three stat tiles beside it were deep, and a page heading that outweighs
+   the data it introduces is decoration. It still reads as the page's title —
+   it is the only serif on the screen. */
+.mp-title {
+  font-family: "Playfair Display SC","Cormorant Garamond",Georgia,serif;
+  font-size: clamp(1.75rem,2.6vw,2.5rem);
+  font-weight: 700; color: var(--text);
+  letter-spacing: -.015em; line-height: 1.06; margin: 0;
+}
+.mp-title .accent { color: var(--gold); }
+.mp-sub {
+  font-size: .88rem; color: var(--text-muted);
+  margin-top: 6px; line-height: 1.55;
+}
+.mp-breadcrumb { margin-bottom: 10px; }
+
+/* ── Tab strip ── */
+.mp-tabs {
+  display: flex; gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 4px; width: fit-content;
+  margin-bottom: clamp(24px,3.5vw,40px);
+}
+.mp-tab {
+  padding: 9px 20px;
+  font-family: "Montserrat", sans-serif;
+  font-size: .75rem; font-weight: 600;
+  letter-spacing: .08em; text-transform: uppercase;
+  border: none; background: none; cursor: pointer;
+  border-radius: calc(var(--r-lg) - 2px);
+  color: var(--text-muted); transition: all var(--t) var(--ease);
+}
+.mp-tab:hover { color: var(--text); }
+.mp-tab.active {
+  background: var(--gold); color: #1e1a0e;
+  box-shadow: 0 2px 8px rgba(232,163,23,.3);
+}
+
+/* ── Order cards ── */
+.orders-list { display: flex; flex-direction: column; gap: 16px; }
+.order-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--t) var(--ease);
+}
+.order-card:hover { box-shadow: var(--shadow-md); }
+
+.order-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap; gap: 10px;
+}
+.order-id {
+  font-family: "Montserrat", sans-serif;
+  font-size: .68rem; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.order-id strong { color: var(--gold); }
+.order-date {
+  font-size: .78rem; color: var(--text-muted);
+}
+.order-status {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 12px; border-radius: var(--r-pill);
+  font-family: "Montserrat", sans-serif;
+  font-size: .64rem; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase;
+}
+/* Driven off the status tokens, so the fill is derived from the same colour as
+   the text rather than being a second hardcoded rgba() that has to be kept in
+   step by hand — which is how .status-pending ended up with a gold background
+   and a colour that was not the gold token. */
+.status-pending    { --st: var(--st-pending); }
+.status-accepted   { --st: var(--st-accepted); }
+.status-shipping   { --st: var(--st-shipping); }
+.status-delivered  { --st: var(--st-delivered); }
+.status-completed  { --st: var(--st-completed); }
+.status-on-hold    { --st: var(--st-hold); }
+.status-cancelled  { --st: var(--st-cancelled); }
+.order-status[class*="status-"] {
+  background: color-mix(in srgb, var(--st) 13%, transparent);
+  color: var(--st);
+  border: 1px solid color-mix(in srgb, var(--st) 26%, transparent);
+}
+
+.order-card-body { padding: 16px 20px; }
+.order-items { display: flex; flex-direction: column; gap: 10px; }
+.order-item {
+  display: flex; align-items: center; gap: 14px;
+}
+.order-item-img {
+  width: 52px; height: 52px; border-radius: var(--r-md);
+  background: var(--bg-tint);
+  border: 1px solid var(--border);
+  object-fit: cover; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .72rem; color: var(--text-muted); overflow: hidden;
+}
+.order-item-info { flex: 1; }
+.order-item-name {
+  font-weight: 600; font-size: .9rem; color: var(--text);
+  margin-bottom: 2px;
+}
+.order-item-qty { font-size: .8rem; color: var(--text-muted); }
+.order-item-price {
+  font-weight: 700; color: var(--text);
+  font-family: "Montserrat", sans-serif;
+  font-size: .88rem;
+}
+
+.order-card-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px;
+  background: var(--bg-soft);
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap; gap: 10px;
+}
+.order-total-label { font-size: .8rem; color: var(--text-muted); }
+.order-total-val {
+  font-family: "Montserrat", sans-serif;
+  font-weight: 700; font-size: 1rem;
+  color: var(--text);
+}
+.order-actions { display: flex; gap: 8px; }
+.btn-order-action {
+  padding: 7px 16px; border-radius: var(--r-pill);
+  font-family: "Montserrat", sans-serif;
+  font-size: .7rem; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase;
+  cursor: pointer; border: 1.5px solid var(--border);
+  background: none; color: var(--text);
+  transition: all var(--t) var(--ease);
+}
+.btn-order-action:hover { border-color: var(--gold); color: var(--gold); }
+.btn-order-action.primary {
+  background: var(--gold); border-color: var(--gold);
+  color: #1e1a0e;
+}
+.btn-order-action.primary:hover { opacity: .88; }
+.btn-order-action.danger { color: var(--red); border-color: var(--red); }
+.btn-order-action.danger:hover { background: rgba(214,40,40,.08); }
+
+/* Empty state */
+.orders-empty {
+  text-align: center; padding: clamp(48px,8vw,80px) 24px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+}
+.orders-empty svg { opacity: .25; margin-bottom: 16px; }
+.orders-empty h3 { font-size: 1.1rem; color: var(--text); margin-bottom: 8px; }
+.orders-empty p { font-size: .88rem; color: var(--text-muted); max-width: 30ch; margin: 0 auto 20px; }
+
+/* ── Auth guard overlay ── */
+.mp-guard {
+  text-align: center;
+  padding: clamp(64px,12vw,120px) 24px;
+}
+.mp-guard svg { opacity: .2; margin-bottom: 16px; }
+.mp-guard h2 {
+  font-family: "Playfair Display SC",serif;
+  font-size: clamp(1.6rem,3.5vw,2.4rem);
+  color: var(--text); margin-bottom: 10px;
+}
+.mp-guard p { color: var(--text-muted); font-size: .9rem; margin-bottom: 24px; }
+
+/* ── Profile form ── */
+.profile-grid {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: clamp(24px,4vw,48px);
+  align-items: start;
+}
+.profile-sidebar {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: 32px 24px;
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center;
+  position: sticky; top: calc(var(--nav-h) + 20px);
+}
+.profile-avatar {
+  width: 88px; height: 88px; border-radius: 50%;
+  background: var(--gold);
+  display: flex; align-items: center; justify-content: center;
+  font-family: "Playfair Display SC",serif;
+  font-size: 1.8rem; font-weight: 700;
+  color: #1e1a0e; margin-bottom: 16px;
+  box-shadow: 0 4px 16px rgba(232,163,23,.3);
+}
+.profile-name {
+  font-family: "Playfair Display SC",serif;
+  font-size: 1.05rem; font-weight: 700; color: var(--text);
+  margin-bottom: 4px;
+}
+.profile-email { font-size: .8rem; color: var(--text-muted); }
+.profile-tag {
+  display: inline-block; margin-top: 12px;
+  padding: 4px 12px; border-radius: var(--r-pill);
+  background: rgba(232,163,23,.12); color: var(--gold);
+  font-family: "Montserrat",sans-serif;
+  font-size: .64rem; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase;
+}
+.profile-sidebar-links {
+  width: 100%; margin-top: 24px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.profile-sidebar-link {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: var(--r-md);
+  font-size: .88rem; color: var(--text-muted);
+  cursor: pointer; border: none; background: none;
+  transition: all var(--t) var(--ease); text-align: left; width: 100%;
+}
+.profile-sidebar-link:hover { background: var(--bg-tint); color: var(--text); }
+.profile-sidebar-link.active { background: color-mix(in srgb,var(--gold) 10%,var(--bg)); color: var(--gold); font-weight: 600; }
+.profile-sidebar-link svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+.profile-main {
+  display: flex; flex-direction: column; gap: 20px;
+}
+.profile-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: clamp(20px,3vw,32px);
+  box-shadow: var(--shadow-sm);
+}
+.profile-card-title {
+  font-family: "Montserrat",sans-serif;
+  font-size: .7rem; font-weight: 700;
+  letter-spacing: .15em; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 20px;
+  padding-bottom: 14px; border-bottom: 1px solid var(--border);
+}
+.profile-form-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+}
+.profile-form-grid .field.full { grid-column: 1/-1; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label {
+  font-family: "Montserrat",sans-serif;
+  font-size: .68rem; font-weight: 600;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.field .control {
+  padding: 11px 14px;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-md);
+  font-family: "Karla",sans-serif;
+  font-size: .92rem; color: var(--text);
+  transition: border-color var(--t);
+  outline: none;
+}
+.field .control:focus { border-color: var(--gold); }
+.field .control:disabled {
+  opacity: .5; cursor: not-allowed;
+  background: var(--bg-tint);
+}
+.field .control.error { border-color: var(--red); }
+.field-hint { font-size: .76rem; color: var(--text-muted); }
+.field-error { font-size: .76rem; color: var(--red); min-height: 18px; }
+
+.profile-form-actions {
+  display: flex; gap: 10px; justify-content: flex-end;
+  margin-top: 20px; padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* Password section */
+.pw-row { display: flex; align-items: center; position: relative; }
+.pw-row .control { padding-right: 44px; width: 100%; }
+.pw-eye {
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); padding: 4px;
+  display: flex; align-items: center;
+}
+.pw-eye:hover { color: var(--text); }
+.pw-eye svg { width: 16px; height: 16px; }
+
+/* Danger zone */
+.danger-zone {
+  border: 1.5px solid rgba(214,40,40,.3);
+  border-radius: var(--r-xl);
+  padding: clamp(16px,3vw,28px);
+  background: rgba(214,40,40,.03);
+}
+.danger-zone .profile-card-title { color: var(--red); border-color: rgba(214,40,40,.2); }
+
+/* ── Account layout (sidebar + main) ── */
+.mp-account-layout {
+  display: grid;
+  grid-template-columns: 256px minmax(0, 1fr);
+  gap: clamp(20px,2.2vw,32px);
+  align-items: start;
+}
+
+/* A RAIL, not a floating card.
+   ---------------------------
+   It was a white card that wrapped its own content, so it stopped about a
+   third of the way down and left a tall empty column beside the panels — the
+   thing the layout sketch bracketed. Three changes fix that:
+
+     - a min-height, so it reads as a column rather than a stub;
+     - a footer block pushed down with margin-top:auto (see profile-shell.js),
+       which gives the bottom of the rail a reason to be there;
+     - its own SURFACE. White-on-cream made the rail and the panels the same
+       material, so the eye had no edge to separate navigation from content.
+       It is now the tinted surface with a gold hairline down its inner edge.
+
+   Still sticky. A dashboard is scrolled, and navigation that scrolls away is
+   navigation you have to go back for. */
+.mp-account-sidebar {
+  background: linear-gradient(180deg, var(--surface-2), var(--bg-soft));
+  border: 1px solid var(--border);
+  border-right: 2px solid var(--gold-line);
+  border-radius: var(--r-xl);
+  padding: 26px 18px 20px;
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center;
+  position: sticky; top: calc(var(--nav-h) + 16px);
+  min-height: min(600px, calc(100vh - var(--nav-h) - 48px));
+  box-shadow: var(--shadow-sm);
+}
+.mpas-avatar {
+  width: 78px; height: 78px; border-radius: 50%;
+  background: linear-gradient(145deg, var(--gold-soft), var(--gold));
+  display: flex; align-items: center; justify-content: center;
+  font-family: "Playfair Display SC",serif;
+  font-size: 1.7rem; font-weight: 700;
+  color: #1e1a0e; margin-bottom: 13px;
+  /* Ring rather than a drop shadow — the rail is tinted now, and a soft glow
+     on a warm ground just muddies the edge. */
+  box-shadow: 0 0 0 4px var(--surface), 0 0 0 5px var(--gold-line);
+  flex-shrink: 0;
+}
+.mpas-name {
+  font-family: "Playfair Display SC",serif;
+  font-size: 1.02rem; font-weight: 700; color: var(--text);
+  line-height: 1.2; margin-bottom: 6px;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mpas-tag {
+  display: inline-block;
+  padding: 4px 11px; border-radius: var(--r-pill);
+  background: var(--bg-tint); color: var(--text-muted);
+  border: 1px solid var(--border);
+  font-family: "Montserrat",sans-serif;
+  font-size: .58rem; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  margin-bottom: 22px;
+}
+.mpas-nav {
+  width: 100%;
+  display: flex; flex-direction: column; gap: 3px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.mpas-link {
+  position: relative;
+  display: flex; align-items: center; gap: 11px;
+  padding: 11px 14px; border-radius: var(--r-md);
+  font-family: "Montserrat",sans-serif;
+  font-size: .78rem; font-weight: 600;
+  letter-spacing: .03em;
+  color: var(--text-muted);
+  text-decoration: none;
+  cursor: pointer; border: none; background: none; width: 100%;
+  text-align: left;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease);
+}
+.mpas-link svg { width: 17px; height: 17px; flex-shrink: 0; }
+.mpas-link:hover { background: var(--surface); color: var(--text); }
+/* The active page gets a filled chip AND a bar on its leading edge. Colour
+   alone was doing the work, which is a poor signal on a page where gold also
+   means "this is a link" and "this figure is money". */
+.mpas-link.active {
+  background: var(--surface);
+  color: var(--gold);
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+.mpas-link.active::before {
+  content: ""; position: absolute;
+  left: 0; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 60%;
+  background: var(--gold); border-radius: 0 3px 3px 0;
+}
+.mpas-signout { color: var(--red) !important; margin-top: 4px; }
+.mpas-signout:hover { background: color-mix(in srgb, var(--red) 9%, transparent) !important; }
+
+/* Pushed to the bottom of the rail. Its job is partly to be useful and partly
+   to give the column an end — a sticky rail that stops in mid-air reads as
+   something that failed to load. */
+.mpas-foot {
+  margin-top: auto; padding-top: 20px; width: 100%;
+  border-top: 1px solid var(--border);
+  text-align: left;
+}
+.mpas-foot-label {
+  font-family: "Montserrat",sans-serif;
+  font-size: .58rem; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--text-muted); display: block; margin-bottom: 6px;
+}
+.mpas-foot-body { font-size: .76rem; line-height: 1.55; color: var(--text-muted); }
+.mpas-foot-body a { color: var(--gold); font-weight: 600; }
+.mpas-foot-body a:hover { text-decoration: underline; }
+
+.mp-account-main { min-width: 0; }
+
+/* ── Responsive ── */
+@media (max-width: 860px) {
+  .mp-account-layout { grid-template-columns: 1fr; }
+  .mp-account-sidebar {
+    flex-direction: row; align-items: center; text-align: left;
+    gap: 16px; position: static;
+    /* The rail becomes a horizontal strip here, and a 600px min-height on a
+       strip is 500px of empty parchment above the content. It is a column
+       rule; it belongs to the column layout only. */
+    min-height: 0;
+    padding: 16px 18px;
+    border-right-width: 1px; border-right-color: var(--border);
+    border-top: 2px solid var(--gold-line);
+  }
+  .mpas-avatar { margin-bottom: 0; width: 54px; height: 54px; font-size: 1.2rem; box-shadow: 0 0 0 3px var(--surface); }
+  .mpas-name { margin-bottom: 2px; }
+  .mpas-tag { margin-bottom: 0; }
+  .mpas-nav { flex-direction: row; flex-wrap: wrap; border-top: none; border-left: 1px solid var(--border); padding-top: 0; padding-left: 16px; margin-left: auto; }
+  .mpas-link.active::before { display: none; }
+  /* Nothing to anchor to the bottom of a strip. */
+  .mpas-foot { display: none; }
+}
+@media (max-width: 600px) {
+  .profile-form-grid { grid-template-columns: 1fr; }
+  .profile-form-grid .field.full { grid-column: auto; }
+  .mp-tabs { flex-wrap: wrap; width: 100%; }
+  .mp-tab { flex: 1; text-align: center; padding: 9px 10px; font-size: .66rem; }
+  .order-card-head { flex-direction: column; align-items: flex-start; }
+}
+
+
+/* A short server-supplied note on an order card — a cancellation reason, or a
+   courier tracking number. Set apart from the item list because it is about the
+   order rather than about what was bought. */
+.order-note {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--gold, #c9a227);
+  background: rgba(201, 162, 39, .07);
+  border-radius: 0 6px 6px 0;
+  font-size: .86rem;
+  line-height: 1.5;
+}
+.order-note small { color: var(--text-muted); display: inline-block; margin-top: 3px; }
+.order-note .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .02em; }
+
+/* ============================================================
+   PAYMENT SCHEMES (my-payments.html)
+   ------------------------------------------------------------
+   The retailer's view of what they owe. Deliberately uses the same
+   status-pill vocabulary as the order cards above — a customer who has
+   learned what an amber pill means on My Orders should not have to
+   learn it again here.
+   ============================================================ */
+.pay-banner {
+  padding: 14px 16px;
+  border-radius: 10px;
+  margin-bottom: 18px;
+  font-size: .9rem;
+  line-height: 1.55;
+  border-left: 4px solid;
+}
+.pay-banner.overdue { background: rgba(196, 61, 42, .08);  border-color: #c43d2a; }
+.pay-banner.soon    { background: rgba(201, 162, 39, .10); border-color: #c9a227; }
+
+.pay-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.pay-stat {
+  padding: 16px 18px;
+  border: 1px solid var(--border, #e6e1d8);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.pay-stat-label { font-size: .74rem; text-transform: uppercase; letter-spacing: .09em; color: var(--text-muted); font-weight: 700; }
+.pay-stat-val   { font-size: 1.6rem; font-weight: 700; font-variant-numeric: lining-nums tabular-nums; }
+.pay-stat-val.is-overdue { color: #c43d2a; }
+.pay-stat small { font-size: .76rem; color: var(--text-muted); }
+
+/* Wide on a phone: scrolls inside its own box rather than pushing the page
+   sideways. */
+.table-wrap { overflow-x: auto; }
+.pay-table { width: 100%; border-collapse: collapse; font-size: .9rem; min-width: 640px; }
+.pay-table th {
+  text-align: left; padding: 10px 12px;
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--text-muted); border-bottom: 1px solid var(--border, #e6e1d8);
+}
+.pay-table td { padding: 12px; border-bottom: 1px solid var(--border, #e6e1d8); vertical-align: top; }
+.pay-table tr.state-paid td { opacity: .62; }
+.pay-table .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
+.pay-table .is-overdue { color: #c43d2a; font-weight: 600; }
+.pay-days { display: block; font-size: .74rem; color: var(--text-muted); margin-top: 2px; }
+
+.order-status.status-overdue   { background: rgba(196, 61, 42, .12);  color: #c43d2a; }
+.order-status.status-due-soon  { background: rgba(201, 162, 39, .14); color: #8a6f1a; }
+.order-status.status-paid      { background: rgba(63, 143, 79, .12);  color: #3f8f4f; }
+
+
+/* =================================================================
+   DASHBOARD
+   -----------------------------------------------------------------
+   The account area's landing page. Four stat tiles across the top, then a
+   two-column grid: tracking and recent orders on the left, payment history
+   running full height on the right.
+
+   The right column is deliberately TALL rather than split into two short
+   cards. A payment history is a list that wants length, and the wireframe's
+   proportions say the same thing — it spans both rows beside the two panels
+   on the left.
+   ================================================================= */
+
+/* ── Stat tiles ── */
+.db-stats {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+/* ONE TILE COMPONENT, ONE ROW, BOTH ACCOUNT TYPES.
+   ------------------------------------------------
+   The retailer's row used to be two full-height tiles beside a stacked pair —
+   an honest reading of the layout sketch, and wrong once the two dashboards
+   were seen side by side. It made the same component 208px tall on one account
+   and 104px on the other, content centred in one and top-aligned in the other,
+   so "Active Orders" looked like a different control depending on who was
+   signed in.
+
+   Same tile, same height, same internal alignment. The only difference is how
+   many: a retailer has four things worth knowing, an ordinary customer three. */
+.db-stats-plain  { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.db-stats-credit { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+/* A TILE'S COLOUR IS ITS IDENTITY, NOT ITS CURRENT VALUE.
+   -------------------------------------------------------
+   The tone used to be derived from the number in the tile: a pending count of
+   zero went grey, one went amber; an overdue count of zero went GREEN. Two
+   things were wrong with that.
+
+   Green for "Overdue" is a lie of association. The tile is the overdue tile
+   whatever it currently says, and a reader who has learned that red means
+   money-past-due has to unlearn it every time the figure hits zero.
+
+   And it made the two dashboards look unrelated. The same Pending Orders tile
+   was cream on an account with one waiting and grey on an account with none,
+   so nothing in the row could be recognised by colour — which is the only job
+   colour has here.
+
+   Each tile now owns a hue permanently, taken from the SAME status palette the
+   order pills use, so the blue on Active Orders is the blue of the Accepted
+   pill in the panel below it. The value changes only the WEIGHT: a tile at
+   zero is quieted, never recoloured. */
+.db-stat {
+  --db-tone: var(--text-muted);
+  --db-wash: 7%;
+  --db-edge: 30%;
+  --db-chip: 15%;
+  display: flex; align-items: flex-start; gap: 13px;
+  padding: 17px 18px;
+  background: color-mix(in srgb, var(--db-tone) var(--db-wash), var(--surface));
+  border: 1px solid color-mix(in srgb, var(--db-tone) var(--db-edge), var(--border));
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--t) var(--ease), transform var(--t-fast) var(--ease);
+}
+.db-stat:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+
+/* Nothing to report. The hue stays — this is still the overdue tile — but it
+   steps back, so a row of zeroes does not read as four alarms. */
+.db-stat-quiet { --db-wash: 3%; --db-edge: 15%; --db-chip: 8%; }
+.db-stat-quiet .db-stat-value { color: var(--text-muted); }
+.db-stat-quiet .db-stat-ic { color: color-mix(in srgb, var(--db-tone) 55%, var(--text-muted)); }
+
+.db-stat-ic {
+  flex: none; width: 38px; height: 38px;
+  display: grid; place-items: center;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--db-tone) var(--db-chip), var(--surface));
+  color: var(--db-tone);
+  border: 1px solid color-mix(in srgb, var(--db-tone) 25%, transparent);
+}
+.db-stat-ic svg { width: 18px; height: 18px; display: block; }
+.db-stat-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.db-stat-label {
+  font-family: "Montserrat", sans-serif;
+  font-size: .61rem; font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.db-stat-value {
+  font-family: "Montserrat", sans-serif;
+  font-size: 1.75rem; font-weight: 700; line-height: 1.05;
+  letter-spacing: -.02em;
+  color: var(--db-tone);
+  /* Tabular, so a column of figures lines up and a number that changes on
+     refresh does not shift the label under it. */
+  font-variant-numeric: tabular-nums;
+}
+.db-stat-hint { font-size: .71rem; color: var(--text-muted); line-height: 1.45; }
+
+/* The five identities. Four come straight from the status palette, so a tile
+   and its matching pill are the same colour; Total Outstanding is gold because
+   money on the account is the brand's own colour rather than a state. */
+.db-stat-active  { --db-tone: var(--st-accepted); }
+.db-stat-pending { --db-tone: var(--st-pending); }
+.db-stat-total   { --db-tone: var(--st-completed); }
+.db-stat-overdue { --db-tone: var(--st-cancelled); }
+.db-stat-owed    { --db-tone: var(--gold); }
+
+/* Holds the row's height before the request lands, so the panels below do not
+   jump down the page when it does. */
+.db-stat-skeleton {
+  min-height: 82px;
+  background: linear-gradient(90deg, var(--surface), var(--bg-tint), var(--surface));
+  background-size: 200% 100%;
+  animation: dbShimmer 1.3s var(--ease) infinite;
+  border-left-color: var(--border);
+}
+@keyframes dbShimmer { to { background-position: -200% 0; } }
+
+/* ── Panel grid ── */
+.db-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  grid-template-areas: "track pay" "recent pay";
+  gap: 16px;
+  /* stretch, not start. Payment History spans both rows, and with `start` it
+     shrank to its contents — a 166px card floating at the top of a 730px
+     column, which is most of the empty space on the right of the page. It now
+     fills the column it was given. */
+  align-items: stretch;
+}
+/* So the body grows with the panel rather than leaving the gap under it. */
+.db-panel-pay { display: flex; flex-direction: column; }
+.db-panel-pay .db-panel-body { flex: 1; }
+/* An empty right-hand column is now tall, so its placeholder centres in it
+   instead of sitting at the top with a drop below. */
+.db-panel-pay .db-empty { justify-content: center; height: 100%; }
+.db-panel-track  { grid-area: track; }
+.db-panel-pay    { grid-area: pay; }
+.db-panel-recent { grid-area: recent; }
+
+.db-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: box-shadow var(--t) var(--ease);
+}
+.db-panel:hover { box-shadow: var(--shadow-md); }
+
+/* A tinted header BAR, not a title floating above a rule.
+   The panels are white and the page is cream; a plain heading inside a white
+   box left each panel a featureless slab with words at the top of it. The bar
+   gives the panel a top edge, and the gold hairline under it ties the three
+   panels to the rail on the other side of the page. */
+.db-panel-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 20px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--gold-line);
+}
+.db-panel-title {
+  font-family: "Montserrat", sans-serif;
+  font-size: .72rem; font-weight: 700;
+  letter-spacing: .13em; text-transform: uppercase;
+  color: var(--text); margin: 0;
+  display: flex; align-items: center; gap: 9px;
+}
+/* A short gold tick before the title. One mark, repeated on three panels, is
+   what makes them read as a set. */
+.db-panel-title::before {
+  content: ""; width: 3px; height: 13px;
+  background: var(--gold); border-radius: 2px; flex: none;
+}
+.db-panel-link {
+  font-family: "Montserrat", sans-serif;
+  font-size: .64rem; font-weight: 700;
+  letter-spacing: .09em; text-transform: uppercase;
+  color: var(--text-muted); white-space: nowrap;
+  padding: 4px 9px; border-radius: var(--r-pill);
+  transition: color var(--t), background var(--t);
+}
+.db-panel-link:hover { color: var(--gold); background: var(--gold-dim); }
+.db-panel-body { padding: 18px 20px 20px; }
+
+/* ── Order tracking ── */
+.db-track-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; margin-bottom: 20px;
+}
+.db-track-id {
+  font-family: "Montserrat", sans-serif;
+  font-weight: 700; font-size: .92rem; color: var(--gold);
+}
+.db-track-id:hover { text-decoration: underline; }
+.db-track-meta { font-size: .78rem; color: var(--text-muted); margin-top: 3px; }
+
+/* The step track. A row of dots joined by the line that runs BEHIND them —
+   drawn on the <li> as a left border on the connector pseudo-element rather
+   than as a separate element, so the number of steps is decided entirely by
+   how many <li> the server's sequence produced. */
+.db-steps {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  list-style: none; margin: 0; padding: 0;
+}
+.db-step {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  text-align: center;
+}
+/* The connector to the PREVIOUS step. On the step itself, so the first one has
+   nothing to its left and the line can never overshoot the row. */
+.db-step + .db-step::before {
+  content: ""; position: absolute;
+  top: 6px; right: 50%; left: -50%;
+  height: 2px; background: var(--border-lift);
+}
+.db-step.is-done::before,
+.db-step.is-now::before { background: var(--gold); }
+
+.db-step-dot {
+  position: relative; z-index: 1;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--border-lift);
+  transition: background var(--t) var(--ease), border-color var(--t) var(--ease);
+}
+.db-step.is-done .db-step-dot { background: var(--gold); border-color: var(--gold); }
+.db-step.is-now  .db-step-dot {
+  background: var(--gold); border-color: var(--gold);
+  box-shadow: 0 0 0 4px var(--gold-dim);
+}
+.db-step-label {
+  font-family: "Montserrat", sans-serif;
+  font-size: .64rem; font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--text-muted);
+}
+.db-step.is-now .db-step-label { color: var(--gold); font-weight: 700; }
+.db-step.is-done .db-step-label { color: var(--text); }
+
+.db-note {
+  margin-top: 18px; padding: 11px 14px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2);
+  font-size: .8rem; line-height: 1.5; color: var(--text-muted);
+}
+.db-note strong { color: var(--text); }
+.db-note .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .02em; }
+.db-note-warn {
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+}
+
+/* ── Shared list rows (payments + recent orders) ── */
+.db-list { list-style: none; margin: 0; padding: 0; }
+.db-list-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; padding: 11px 12px;
+  /* Negative inline margin so the hover fill reaches the panel's edges rather
+     than stopping short of its padding, which reads as a misaligned box. */
+  margin-inline: -12px;
+  border-radius: var(--r-md);
+  transition: background var(--t) var(--ease);
+}
+.db-list-row:hover { background: var(--surface-2); }
+.db-list-row + .db-list-row { border-top: 1px solid var(--border); border-radius: var(--r-md); }
+.db-list-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.db-list-main strong {
+  font-size: .86rem; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.db-list-sub {
+  font-size: .74rem; color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.db-list-side {
+  flex: none; display: flex; flex-direction: column;
+  align-items: flex-end; gap: 5px;
+}
+.db-amt {
+  font-family: "Montserrat", sans-serif;
+  font-weight: 700; font-size: .88rem;
+  font-variant-numeric: tabular-nums; color: var(--text);
+}
+.db-pill {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: var(--r-pill);
+  font-family: "Montserrat", sans-serif;
+  font-size: .6rem; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase;
+}
+.db-pill-ok   { background: color-mix(in srgb, var(--ok) 12%, transparent);   color: var(--ok); }
+.db-pill-warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+.db-pill-bad  { background: color-mix(in srgb, var(--out) 12%, transparent);  color: var(--out); }
+
+/* ── Empty / loading states ──
+   A single grey sentence floating in the middle of a tall white box is how the
+   Payment History panel read as broken rather than as empty. A mark, a
+   statement and a reason give it the same structure as a filled panel. */
+.db-empty {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 30px 10px; text-align: center;
+  color: var(--text-muted); font-size: .82rem; line-height: 1.6;
+}
+.db-empty p { margin: 0 0 4px; }
+.db-empty strong {
+  color: var(--text); font-size: .92rem;
+  display: block; margin-bottom: 2px;
+}
+.db-empty .btn { margin-top: 16px; }
+.db-empty-ic {
+  width: 42px; height: 42px; margin-bottom: 12px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--bg-tint); color: var(--text-muted);
+  opacity: .75;
+}
+.db-empty-ic svg { width: 20px; height: 20px; display: block; }
+
+/* Retailer tag on the shared sidebar, so a partner is visibly a partner
+   rather than reading the same as everybody else. */
+.mpas-tag-retailer {
+  background: var(--gold-dim);
+  border-color: var(--gold-line);
+  color: var(--gold);
+}
+
+/* ── Responsive ── */
+@media (max-width: 1080px) {
+  /* Two across, and the retailer's stacked pair unstacks — a third column
+     inside a narrowed main column puts "₱13,056.00" in a 90px box. */
+  /* Two across. Four tiles in a narrowed main column puts "₱13,056.00" in a
+     90px box. */
+  .db-stats-plain,
+  .db-stats-credit { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .db-stat-value { font-size: 1.55rem; }
+  .db-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "track" "pay" "recent"; }
+}
+@media (max-width: 560px) {
+  .db-stats-plain,
+  .db-stats-credit { grid-template-columns: minmax(0, 1fr); }
+  /* The step labels do not fit side by side at this width. The dots still
+     carry the sequence, and the status pill above spells out where the order
+     actually is — so the row stays readable without them. */
+  .db-step-label { display: none; }
+  .db-steps { padding: 4px 0 2px; }
+  .db-list-row { align-items: flex-start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-stat-skeleton { animation: none; }
+}

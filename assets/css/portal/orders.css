@@ -1,0 +1,378 @@
+/* =================================================================
+   ELISHA BAY — Online Orders (ported from the former OrdersModule)
+   Extends: admin.css
+   ================================================================= */
+
+/* Compact stat chips — used by Transaction History's summary row */
+.mini-stat-group { display: flex; gap: 10px; flex-wrap: wrap; }
+.mini-stat {
+  display: flex; flex-direction: column; justify-content: center; gap: 2px;
+  padding: 10px 18px; border-radius: var(--r-lg);
+  background: var(--surface); border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm); min-width: 108px;
+}
+.mini-stat-label {
+  font-family: var(--font-ui); font-size: .6rem; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted);
+}
+.mini-stat-val {
+  font-family: var(--font-number); font-size: 1.2rem; font-weight: 800;
+  color: var(--text); line-height: 1.15; letter-spacing: -.01em;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.mini-stat-val.gold { color: var(--gold-ink); }
+
+/* =================================================================
+   NOTIFICATIONS
+   ================================================================= */
+.notif-panel { padding: 18px 22px 6px; }
+.notif-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 6px;
+}
+.notif-toolbar .return-tabs { margin-bottom: 0; }
+
+.notif-row {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 16px 10px; border-bottom: 1px solid var(--border);
+  border-radius: var(--r-md);
+  transition: background var(--t);
+  cursor: pointer;
+}
+.notif-row:last-child { border-bottom: none; }
+.notif-row:hover { background: var(--bg-soft); }
+.notif-row.unread { background: var(--gold-dim); }
+.notif-row.unread:hover { background: var(--gold-line); }
+
+.notif-row-icon {
+  width: 38px; height: 38px; border-radius: var(--r-pill);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.notif-row-icon svg { width: 18px; height: 18px; }
+.notif-row-icon.type-new-order { background: rgba(232,163,23,.15); color: var(--gold-ink); }
+.notif-row-icon.type-payment   { background: rgba(59,130,246,.12); color: #3b82f6; }
+.notif-row-icon.type-return    { background: rgba(239,68,68,.1);   color: var(--out-ink); }
+.notif-row-icon.type-hold      { background: rgba(249,115,22,.1);  color: var(--warn-ink); }
+.notif-row-icon.type-completed { background: rgba(24,169,87,.1);   color: var(--ok-ink); }
+.notif-row-icon.type-inventory { background: rgba(139,92,246,.12); color: #8b5cf6; }
+.notif-row-icon.type-audit     { background: rgba(100,116,139,.12);color: #64748b; }
+/* Types added with the role-scoped feeds. Without these four the new
+   Cashier/Inventory alerts fell through to no pill and plain black text,
+   sitting next to seven coloured ones. Hues chosen to stay clear of the
+   existing gold / blue / red / orange / green / purple / slate. */
+.notif-row-icon.type-scheme-due    { background: rgba(99,102,241,.13);  color: #6366f1; }
+.notif-row-icon.type-expiry        { background: rgba(219,39,119,.12);  color: #db2777; }
+.notif-row-icon.type-batch-qa      { background: rgba(14,165,233,.13);  color: #0ea5e9; }
+.notif-row-icon.type-sales-summary { background: rgba(20,184,166,.13);  color: #14b8a6; }
+
+/* Same type→color mapping, applied to the topbar bell dropdown's icon chips */
+.nd-item-icon.type-new-order { background: rgba(232,163,23,.15); color: var(--gold-ink); }
+.nd-item-icon.type-payment   { background: rgba(59,130,246,.12); color: #3b82f6; }
+.nd-item-icon.type-return    { background: rgba(239,68,68,.1);   color: var(--out-ink); }
+.nd-item-icon.type-hold      { background: rgba(249,115,22,.1);  color: var(--warn-ink); }
+.nd-item-icon.type-completed { background: rgba(24,169,87,.1);   color: var(--ok-ink); }
+.nd-item-icon.type-inventory { background: rgba(139,92,246,.12); color: #8b5cf6; }
+.nd-item-icon.type-audit     { background: rgba(100,116,139,.12);color: #64748b; }
+.nd-item-icon.type-scheme-due    { background: rgba(99,102,241,.13);  color: #6366f1; }
+.nd-item-icon.type-expiry        { background: rgba(219,39,119,.12);  color: #db2777; }
+.nd-item-icon.type-batch-qa      { background: rgba(14,165,233,.13);  color: #0ea5e9; }
+.nd-item-icon.type-sales-summary { background: rgba(20,184,166,.13);  color: #14b8a6; }
+
+/* Audit sub-kinds. All four are notification type "audit"; only the chip
+   differs, so a run of inventory activity is scannable at a glance. */
+.notif-row-icon.type-restock,   .nd-item-icon.type-restock   { background: rgba(5,150,105,.13);  color: #059669; }
+.notif-row-icon.type-replenish, .nd-item-icon.type-replenish { background: rgba(101,163,13,.14); color: #65a30d; }
+.notif-row-icon.type-adjust,    .nd-item-icon.type-adjust    { background: rgba(217,119,6,.13);  color: #d97706; }
+.notif-row-icon.type-archive,   .nd-item-icon.type-archive   { background: rgba(100,116,139,.14);color: #475569; }
+
+/* #475569 measures 2.77:1 against the dark surface — under the 3:1 WCAG
+   floor for non-text graphics, and visibly muddy next to the other chips.
+   Light theme keeps the deeper slate, where it reads fine on cream. */
+[data-theme="dark"] .notif-row-icon.type-archive,
+[data-theme="dark"] .nd-item-icon.type-archive {
+  background: rgba(148,163,184,.16); color: #94a3b8;
+}
+
+/* Definition for every chip, so an unmapped type can never render as a
+   bare black glyph again — it gets the neutral slate treatment instead. */
+.notif-row-icon,
+.nd-item-icon {
+  background: rgba(100,116,139,.10);
+  color: #64748b;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+.notif-row-icon svg,
+.nd-item-icon svg { opacity: .95; }
+
+.notif-row-body { flex: 1; min-width: 0; }
+.notif-row-top {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+}
+.notif-row-msg { font-size: .88rem; color: var(--text); line-height: 1.4; }
+.notif-row.unread .notif-row-msg { font-weight: 700; }
+.notif-unread-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--gold);
+  flex-shrink: 0; margin-top: 6px;
+}
+.notif-row-meta { display: flex; align-items: center; gap: 16px; margin-top: 5px; }
+.notif-row-time { font-size: .74rem; color: var(--text-muted); }
+.notif-row-action { font-size: .76rem; font-weight: 700; color: var(--gold-ink); cursor: pointer; }
+.notif-row-action:hover { text-decoration: underline; }
+
+/* =================================================================
+   ORDER CARDS (Queue view)
+   ================================================================= */
+.queue-list { display: flex; flex-direction: column; gap: 12px; }
+.order-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--t), box-shadow var(--t);
+}
+.order-card:hover { border-color: var(--gold-dim); box-shadow: var(--shadow-md); }
+.order-card.urgent { border-left: 3px solid var(--out); }
+.order-card.hold   { border-left: 3px solid var(--warn); }
+
+.order-card-header {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 12px; flex-wrap: wrap;
+}
+.order-card-id {
+  font-family: var(--font-mono); font-size: .82rem; font-weight: 700;
+  color: var(--text-muted); background: var(--bg-soft);
+  padding: 3px 8px; border-radius: var(--r-sm);
+}
+.order-card-customer { font-size: .95rem; font-weight: 700; flex: 1; }
+.order-card-date     { font-size: .78rem; color: var(--text-muted); }
+
+.order-card-items {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;
+}
+.order-item-chip {
+  font-size: .74rem; font-weight: 600;
+  background: var(--bg-soft); border: 1px solid var(--border);
+  border-radius: var(--r-pill); padding: 3px 10px;
+  color: var(--text);
+}
+
+.order-card-footer {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  border-top: 1px solid var(--border); padding-top: 12px;
+}
+.order-card-total {
+  font-family: var(--font-number);
+  font-size: 1.2rem; font-weight: 800; color: var(--gold-ink);
+  font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.01em;
+}
+.order-card-method { font-size: .78rem; color: var(--text-muted); flex: 1; }
+.order-card-actions { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+
+/* =================================================================
+   PAYMENT VERIFICATION
+   ================================================================= */
+.pv-list { display: flex; flex-direction: column; gap: 16px; }
+.pv-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+.pv-card-header {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+.pv-card-body {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 0;
+}
+@media (max-width: 760px) { .pv-card-body { grid-template-columns: 1fr; } }
+.pv-section {
+  padding: 16px 18px;
+}
+.pv-section + .pv-section {
+  border-left: 1px solid var(--border);
+}
+@media (max-width: 760px) { .pv-section + .pv-section { border-left: none; border-top: 1px solid var(--border); } }
+.pv-section-label {
+  font-size: .68rem; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px;
+}
+.pv-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 5px 0; font-size: .86rem;
+}
+.pv-row-label { color: var(--text-muted); }
+.pv-row-val   { font-weight: 700; }
+.pv-row-val.match   { color: var(--ok-ink); }
+.pv-row-val.mismatch { color: var(--out-ink); }
+
+.proof-box {
+  background: var(--bg-soft); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 14px;
+  margin-top: 10px; display: flex; flex-direction: column; gap: 8px;
+}
+.proof-ref {
+  font-family: var(--font-mono); font-size: .86rem; font-weight: 700;
+  color: var(--text); background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 6px 10px;
+  word-break: break-all;
+}
+.proof-status {
+  display: flex; align-items: center; gap: 6px;
+  font-size: .8rem; font-weight: 700;
+}
+.proof-status.uploaded   { color: var(--ok-ink); }
+.proof-status.not-uploaded { color: var(--out-ink); }
+
+.pv-actions { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* =================================================================
+   STATUS CHIP / DOT (card views) — table views use the shared .badge
+   ================================================================= */
+/* .status-chip / .status-dot moved to admin.css — every portal loads
+   that file, so the chip is now shared instead of duplicated here. */
+
+/* Status transition buttons in modal */
+.status-transition-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(130px,1fr));
+  gap: 8px; margin-top: 12px;
+}
+.status-transition-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 12px 10px; border-radius: var(--r-md);
+  border: 2px solid var(--border-lift);
+  background: transparent; cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: .72rem; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-muted); transition: all var(--t);
+}
+.status-transition-btn:hover { border-color: var(--gold); color: var(--text); }
+.status-transition-btn.dest-accepted  { --hover-bg: rgba(59,130,246,.08); }
+.status-transition-btn.dest-shipping  { --hover-bg: rgba(139,92,246,.08); }
+.status-transition-btn.dest-delivered { --hover-bg: rgba(20,184,166,.08); }
+.status-transition-btn.dest-completed { --hover-bg: rgba(24,169,87,.08); }
+.status-transition-btn.dest-on-hold   { --hover-bg: rgba(249,115,22,.08); }
+.status-transition-btn.dest-cancelled { --hover-bg: rgba(214,40,40,.08); }
+.status-transition-btn:hover { background: var(--hover-bg, var(--gold-dim)); }
+
+/* =================================================================
+   ORDER DETAIL VIEW (in modal)
+   ================================================================= */
+.order-detail-section { margin-bottom: 18px; }
+.order-detail-heading {
+  font-size: .68rem; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--text-muted);
+  margin-bottom: 8px; padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.detail-row {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 10px; padding: 5px 0; font-size: .86rem;
+}
+.detail-row-label { color: var(--text-muted); flex-shrink: 0; }
+.detail-row-val   { font-weight: 600; text-align: right; }
+
+.order-items-list { display: flex; flex-direction: column; gap: 6px; }
+.order-item-row {
+  display: flex; align-items: center; gap: 10px;
+  font-size: .86rem; padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.order-item-row:last-child { border-bottom: none; }
+.order-item-name { flex: 1; font-weight: 600; }
+.order-item-qty  { color: var(--text-muted); min-width: 36px; text-align: center; }
+.order-item-sub  { font-weight: 700; min-width: 70px; text-align: right; }
+
+.receipt-addr { font-size: .78rem; color: var(--text-muted); margin-top: 4px; text-align: left; }
+
+/* =================================================================
+   RETURN MODULE
+   ================================================================= */
+.return-tabs {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.return-tab-btn {
+  padding: 7px 16px;
+  border-radius: var(--r-pill);
+  font-family: var(--font-ui);
+  font-size: .72rem; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase;
+  border: 1.5px solid var(--border-lift);
+  background: transparent; color: var(--text-muted);
+  cursor: pointer; transition: all var(--t);
+  display: flex; align-items: center; gap: 6px;
+}
+.return-tab-btn:hover  { border-color: var(--gold); color: var(--text); }
+.return-tab-btn.active { background: var(--gold); color: #1E1A0E; border-color: var(--gold); }
+
+.return-step-indicator {
+  display: flex; align-items: center; gap: 0;
+  margin-bottom: 20px; overflow-x: auto; padding-bottom: 4px;
+}
+.return-step {
+  display: flex; align-items: center; gap: 6px;
+  font-size: .7rem; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--text-muted);
+  white-space: nowrap;
+}
+.return-step.done    { color: var(--ok-ink); }
+.return-step.active  { color: var(--gold-ink); }
+.return-step.blocked { color: var(--out-ink); }
+.step-num {
+  width: 22px; height: 22px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .7rem; font-weight: 800;
+  border: 2px solid currentColor; flex-shrink: 0;
+  background: transparent;
+}
+.return-step.done .step-num { background: var(--ok-ink); color: #fff; border-color: var(--ok); }
+.return-step.active .step-num { background: var(--gold); color: #1E1A0E; border-color: var(--gold); }
+.step-connector {
+  flex: 0 0 24px; height: 2px;
+  background: var(--border-lift); margin: 0 2px;
+}
+
+.returns-scroll {
+  max-height: calc(100svh - 390px);
+  min-height: 240px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.return-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); margin-bottom: 12px;
+  overflow: hidden; box-shadow: var(--shadow-sm);
+}
+.return-card-header {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 14px 18px; background: var(--bg-soft);
+  border-bottom: 1px solid var(--border);
+}
+.return-card-body { padding: 16px 18px; }
+.return-card-footer {
+  padding: 12px 18px; border-top: 1px solid var(--border);
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+}
+.return-reason {
+  font-size: .84rem; color: var(--text-muted);
+  background: var(--bg-soft); border-radius: var(--r-md);
+  padding: 8px 12px; border-left: 3px solid var(--border-lift);
+  margin-top: 8px;
+}
+.return-reason.rejected-reason { border-left-color: var(--out-ink); }
+
+/* =================================================================
+   EMPTY STATE (card-based screens)
+   ================================================================= */
+.orders-empty {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 64px 24px; text-align: center;
+  color: var(--text-muted); gap: 12px;
+}
+.orders-empty svg { width: 48px; height: 48px; opacity: .25; }
+.orders-empty h3  { font-size: 1rem; font-weight: 700; color: var(--text); margin: 0; }
+.orders-empty p   { font-size: .86rem; margin: 0; max-width: 300px; }

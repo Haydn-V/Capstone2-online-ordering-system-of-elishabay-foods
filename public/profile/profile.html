@@ -1,0 +1,618 @@
+﻿<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Profile — Elisha Bay</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../../assets/css/public/styles.css" />
+    <link rel="stylesheet" href="../../assets/css/public/profile.css" />
+  </head>
+  <body>
+
+    <!-- ===== NAVBAR ===== -->
+    <header class="nav scrolled" id="nav">
+      <div class="nav-inner">
+        <a href="../index.html" class="brand" aria-label="Elisha Bay home">
+          <svg class="mark" id="brand-mark" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <circle cx="22" cy="22" r="21" fill="rgba(232,163,23,0.08)"/>
+            <ellipse cx="20" cy="22" rx="12" ry="8" stroke="#e8a317" stroke-width="1.8" fill="rgba(232,163,23,0.07)"/>
+            <path d="M37 17L32 22L37 27" stroke="#e8a317" stroke-width="1.8" stroke-linecap="butt" stroke-linejoin="round"/>
+          </svg>
+          <span class="name">Elisha&nbsp;Bay<small>Juris Bay Foods</small></span>
+        </a>
+
+        <nav class="nav-links" id="navlinks" aria-label="Primary">
+          <span class="nav-indicator" id="nav-indicator"></span>
+          <a href="../index.html">Home</a>
+          <a href="../index.html#best">Best Sellers</a>
+          <a href="../shop.html">Shop</a>
+          <a href="../index.html#about">About Us</a>
+          <a href="../index.html#contact">Contact</a>
+        </nav>
+
+        <div class="nav-actions">
+          <button class="icon-btn theme-toggle" id="theme-btn" aria-label="Toggle theme">
+            <svg class="icon moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="butt" stroke-linejoin="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            <svg class="icon sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="butt" stroke-linejoin="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+          </button>
+          <button class="nav-cart-btn icon-btn" id="cart-btn" aria-label="Open cart">
+            <svg class="icon" id="cart-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="butt" stroke-linejoin="round" stroke-linejoin="round">
+              <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+              <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+            </svg>
+            <span class="cart-badge" id="cart-badge">0</span>
+          </button>
+          <div id="account-slot"></div>
+          <button class="icon-btn hamburger" id="hamburger" aria-label="Open menu" aria-expanded="false"></button>
+        </div>
+      </div>
+    </header>
+
+    <!-- ===== SCAFFOLDING required by script.js ===== -->
+    <div id="modal-scrim" class="modal-scrim">
+      <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <button class="modal-close" id="modal-close" aria-label="Close">&times;</button>
+        <div id="modal-body"></div>
+      </div>
+    </div>
+    <div class="scrim" id="cart-scrim"></div>
+    <aside class="drawer" id="cart-drawer" role="dialog" aria-modal="true" aria-label="Shopping cart">
+      <div class="drawer-head">
+        <h3>Your Cart</h3>
+        <button class="modal-close" id="cart-close" aria-label="Close cart">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="butt" stroke-linejoin="round" stroke-linejoin="round" width="20" height="20"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="drawer-body" id="cart-body"></div>
+      <div class="drawer-foot" id="cart-foot"></div>
+    </aside>
+    <div id="toast-root" class="toast-root" aria-live="polite"></div>
+
+    <!-- ===== PAGE ===== -->
+    <main class="mp-page" id="mp-page">
+      <div class="container">
+
+        <!-- Auth guard -->
+        <div class="mp-guard" id="mp-guard" style="display:none">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <h2>Sign in to view your profile</h2>
+          <p>You need an account to manage your profile settings.</p>
+          <button class="btn btn-gold" id="guard-login-btn">Sign In</button>
+        </div>
+
+        <!-- Profile content -->
+        <div id="mp-content" style="display:none">
+
+          <div class="mp-account-layout">
+
+            <!-- ── LEFT SIDEBAR NAV ── -->
+            <!-- Rendered by EbProfileShell. This was forty lines of markup
+                 repeated on every account page — which is how the same person
+                 came to be tagged "CUSTOMER" here and "Retail Partner" one
+                 page over, and how one link ended up revealed-but-never-hidden
+                 in three files at once. -->
+            <aside class="mp-account-sidebar" id="mp-sidebar"></aside>
+
+            <!-- ── MAIN CONTENT ── -->
+            <div class="mp-account-main">
+
+          <div class="mp-header">
+            <div class="mp-breadcrumb">
+              <a href="../index.html">Home</a>
+              <span class="sep">/</span>
+              <span>My Profile</span>
+            </div>
+            <h1 class="mp-title">My <span class="accent">Profile</span></h1>
+            <p class="mp-sub">Manage your account information and preferences.</p>
+          </div>
+
+            <!-- Main sections -->
+            <div class="profile-main">
+
+              <!-- Personal Info -->
+              <div class="profile-card" id="section-info">
+                <div class="profile-card-title">Personal Information</div>
+                <form id="form-info" novalidate>
+                  <div class="profile-form-grid">
+                    <div class="field">
+                      <label for="pf-fname">First Name</label>
+                      <input class="control" id="pf-fname" type="text" placeholder="Juan" />
+                      <span class="field-error" id="err-fname"></span>
+                    </div>
+                    <div class="field">
+                      <label for="pf-lname">Last Name</label>
+                      <input class="control" id="pf-lname" type="text" placeholder="Dela Cruz" />
+                      <span class="field-error" id="err-lname"></span>
+                    </div>
+                    <div class="field full">
+                      <label for="pf-email">Email Address</label>
+                      <input class="control" id="pf-email" type="email" placeholder="juan@example.com" />
+                      <span class="field-hint">A verification code will be sent to confirm email changes.</span>
+                      <span class="field-error" id="err-email"></span>
+                    </div>
+                    <div class="field full">
+                      <label for="pf-phone">Contact Number</label>
+                      <input class="control" id="pf-phone" type="tel" placeholder="09xx xxx xxxx" />
+                      <span class="field-error" id="err-phone"></span>
+                    </div>
+                  </div>
+                  <div class="profile-form-actions">
+                    <button type="button" class="btn btn-ghost" id="btn-info-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-gold">Save Changes</button>
+                  </div>
+                </form>
+              </div>
+
+              <!-- Emailed verification code.
+
+                   The hint under the email input has always read "A
+                   verification code will be sent to confirm email changes" —
+                   the page promised this before anything implemented it. The
+                   panel is hidden until api/shop/profile.php answers
+                   requiresVerification, and the change is NOT claimed as saved
+                   until api/shop/verify-code.php returns. -->
+              <div class="profile-card hide" id="section-verify">
+                <div class="profile-card-title">Confirm your change</div>
+                <p id="vc-intro" class="field-hint" style="margin-bottom:14px"></p>
+                <form id="form-verify" novalidate>
+                  <div class="profile-form-grid">
+                    <div class="field full">
+                      <label for="vc-code">6-digit code</label>
+                      <input class="control" id="vc-code" type="text" inputmode="numeric"
+                             autocomplete="one-time-code" maxlength="6"
+                             placeholder="000000"
+                             style="letter-spacing:.4em;font-size:1.2rem;text-align:center;max-width:220px" />
+                      <span class="field-error" id="err-vc-code"></span>
+                      <span class="field-hint" id="vc-countdown"></span>
+                    </div>
+                  </div>
+                  <div class="profile-form-actions">
+                    <button type="button" class="btn btn-ghost" id="btn-vc-cancel">Cancel</button>
+                    <button type="button" class="btn btn-ghost" id="btn-vc-resend">Resend code</button>
+                    <button type="submit" class="btn btn-gold">Confirm</button>
+                  </div>
+                </form>
+              </div>
+
+              <!-- Address -->
+              <div class="profile-card" id="section-address">
+                <div class="profile-card-title">Delivery Address</div>
+                <form id="form-address" novalidate>
+                  <div class="profile-form-grid">
+                    <div class="field full">
+                      <label for="pf-street">Street / Barangay</label>
+                      <input class="control" id="pf-street" type="text" placeholder="148 Brgy. Mangin" />
+                      <span class="field-error" id="err-street"></span>
+                    </div>
+                    <div class="field">
+                      <label for="pf-city">City / Municipality</label>
+                      <input class="control" id="pf-city" type="text" placeholder="Dagupan City" />
+                    </div>
+                    <div class="field">
+                      <label for="pf-province">Province</label>
+                      <input class="control" id="pf-province" type="text" placeholder="Pangasinan" />
+                    </div>
+                    <div class="field">
+                      <label for="pf-zip">ZIP Code</label>
+                      <input class="control" id="pf-zip" type="text" placeholder="2400" maxlength="4" />
+                    </div>
+                    <div class="field">
+                      <label for="pf-region">Region</label>
+                      <input class="control" id="pf-region" type="text" placeholder="Region I" />
+                    </div>
+                  </div>
+                  <div class="profile-form-actions">
+                    <button type="button" class="btn btn-ghost" id="btn-addr-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-gold">Save Address</button>
+                  </div>
+                </form>
+              </div>
+
+              <!-- Security / Password -->
+              <div class="profile-card" id="section-security">
+                <div class="profile-card-title">Security</div>
+                <form id="form-security" novalidate>
+                  <div class="profile-form-grid">
+                    <div class="field full">
+                      <label for="pf-cur-pw">Current Password</label>
+                      <div class="pw-row">
+                        <input class="control" id="pf-cur-pw" type="password" placeholder="Enter current password" autocomplete="current-password" />
+                        <button type="button" class="pw-eye" data-eye="pf-cur-pw" aria-label="Toggle">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12S5 4 12 4s11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                      </div>
+                      <span class="field-error" id="err-cur-pw"></span>
+                    </div>
+                    <div class="field">
+                      <label for="pf-new-pw">New Password</label>
+                      <div class="pw-row">
+                        <input class="control" id="pf-new-pw" type="password" placeholder="Min. 8 characters" autocomplete="new-password" />
+                        <button type="button" class="pw-eye" data-eye="pf-new-pw" aria-label="Toggle">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12S5 4 12 4s11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                      </div>
+                      <span class="field-error" id="err-new-pw"></span>
+                    </div>
+                    <div class="field">
+                      <label for="pf-confirm-pw">Confirm New Password</label>
+                      <div class="pw-row">
+                        <input class="control" id="pf-confirm-pw" type="password" placeholder="Repeat new password" autocomplete="new-password" />
+                        <button type="button" class="pw-eye" data-eye="pf-confirm-pw" aria-label="Toggle">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12S5 4 12 4s11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                      </div>
+                      <span class="field-error" id="err-confirm-pw"></span>
+                    </div>
+                  </div>
+                  <div class="profile-form-actions">
+                    <button type="submit" class="btn btn-gold">Update Password</button>
+                  </div>
+                </form>
+              </div>
+
+            </div><!-- /profile-main -->
+            </div><!-- /mp-account-main -->
+          </div><!-- /mp-account-layout -->
+        </div><!-- /mp-content -->
+      </div>
+    </main>
+
+    <script type="module" src="../../assets/js/core/index.js"></script>
+    <script defer src="../../assets/js/public/site.js"></script>
+    <script defer src="../../assets/js/public/profile-shell.js"></script>
+    <script>
+    /* ── Profile page logic ── */
+
+    function initProfile() {
+      const name = state.auth.name || "User";
+      const parts = name.split(" ");
+      const initials = parts.map(s => s[0]).slice(0, 2).join("").toUpperCase();
+
+      /* The avatar, the name, the role tag, the Payment Schemes link and the
+         sign-out button all moved to EbProfileShell — they were written out
+         once per account page and had already drifted (the same person read
+         "Customer" on one page and "Retail Partner" on the next). */
+
+      /* Pre-fill name fields */
+      document.getElementById("pf-fname").value = parts[0] || "";
+      document.getElementById("pf-lname").value = parts.slice(1).join(" ") || "";
+
+      /* Sidebar section nav */
+      document.querySelectorAll(".profile-sidebar-link[data-section]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".profile-sidebar-link").forEach(b => b.classList.remove("active"));
+          btn.classList.add("active");
+          document.getElementById("section-" + btn.dataset.section)
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      });
+
+      /* Password eye toggles */
+      document.querySelectorAll(".pw-eye[data-eye]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const input = document.getElementById(btn.dataset.eye);
+          input.type = input.type === "password" ? "text" : "password";
+        });
+      });
+
+      /* Personal info form — also a mock until now: it set state.auth.name in
+         memory, re-rendered, and said "Personal info updated!". A reload put
+         the old name back. */
+      document.getElementById("form-info").addEventListener("submit", async e => {
+        e.preventDefault();
+        const fname = document.getElementById("pf-fname").value.trim();
+        const lname = document.getElementById("pf-lname").value.trim();
+        let ok = true;
+        if (!fname) { document.getElementById("err-fname").textContent = "Required"; ok = false; }
+        else document.getElementById("err-fname").textContent = "";
+        if (!lname) { document.getElementById("err-lname").textContent = "Required"; ok = false; }
+        else document.getElementById("err-lname").textContent = "";
+        if (!ok) return;
+
+        const newName = fname + " " + lname;
+        const phone = document.getElementById("pf-phone").value.trim();
+        const email = document.getElementById("pf-email").value.trim();
+        try {
+          /* Email is sent now. It used to be omitted because the endpoint
+             refused it outright; it is accepted behind an emailed code, which
+             is what the hint under that input has always promised. */
+          const { data } = await EbApi.post("shop/profile.php",
+            { name: newName, contact: phone, email });
+
+          /* The name and address halves are already saved at this point. If
+             anything sensitive changed, the server held it back and issued a
+             code — say so instead of claiming a save that has not happened. */
+          if (data.requiresVerification) {
+            openVerifyPanel(data);
+            return;
+          }
+
+          /* The screen shows what the SERVER stored, not what was typed. */
+          state.auth.name = data.name;
+          renderAccount();
+          initProfile();
+          showToast("Personal info saved.", "success");
+        } catch (err) {
+          if (err.isValidation) {
+            Object.entries(err.fields).forEach(([f, msg]) => {
+              const box = document.getElementById("err-" + f);
+              if (box) box.textContent = msg; else showToast(msg, "info");
+            });
+          } else {
+            showToast("Could not save: " + err.message, "info");
+          }
+        }
+      });
+      document.getElementById("btn-info-cancel").addEventListener("click", () => {
+        const parts = (state.auth.name || "").split(" ");
+        document.getElementById("pf-fname").value = parts[0] || "";
+        document.getElementById("pf-lname").value = parts.slice(1).join(" ") || "";
+      });
+
+      /* ---- emailed verification code -------------------------------------
+
+         Nothing here claims the change was saved. The panel appears when the
+         server says a code was issued, and disappears only when
+         verify-code.php confirms it. */
+      let vcTicket = null, vcTimer = null;
+
+      function openVerifyPanel(data) {
+        vcTicket = data.ticket;
+        const panel = document.getElementById("section-verify");
+        panel.classList.remove("hide");
+
+        /* Says plainly where the code went — or that it did not, on an install
+           with no SMTP configured. Mailer::isLive() is the same distinction
+           api/b2b/decide.php reports for the same reason: a page that claims an
+           email was sent when it was written to a log file is lying. */
+        const intro = document.getElementById("vc-intro");
+        if (data.mailLive) {
+          intro.textContent = "We sent a 6-digit code to your current email address. Enter it below to confirm the change.";
+        } else if (data.devCode) {
+          intro.innerHTML = "Email delivery is not configured on this install, so no message was sent. "
+            + "The code is <strong>" + EbFormat.escHtml(data.devCode) + "</strong> "
+            + "(shown only because this is a development install).";
+        } else {
+          intro.textContent = "Email delivery is not configured on this install, so no message was sent. "
+            + "The code was written to the server's mail log.";
+        }
+
+        document.getElementById("err-vc-code").textContent = "";
+        document.getElementById("vc-code").value = "";
+        document.getElementById("vc-code").focus();
+        startCountdown(data.expiresIn);
+        panel.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+
+      function startCountdown(seconds) {
+        clearInterval(vcTimer);
+        let left = Math.max(0, seconds | 0);
+        const el = document.getElementById("vc-countdown");
+        const tick = () => {
+          if (left <= 0) {
+            clearInterval(vcTimer);
+            el.textContent = "This code has expired. Use Resend to get a new one.";
+            return;
+          }
+          const m = Math.floor(left / 60), sec = left % 60;
+          el.textContent = `Expires in ${m}:${String(sec).padStart(2, "0")}.`;
+          left--;
+        };
+        tick();
+        vcTimer = setInterval(tick, 1000);
+      }
+
+      function closeVerifyPanel() {
+        clearInterval(vcTimer);
+        vcTicket = null;
+        document.getElementById("section-verify").classList.add("hide");
+      }
+
+      document.getElementById("btn-vc-cancel").addEventListener("click", () => {
+        closeVerifyPanel();
+        /* The pending change is abandoned, not applied — nothing was written
+           when the code was issued, so there is nothing to undo. The form is
+           reloaded so it shows what is actually stored. */
+        loadProfile();
+        showToast("Change cancelled.", "info");
+      });
+
+      document.getElementById("btn-vc-resend").addEventListener("click", async () => {
+        /* Re-submits the same change. The server reuses an unexpired code
+           issued in the last minute rather than minting a new one — otherwise
+           Resend invalidates the code already in the customer's inbox and they
+           are told the one they can see is wrong. */
+        const btn = document.getElementById("btn-vc-resend");
+        const restore = (l => { btn.disabled = true; btn.textContent = "Sending…";
+                                return () => { btn.disabled = false; btn.textContent = l; }; })(btn.textContent);
+        try {
+          const { data } = await EbApi.post("shop/profile.php", {
+            name: (document.getElementById("pf-fname").value.trim() + " " +
+                   document.getElementById("pf-lname").value.trim()).trim(),
+            contact: document.getElementById("pf-phone").value.trim(),
+            email: document.getElementById("pf-email").value.trim(),
+          });
+          if (data.requiresVerification) {
+            openVerifyPanel(data);
+            showToast(data.resent ? "A new code is on its way." : "Your code is still valid — check your email.", "info");
+          } else {
+            closeVerifyPanel();
+            loadProfile();
+          }
+        } catch (err) {
+          showToast(err.message, "info");
+        } finally { restore(); }
+      });
+
+      document.getElementById("form-verify").addEventListener("submit", async e => {
+        e.preventDefault();
+        const code = document.getElementById("vc-code").value.trim();
+        const errEl = document.getElementById("err-vc-code");
+        errEl.textContent = "";
+        if (!/^\d{6}$/.test(code)) {
+          errEl.textContent = "Enter the six-digit code from your email.";
+          return;
+        }
+        try {
+          const { data } = await EbApi.post("shop/verify-code.php", { ticket: vcTicket, code });
+          closeVerifyPanel();
+          state.auth.email = data.email;
+          document.getElementById("pf-email").value = data.email || "";
+          document.getElementById("pf-phone").value = data.contact || "";
+          initProfile();
+          showToast("Change confirmed.", "success");
+        } catch (err) {
+          /* A wrong code counts down aloud; an expired or spent one says to
+             start again. Both come from the server, which is the only thing
+             that knows how many attempts are left. */
+          if (err.isValidation && err.fields.code) errEl.textContent = err.fields.code;
+          else { errEl.textContent = err.message; }
+        }
+      });
+
+      /* Address form — now actually saves.
+
+         This handler used to validate that the street was non-empty, call
+         showToast("Address saved!") and write NOTHING. No endpoint existed. A
+         customer could "save" their address every day and the database would
+         never hear about it — and it is the reason the checkout had nothing to
+         prefill from. */
+      const ADDR_FIELDS = ["street","city","province","zip","region"];
+
+      async function loadProfile() {
+        try {
+          const { data } = await EbApi.get("shop/profile.php");
+          document.getElementById("pf-phone").value = data.contact || "";
+          /* The email input was never populated, because the endpoint refused
+             email changes and the field was decorative. It is a real, editable
+             field now — behind a code — so it has to show what is stored, or a
+             save posts an empty address and is refused. */
+          document.getElementById("pf-email").value = data.email || "";
+          ADDR_FIELDS.forEach(f => {
+            const el = document.getElementById("pf-" + f);
+            if (el) el.value = data.address[f] || "";
+          });
+          const parts = (data.name || "").split(" ");
+          const fn = document.getElementById("pf-fname"), ln = document.getElementById("pf-lname");
+          if (fn && !fn.value) fn.value = parts[0] || "";
+          if (ln && !ln.value) ln.value = parts.slice(1).join(" ") || "";
+        } catch (err) {
+          /* 401 means not signed in, which the page already handles by showing
+             its signed-out state. Anything else is worth saying. */
+          if (!err.isAuth) showToast("Could not load your profile: " + err.message, "info");
+        }
+      }
+      loadProfile();
+
+      document.getElementById("form-address").addEventListener("submit", async e => {
+        e.preventDefault();
+        const street = document.getElementById("pf-street").value.trim();
+        if (!street) { document.getElementById("err-street").textContent = "Street address required"; return; }
+        document.getElementById("err-street").textContent = "";
+
+        const address = {};
+        ADDR_FIELDS.forEach(f => { address[f] = document.getElementById("pf-" + f).value.trim(); });
+        try {
+          await EbApi.post("shop/profile.php", { address });
+          showToast("Address saved.", "success");
+        } catch (err) {
+          if (err.isValidation) {
+            Object.entries(err.fields).forEach(([f, msg]) => {
+              const box = document.getElementById("err-" + f);
+              if (box) box.textContent = msg; else showToast(msg, "info");
+            });
+          } else {
+            showToast("Could not save your address: " + err.message, "info");
+          }
+        }
+      });
+      /* Cancel restores what is SAVED rather than blanking every field. Wiping
+         the form was indistinguishable from "delete my address", and there was
+         no way back from it. */
+      document.getElementById("btn-addr-cancel").addEventListener("click", loadProfile);
+
+      /* Security form */
+      document.getElementById("form-security").addEventListener("submit", async e => {
+        e.preventDefault();
+        const cur = document.getElementById("pf-cur-pw").value;
+        const nw  = document.getElementById("pf-new-pw").value;
+        const con = document.getElementById("pf-confirm-pw").value;
+
+        ["err-cur-pw","err-new-pw","err-confirm-pw"].forEach(id => {
+          const el = document.getElementById(id); if (el) el.textContent = "";
+        });
+
+        let ok = true;
+        if (!cur) { document.getElementById("err-cur-pw").textContent = "Enter current password"; ok = false; }
+        if (nw.length < 8) { document.getElementById("err-new-pw").textContent = "Min. 8 characters"; ok = false; }
+        if (nw !== con) { document.getElementById("err-confirm-pw").textContent = "Passwords do not match"; ok = false; }
+        if (!ok) return;
+
+        /* THIS USED TO BE A MOCK. It cleared the fields and showed
+           "Password updated successfully!" while writing nothing — so a
+           customer who believed their password had changed would try the new
+           one, fail, and have no way to understand why.
+
+           api/shop/password.php re-verifies the current password, is rate
+           limited on the same counter as sign-in, and regenerates the session
+           id so any other session on the old id dies. */
+        try {
+          await EbApi.post("shop/password.php", {
+            current_password: cur, new_password: nw, confirm_password: con,
+          });
+          document.getElementById("pf-cur-pw").value = "";
+          document.getElementById("pf-new-pw").value = "";
+          document.getElementById("pf-confirm-pw").value = "";
+          showToast("Password changed.", "success");
+        } catch (err) {
+          /* Field errors land on their own input. The fields are NOT cleared on
+             failure — retyping all three because one was wrong is its own small
+             cruelty, and the current-password box is the only one that could be
+             at fault. */
+          if (err.isValidation) {
+            const map = { current_password: "err-cur-pw", new_password: "err-new-pw", confirm_password: "err-confirm-pw" };
+            let shown = false;
+            Object.entries(err.fields).forEach(([f, msg]) => {
+              const box = document.getElementById(map[f]);
+              if (box) { box.textContent = msg; shown = true; } else { showToast(msg, "info"); shown = true; }
+            });
+            if (!shown) showToast(err.message, "info");
+          } else {
+            /* 429 from the shared sign-in throttle, or anything else. */
+            showToast(err.message, "info");
+          }
+        }
+      });
+
+    }
+
+    /* Auth guard.
+
+       THIS USED TO SAMPLE state.auth.loggedIn ONCE, at window.load.
+
+       bootstrapCustomer() is asynchronous, so at that moment the flag is still
+       its fail-closed initial `false` (D8) no matter who is signed in. A
+       signed-in customer opening their own profile was shown the "please sign
+       in" panel with the entire page hidden, and nothing ever re-checked — the
+       retry loop below only ran while `state` itself was undefined, which it
+       stops being almost immediately.
+
+       The page was correctly wired and displayed the wrong answer. Observed
+       directly: state.auth.loggedIn was `true` while #mp-guard was still
+       `display:block`.
+
+       It now waits for the SERVER's answer via whenAuthReady(), which resolves
+       from an event site.js fires after shop/me.php has replied — and resolves
+       immediately if that already happened. */
+    window.addEventListener("load", () => {
+      /* The guard, the sidebar and the sign-out button are the shell's now —
+         all three were duplicated across the four account pages. See
+         assets/js/public/profile-shell.js. */
+      EbProfileShell.mount({ page: "profile", onReady: initProfile });
+    });
+    </script>
+  </body>
+</html>

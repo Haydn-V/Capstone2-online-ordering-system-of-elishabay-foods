@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>sales module</title>
+  <!-- ============================================================
+       MODULE PARTIAL — section id="mod-sales".
+
+       Wrapped as a complete HTML document ON PURPOSE.
+
+       Dev servers inject a live-reload script into every .html file
+       they serve, placed just before the closing body tag. A bare
+       fragment has no closing body tag, so VS Code Live Server falls
+       back to injecting before the first closing svg tag instead —
+       which lands inside the Elisha Bay logo mark, corrupts the
+       parse, and leaves the portal showing "Portal failed to load".
+
+       With a real body element the injection lands harmlessly at the
+       end, and Core/module-loader.js strips every script element
+       before using this markup.
+
+       Keep the html/head/body wrapper. Also avoid writing a literal
+       closing body, head or svg tag anywhere in a comment in these
+       files — Live Server matches raw text and will inject there,
+       breaking the comment and everything after it.
+       ============================================================ -->
+  </head>
+  <body>
+<!-- ── SALES REPORT ── -->
+<section id="mod-sales" class="mod-panel" aria-label="Sales Report">
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Reports</div>
+      <h2>Sales Report</h2>
+    </div>
+  </div>
+  <div
+    class="date-range-tabs"
+    id="range-tabs"
+    role="group"
+    aria-label="Date range"
+  >
+    <button class="range-btn active" data-range="today">Today</button>
+    <button class="range-btn" data-range="yesterday">
+      Yesterday
+    </button>
+    <button class="range-btn" data-range="week">This Week</button>
+    <button class="range-btn" data-range="lastweek">Last Week</button>
+    <button class="range-btn" data-range="month">This Month</button>
+    <button class="range-btn" data-range="lastmonth">
+      Last Month
+    </button>
+    <button class="range-btn" data-range="year">This Year</button>
+    <button class="range-btn" data-range="lastyear">Last Year</button>
+    <button class="range-btn" data-range="custom">Custom</button>
+  </div>
+  <div class="sales-extra-controls">
+    <div class="custom-range-row" id="custom-range-row">
+      <input type="date" class="control" id="sales-from" />
+      <span class="date-sep">→</span>
+      <input type="date" class="control" id="sales-to" />
+      <button class="btn btn-gold btn-sm" id="apply-custom">
+        Apply
+      </button>
+    </div>
+    <div class="compare-row" id="compare-row">
+      <label class="compare-label">
+        <input
+          type="checkbox"
+          id="compare-toggle"
+          style="accent-color: var(--gold); width: 15px; height: 15px"
+        />
+        Compare with
+      </label>
+      <select
+        class="control"
+        id="compare-select"
+        style="display: none"
+      >
+        <option value="prev">Previous Period</option>
+        <option value="yesterday">Yesterday</option>
+        <option value="lastweek">Last Week</option>
+        <option value="lastmonth">Last Month</option>
+        <option value="lastyear">Last Year</option>
+      </select>
+    </div>
+  </div>
+  <div class="sales-summary" id="sales-summary"></div>
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Sales Over Period</span>
+      <div class="chart-toggle" id="sales-chart-toggle">
+        <button
+          class="chart-toggle-btn"
+          data-sales-chart="line"
+          title="Line chart"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+          </svg>
+        </button>
+        <button
+          class="chart-toggle-btn"
+          data-sales-chart="bar"
+          title="Bar chart"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <rect x="3" y="12" width="4" height="9" rx="1" />
+            <rect x="10" y="7" width="4" height="14" rx="1" />
+            <rect x="17" y="3" width="4" height="18" rx="1" />
+          </svg>
+        </button>
+        <button
+          class="chart-toggle-btn"
+          data-sales-chart="area"
+          title="Area chart"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M2 20 L6 12 L10 16 L14 8 L18 14 L22 6 L22 20 Z"
+            />
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="sparkline-wrap">
+      <svg
+        class="sparkline-chart"
+        id="sparkline-sales-report"
+        style="height: 180px"
+        aria-label="Sales chart"
+      ></svg>
+    </div>
+  </div>
+  <div style="margin-top: 20px">
+    <div class="panel-header">
+      <span
+        class="panel-title"
+        style="
+          font-size: 1rem;
+          font-weight: 700;
+          font-family: var(--font-ui);
+        "
+        >Transactions in Period</span
+      >
+      <select
+        class="filter-select"
+        id="sales-page-size"
+        aria-label="Rows per page"
+        style="margin-left: auto"
+      >
+        <option value="10">10 per page</option>
+        <option value="25">25 per page</option>
+        <option value="50">50 per page</option>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table" id="sales-table">
+        <thead>
+          <tr>
+            <th>TX ID</th>
+            <th>Customer</th>
+            <th>Items</th>
+            <th>Total</th>
+            <th>Method</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody id="sales-tbody"></tbody>
+      </table>
+    </div>
+    <div class="table-toolbar" style="margin-top: 14px">
+      <span class="muted" id="sales-showing" style="font-size: 0.82rem"></span>
+      <div class="pagination" id="sales-pagination" style="margin-left: auto"></div>
+    </div>
+  </div>
+</section>
+  </body>
+</html>

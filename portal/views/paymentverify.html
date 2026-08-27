@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>paymentverify module</title>
+  <!-- ============================================================
+       MODULE PARTIAL — section id="mod-paymentverify".
+
+       Wrapped as a complete HTML document ON PURPOSE.
+
+       Dev servers inject a live-reload script into every .html file
+       they serve, placed just before the closing body tag. A bare
+       fragment has no closing body tag, so VS Code Live Server falls
+       back to injecting before the first closing svg tag instead —
+       which lands inside the Elisha Bay logo mark, corrupts the
+       parse, and leaves the portal showing "Portal failed to load".
+
+       With a real body element the injection lands harmlessly at the
+       end, and Core/module-loader.js strips every script element
+       before using this markup.
+
+       Keep the html/head/body wrapper. Also avoid writing a literal
+       closing body, head or svg tag anywhere in a comment in these
+       files — Live Server matches raw text and will inject there,
+       breaking the comment and everything after it.
+       ============================================================ -->
+  </head>
+  <body>
+<!-- ── ONLINE ORDERS: PAYMENT VERIFICATION ── -->
+<section
+  id="mod-paymentverify"
+  class="mod-panel"
+  aria-label="Payment Verification"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Online Orders</div>
+      <h2>Payment Verification</h2>
+    </div>
+  </div>
+  <div class="tabs" id="pv-status-tabs" style="gap:6px;margin-bottom:16px"></div>
+  <div id="pv-content"></div>
+</section>
+  </body>
+</html>

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>payments module</title>
+  <!-- ============================================================
+       MODULE PARTIAL — section id="mod-payments".
+
+       Wrapped as a complete HTML document ON PURPOSE.
+
+       Dev servers inject a live-reload script into every .html file
+       they serve, placed just before the closing body tag. A bare
+       fragment has no closing body tag, so VS Code Live Server falls
+       back to injecting before the first closing svg tag instead —
+       which lands inside the Elisha Bay logo mark, corrupts the
+       parse, and leaves the portal showing "Portal failed to load".
+
+       With a real body element the injection lands harmlessly at the
+       end, and Core/module-loader.js strips every script element
+       before using this markup.
+
+       Keep the html/head/body wrapper. Also avoid writing a literal
+       closing body, head or svg tag anywhere in a comment in these
+       files — Live Server matches raw text and will inject there,
+       breaking the comment and everything after it.
+       ============================================================ -->
+  </head>
+  <body>
+<!-- ── PAYMENT SCHEMES ── -->
+<section
+  id="mod-payments"
+  class="mod-panel"
+  aria-label="Payment Scheme Monitoring"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Finance</div>
+      <h2>Payment Schemes</h2>
+    </div>
+  </div>
+  <div class="penalty-row">
+    <label for="penalty-rate"
+      >Penalty Rate for Overdue Payments:</label
+    >
+    <input
+      type="number"
+      id="penalty-rate"
+      class="penalty-input"
+      value="2"
+      min="0"
+      max="100"
+      step="0.5"
+      aria-label="Penalty rate percentage"
+    />
+    <span>% per month</span>
+    <button class="btn btn-gold btn-sm" id="save-penalty-btn">
+      Save Rate
+    </button>
+    <select
+      class="filter-select"
+      id="pay-page-size"
+      aria-label="Rows per page"
+      style="margin-left: auto"
+    >
+      <option value="10">10 per page</option>
+      <option value="25">25 per page</option>
+      <option value="50">50 per page</option>
+    </select>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table sortable-table" id="payments-table">
+      <thead>
+        <tr>
+          <th data-sort="name">Retailer</th>
+          <th data-sort="email">Email</th>
+          <th data-sort="scheme">Scheme</th>
+          <th data-sort="balance">Outstanding</th>
+          <th data-sort="dueDate">Due Date</th>
+          <th data-sort="statusRank">Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="payments-tbody"></tbody>
+    </table>
+  </div>
+  <div class="table-toolbar" style="margin-top: 14px">
+    <span class="muted" id="pay-showing" style="font-size: 0.82rem"></span>
+    <div class="pagination" id="pay-pagination" style="margin-left: auto"></div>
+  </div>
+</section>
+  </body>
+</html>

@@ -1,0 +1,3039 @@
+/* =================================================================
+   ELISHA BAY — Single-file interactive landing page
+   Architecture:
+     CONFIG  -> brand-level source of truth (re-skin here)
+     DATA    -> PRODUCTS / CATEGORIES / FAQS / CERTS (edit here to update UI)
+     state   -> cart / theme / auth / filters (what a backend would plug into)
+     render  -> factory functions build every card/row/line ONCE
+     ui      -> generic modal / toast / drawer primitives
+   ================================================================= */
+"use strict";
+
+/* ---------- CONFIG: brand source of truth ---------- */
+const CONFIG = {
+  brand: "Elisha Bay",
+  company: "Juris Bay Foods, Inc.",
+  motto: "Every Mouthful is Delightful",
+  currency: "₱",
+  address: "148 Brgy. Mangin, Dagupan City, Pangasinan",
+  phone: "+63 900 000 0000",
+  email: "hello@elishabay.ph",
+  facebook: "facebook.com/ElishaBayPH",
+  certifications: [
+    { code: "DOST", label: "Dept. of Science & Technology" },
+    { code: "DTI",  label: "Dept. of Trade & Industry" },
+    { code: "FDA",  label: "Food & Drug Administration" },
+    { code: "PEDAI",label: "Phil. Entrepreneurs & Dev. Assoc." },
+  ],
+};
+
+/* ---------- STAFF ACCOUNTS — DELETED ----------
+   This file held all five staff credentials in plaintext and is served to
+   every visitor, so anyone who opened it could sign in as Super Admin. The
+   login handler below now posts to api/auth/login.php, which verifies against
+   bcrypt hashes in MySQL. Nothing on this page needs to know an account exists
+   until the server says so.
+
+   The array was also a maintenance trap: it had drifted out of sync with the
+   portal's own copy (five accounts here, six there — the archived one was
+   missing, so an account disabled in the portal could still sign in from this
+   page). One source of truth removes the whole class of bug. */
+
+/* Project root, derived from this script's own URL rather than hardcoded.
+   The old routes were absolute (/StuffModule/AdminModule/admin.html) and
+   404'd unless the project was served at the web root — which broke staff
+   login the moment it moved into htdocs/elishabay/.
+
+   Deriving from the page URL instead would not work: this file loads on
+   both public/index.html and public/profile/*.html, which sit at different
+   depths. The script's own path is the same from either. */
+const BASE_PATH = (() => {
+  const src = (document.currentScript && document.currentScript.src) || "";
+  const marker = "assets/js/public/";
+  const i = src.indexOf(marker);
+  return i >= 0 ? src.slice(0, i) : "/";
+})();
+
+/* Route map: role → portal path. Portal folders are named for the role they
+   accept; the receiving portal's checkSessionAuth() compares the role string
+   verbatim, so these keys must match STAFF_ACCOUNTS exactly. */
+const STAFF_ROUTES = {
+  "Super Admin":         BASE_PATH + "portal/super-admin/",
+  "Admin":               BASE_PATH + "portal/admin/",
+  "Inventory Staff":     BASE_PATH + "portal/inventory/",
+  "Cashier":             BASE_PATH + "portal/cashier/",
+  "Online Orders Staff": BASE_PATH + "portal/orders/",
+};
+
+/* ---------- DATA: categories ---------- */
+const CATEGORIES = ["All", "Deboned Bangus", "Bottled Gourmet Bangus"];
+
+/* ---------- DATA: products (single source — edit one entry to update UI)
+   tint = contents color used by the generated jar illustration.
+   stock thresholds (non-overlapping): >100 ok | 11-100 low | 1-10 critical | 0 out
+------------------------------------------------------------------- */
+/* Filled from api/shop/products.php by loadShopCatalog() at startup. The
+   literals below are scaffolding for the moment before that resolves, and are
+   overwritten wholesale — what a visitor sees is the database.
+
+   The public endpoint returns no stock counts, only a coarse availability
+   band; exact inventory is operational detail that does not belong on a page
+   anyone can open. */
+/* Filled from api/shop/products.php by loadShopProducts(). Empty until then.
+   Held mock rows until Phase 6. They were overwritten on every load, so
+   they changed nothing at runtime — but a load that failed left the screen
+   showing invented data that looked real. Empty is the honest starting
+   state: a failed load now shows an empty table and its error toast. */
+let PRODUCTS = [];
+
+/* ---------- FAQs ----------
+
+   Empty by design (D14). These five questions used to be hardcoded here, and
+   the same five live in the `faqs` table where the Landing Page editor writes
+   them. Two copies of the same content, and the literal was what a visitor saw
+   whenever content/get.php failed — including after an administrator had
+   edited an answer. The stale text rendered exactly like the real thing, with
+   nothing to indicate it was months out of date.
+
+   A failed load now says so. An empty accordion that admits it is empty is
+   more use to a visitor than a confident wrong answer about how long food
+   keeps. */
+let FAQS = [];
+let FAQS_LOADED = false;
+
+/* =================================================================
+   APP STATE  (single object — backend plugs in here)
+   ================================================================= */
+const _savedTheme = (() => { try { return localStorage.getItem("eb-theme") || "light"; } catch(_){ return "light"; } })();
+document.documentElement.setAttribute("data-theme", _savedTheme);
+
+/* Deliberately NOT restored from localStorage.
+
+   This used to read localStorage["eb-auth"] and, if the stored object said
+   `loggedIn:true`, start the page in a signed-in state. localStorage is
+   editable from the console, so that was a login: type the right JSON and the
+   account menu appeared under any name. bootstrapCustomer() would eventually
+   correct it against shop/me.php, but "eventually" is doing real work there —
+   until that response landed the page believed it, and if the request failed
+   for any reason other than 401 the stale value survived.
+
+   The page now starts signed out and stays that way until the server says
+   otherwise. The cost is a brief logged-out header on load for people who
+   genuinely are signed in; the benefit is that the only thing that can produce
+   a signed-in state is a verified password. */
+const _savedAuth = { loggedIn:false, name:"", email:"", id:null, status:null };
+
+const state = {
+  theme: _savedTheme,
+  cart: [],                        // [{id, qty}]
+  auth: _savedAuth,
+  filter: { search:"", category:"All", sort:"featured" },
+};
+
+/* =================================================================
+   HELPERS
+   ================================================================= */
+const $  = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => [...r.querySelectorAll(s)];
+const peso = n => CONFIG.currency + n.toLocaleString("en-PH");
+const getProduct = id => PRODUCTS.find(p => p.id === id);
+const txId = () => "EB-" + Date.now().toString(36).toUpperCase() + "-" + Math.floor(Math.random()*900+100);
+
+/* Availability, from the public catalogue's coarse band.
+
+   api/shop/products.php deliberately does not send exact stock counts — "7 left
+   in Dagupan" is operational detail any competitor could poll. It sends
+   `inStock` plus a `stockLevel` band, and these read that, falling back to the
+   numeric field only for the seeded rows rendered before the catalogue loads.
+
+   The consequence, stated plainly: the browser can no longer cap a quantity
+   input at the exact stock level. It never should have been the thing enforcing
+   that anyway — api/shop/checkout.php re-checks every line against the database
+   and refuses with "We only have N of X left". The client shows the band; the
+   server owns the number. */
+const CART_MAX_QTY = 99;
+
+/* Mirrors api/uploads/image.php — UPLOAD_MAX_BYTES (8MB) and its $ACCEPTED
+   map. Held here so the checkout's dropzone can name the real limit in its
+   hint line and refuse an obviously wrong file before spending a round trip
+   uploading it. The server re-checks both and reads the MIME from the file's
+   own bytes rather than trusting file.type, which is the only check that
+   counts; these two exist to save the shopper a wait, not to decide anything.
+   If that file's constants change, change these. */
+/* The payment methods, keyed by the string the API actually takes.
+
+   THE KEY IS THE VALUE. `data-pay` on each tile holds `cash`/`gcash`/`bank`/
+   `net30`/`net60`/`net90` — exactly what api/shop/checkout.php validates
+   against Payments::methods() — so there is nothing to translate on the way
+   out. What was there instead was:
+
+       pay_method: payment === "Cash" ? "cash"
+                 : (payment === "GCash" ? "gcash" : "bank")
+
+   a chained ternary whose FINAL branch is "bank". Adding a Net 30 tile without
+   noticing that line would have posted every credit order as a bank transfer:
+   the right total, the wrong payment method, no receivable opened, and nothing
+   anywhere saying so. The mapping is gone rather than extended, because the
+   next person to add a method should not have to find it.
+
+   `label` is for display only — the receipt, and the "reference number
+   required for X" message. */
+const PAY_METHODS_UI = {
+  cash:  "Cash",
+  gcash: "GCash",
+  bank:  "Bank Transfer",
+  net30: "Net 30",
+  net60: "Net 60",
+  net90: "Net 90",
+};
+const payLabel = key => PAY_METHODS_UI[key] || key;
+
+/* Mirrors Payments::CREDIT in api/core/Payments.php — the same three terms and
+   the same day counts. Spelled out here rather than derived from a response so
+   the tiles render with the first paint; the server is what decides whether
+   they are allowed, and refuses the key regardless of what was rendered.
+
+   Labelled with what the term MEANS. "Net 30" is trade vocabulary; a first-time
+   partner reads "Pay within 30 days" without having to be told. */
+const CREDIT_METHODS = [
+  { key: "net30", label: "Net 30", hint: "Pay within 30 days" },
+  { key: "net60", label: "Net 60", hint: "Pay within 60 days" },
+  { key: "net90", label: "Net 90", hint: "Pay within 90 days" },
+];
+const isCreditMethod = key => CREDIT_METHODS.some(m => m.key === key);
+
+const UPLOAD_MAX_MB  = 8;
+const UPLOAD_ACCEPT  = { "image/jpeg": "JPEG", "image/png": "PNG", "image/webp": "WebP" };
+
+function productAvailable(p){
+  if(!p) return false;
+  return p.inStock !== undefined ? p.inStock : (p.stock === undefined || p.stock > 0);
+}
+
+function stockInfo(stockOrProduct){
+  /* Accepts a product (public shape) or a bare number (seeded shape). */
+  if(stockOrProduct && typeof stockOrProduct === "object"){
+    const p = stockOrProduct;
+    if(p.stockLevel){
+      const MAP = {
+        out:  { cls:"stock-out",  label: p.stockLabel || "Out of Stock" },
+        crit: { cls:"stock-crit", label: p.stockLabel || "Only a few left" },
+        warn: { cls:"stock-warn", label: p.stockLabel || "Low stock" },
+        ok:   { cls:"stock-ok",   label: p.stockLabel || "In Stock" },
+      };
+      return MAP[p.stockLevel] || MAP.ok;
+    }
+    return stockInfo(p.stock);
+  }
+  const stock = stockOrProduct;
+  if(stock <= 0)   return { cls:"stock-out",  label:"Out of Stock" };
+  if(stock <= 10)  return { cls:"stock-crit", label:`Critical · ${stock} left` };
+  if(stock <= 100) return { cls:"stock-warn", label:`Low · ${stock} left` };
+  return { cls:"stock-ok", label:"In Stock" };
+}
+
+/* ---------- Inline SVG icon set (no emojis) ---------- */
+const ICONS = {
+  search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>',
+  menu:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>',
+  x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
+  minus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>',
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+  grid:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>',
+  cart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  chev:'<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+  eye:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+  eyeoff:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20C5 20 1 12 1 12a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>',
+  spark:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8z"/></svg>',
+  star:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.8L12 17.3 5.8 20.9l1.6-6.8L2.2 8.9l6.9-.6z"/></svg>',
+  starhalf:'<svg viewBox="0 0 24 24"><defs><linearGradient id="hg"><stop offset="50%" stop-color="currentColor"/><stop offset="50%" stop-color="transparent"/></linearGradient></defs><path fill="url(#hg)" stroke="currentColor" stroke-width="1.2" d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.8L12 17.3 5.8 20.9l1.6-6.8L2.2 8.9l6.9-.6z"/></svg>',
+  user:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  logout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>',
+  bag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18M16 10a4 4 0 0 1-8 0"/></svg>',
+  pin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
+  phone:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
+  mail:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>',
+  facebook:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 12a10 10 0 1 0-11.56 9.88v-6.99H7.9V12h2.54V9.8c0-2.5 1.49-3.89 3.78-3.89 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56V12h2.78l-.44 2.89h-2.34v6.99A10 10 0 0 0 22 12z"/></svg>',
+  instagram:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>',
+  truck:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7"/><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="18.5" r="2"/></svg>',
+  leaf:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 4 13c0-5 4-9 16-9 0 8-5 16-9 16z"/><path d="M4 20s3-3 7-3"/></svg>',
+  fish:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 12c3-5 9-6 15-2-3 5-9 6-15 2zM21 10c-2 1-2 3 0 4M6 12c-2-1-4 0-5 2 2 1 3 1 5 0"/><circle cx="16" cy="11" r=".6" fill="currentColor"/></svg>',
+  jar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2h8M7 6h10v13a3 3 0 0 1-3 3H10a3 3 0 0 1-3-3z"/><path d="M7 11h10"/></svg>',
+  camera:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
+};
+function icon(name, cls=""){ return `<span class="${cls}" aria-hidden="true">${ICONS[name]||""}</span>`; }
+
+/* ---------- Image resolver, shared with the portal (decision I6) ----------
+   site.js is a classic script; EbFormat is published as a global by
+   assets/js/core/index.js. Declared as a function, not a const arrow, because
+   the seed-array .map() blocks near the top of this file run at parse time and
+   a const would still be in its temporal dead zone. */
+function imageUrl(rec){ return EbFormat.imageUrl(rec); }
+
+/* Escape anything from the database before it goes into markup.
+
+   THIS FILE HAD NO ESCAPER AND 31 innerHTML ASSIGNMENTS.
+
+   The portal escapes properly — engine.js makes 107 escHtml() calls against 29
+   innerHTML, orders.js 66 against 23. The storefront is the half that never got
+   one, and the result was a stored XSS reachable by any account holding
+   products.manage or landing.manage: a product description saved through the
+   normal Product Maintenance form executed as script for every anonymous
+   visitor to the shop. Reproduced before this fix, with an <img onerror> that
+   set a global; the payload ran.
+
+   ESCAPED AT RENDER, NOT SANITISED AT WRITE. Stripping tags when the
+   administrator saves silently destroys their copy — an ampersand in a product
+   name is not an attack — and it only protects the rows written after the
+   sanitiser was added. Escaping at the point of output is lossless, reversible,
+   and covers every row that already exists.
+
+   `esc` for element text, `escAttr` for attribute values. They do the same
+   thing — EbFormat.escHtml covers & < > " — and are named apart so a reader can
+   see which context each call site is in. */
+function esc(v){ return EbFormat.escHtml(v == null ? "" : v); }
+function escAttr(v){ return esc(v); }
+
+/* ---------- Image holder ----------
+   FOUR arguments. The fourth is the photo, and omitting it is not a smaller
+   call — it is the placeholder branch, unconditionally.
+
+   The product card passed it. renderCart() and openProductDetail() did not, so
+   `img` was "" and the cart line and the detail modal showed the camera mark
+   for every product, including the ones with a photo uploaded. Same function,
+   same data, two call sites that had drifted from the third.
+
+   (A product with no photo still shows the placeholder here, and that is
+   correct: api/shop/products.php sends `image` => image_url, imageUrl()
+   resolves it, and a row with no image_url has nothing to show. That is a
+   Product Maintenance upload, not a defect in this file.) */
+function jarSVG(tint, label, cls="jar", img=""){
+  /* Real photo when the admin has uploaded one, placeholder otherwise. `img`
+     has already been through imageUrl() by the time it arrives here. */
+  /* `label` is a product name from the database and lands in three attributes;
+     `img` is a path from imageUrl(). Both escaped. */
+  const L = escAttr(label);
+  if(img){
+    return `<div class="img-holder has-photo" aria-label="${L}" title="${L}">
+      <img src="${escAttr(img)}" alt="${L}" loading="lazy" draggable="false">
+    </div>`;
+  }
+  const camIcon = ICONS.camera || '';
+  return `<div class="img-holder" aria-label="${L}" title="${L}">
+    <span class="ph-icon" aria-hidden="true">${camIcon}</span>
+    <span class="ph-label">Product Photo</span>
+  </div>`;
+}
+
+/* star rating markup */
+function starRating(r){
+  let html = '<span class="stars" aria-label="Rated '+r+' out of 5">';
+  for(let i=1;i<=5;i++){
+    if(r >= i)        html += ICONS.star;
+    else if(r >= i-.5)html += ICONS.starhalf;
+    else              html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.8L12 17.3 5.8 20.9l1.6-6.8L2.2 8.9l6.9-.6z"/></svg>';
+  }
+  html += `<span class="rv">${r.toFixed(1)}</span></span>`;
+  return html;
+}
+
+/* =================================================================
+   RENDER: product card factory (used by Shop + Best Sellers)
+   -----------------------------------------------------------------
+   THE MEDIA LINE BELOW WAS DEFECT 3.2.
+
+   api/shop/products.php sends the photo as "image". This function read
+   p.img, which is undefined for every product, so every card took the
+   placeholder branch — while the POS tiles, which read "image", showed
+   the photo perfectly well. That asymmetry is what made it look like a
+   staff-versus-customer problem rather than what it was: one endpoint
+   and one renderer spelling the same field two ways, with 1.8MB of
+   base64 downloaded and discarded on every page load.
+
+   It goes through imageUrl() now, which accepts either key and resolves
+   the stored path against the application root, so neither half of the
+   mistake can return.
+   ================================================================= */
+function createProductCard(p, {ribbon=false}={}){
+  const s = stockInfo(p);
+  const out = !productAvailable(p);
+  const el = document.createElement("article");
+  el.className = "card product-card";
+  el.dataset.id = p.id;
+  el.innerHTML = `
+    ${ribbon && p.best ? `<span class="ribbon">${icon("star")} Best Seller</span>` : ""}
+    <div class="pc-media" data-detail="${escAttr(p.id)}" role="button" tabindex="0" aria-label="View ${escAttr(p.name)} details">
+      ${jarSVG(p.tint, p.name, 'jar', imageUrl(p))}
+      <div class="pc-quickview"><span>${icon("search")} Quick view</span></div>
+    </div>
+    <div class="pc-body">
+      <span class="pc-cat">${esc(p.cat)}</span>
+      <h3 class="pc-name" data-detail="${escAttr(p.id)}">${esc(p.name)}</h3>
+      <p class="pc-desc">${esc(p.desc)}</p>
+      <div class="pc-meta">
+        ${starRating(p.rating)}
+        <span>${p.sold.toLocaleString()} sold</span>
+      </div>
+      <div class="pc-foot">
+        <span class="price"><span class="cur">${CONFIG.currency}</span>${p.price}</span>
+        <span class="stock-pill ${s.cls}">${s.label}</span>
+      </div>
+      <div class="pc-add">
+        ${out ? "" : `<div class="stepper" data-stepper>
+            <button type="button" data-step="-1" aria-label="Decrease quantity">${ICONS.minus}</button>
+            <input type="number" value="1" min="1" max="${CART_MAX_QTY}" aria-label="Quantity" />
+            <button type="button" data-step="1" aria-label="Increase quantity">${ICONS.plus}</button>
+          </div>`}
+        <button class="btn btn-primary btn-add" data-add="${escAttr(p.id)}" ${out?"disabled":""} style="flex:1">
+          ${out ? "Sold Out" : icon("cart")+" Add"}
+        </button>
+      </div>
+    </div>`;
+  return el;
+}
+
+/* render the shop grid honoring filter/search/sort */
+function renderProducts(){
+  const grid = $("#product-grid");
+  if(!grid) return;
+  const { search, category, sort } = state.filter;
+  let list = PRODUCTS.filter(p=>{
+    const matchCat = category === "All" || p.cat === category;
+    const q = search.trim().toLowerCase();
+    const matchQ = !q || p.name.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q) || p.cat.toLowerCase().includes(q);
+    return matchCat && matchQ;
+  });
+  list.sort((a,b)=>{
+    switch(sort){
+      case "name-asc":   return a.name.localeCompare(b.name);
+      case "price-asc":  return a.price - b.price;
+      case "price-desc": return b.price - a.price;
+      default:           return (b.best - a.best) || (b.sold - a.sold); // featured / best seller
+    }
+  });
+  grid.innerHTML = "";
+  if(!list.length){
+    grid.innerHTML = `<div class="no-results">${icon("search")}<h3 style="font-size:1.6rem;margin:10px 0 4px">No products found</h3><p>Try a different search or category.</p></div>`;
+    return;
+  }
+  list.forEach(p => grid.appendChild(createProductCard(p, {ribbon:true})));
+}
+
+/* best sellers — 3-D fan carousel */
+function renderBestSellers(){
+  const track = $("#bestsellers-track");
+  if(!track) return;
+  /* The admin's Landing Page module writes a chosen list; fall back to the
+     `best` flag when nothing has been saved yet. */
+  const picked = (window.EB_LANDING && Array.isArray(window.EB_LANDING.featured))
+    ? window.EB_LANDING.featured : null;
+  const items = picked && picked.length
+    ? picked.map(id => PRODUCTS.find(p => p.id === id)).filter(Boolean)
+    : PRODUCTS.filter(p => p.best);
+  const total = items.length;
+  let current = 0;
+
+  track.className = "bs-carousel";
+  track.innerHTML =
+    '<div class="bsc-stage" id="bsc-stage"></div>' +
+    '<div class="bsc-nav">' +
+      '<button class="bsc-btn bsc-prev" aria-label="Previous slide">' +
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>' +
+      '</button>' +
+      '<div class="bsc-dots" id="bsc-dots"></div>' +
+      '<button class="bsc-btn bsc-next" aria-label="Next slide">' +
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>' +
+      '</button>' +
+    '</div>';
+
+  const stage   = $("#bsc-stage");
+  const dotsWrap = $("#bsc-dots");
+
+  const slides = items.map(function(p, i){
+    const slide = document.createElement("div");
+    slide.className = "bsc-slide";
+    slide.appendChild(createProductCard(p, {ribbon:true}));
+    slide.addEventListener("click", function(){
+      if(i !== current){ current = i; navPaint(); }
+    });
+    stage.appendChild(slide);
+    return slide;
+  });
+
+  const dots = items.map(function(_, i){
+    const d = document.createElement("button");
+    d.className = "bsc-dot" + (i === 0 ? " active" : "");
+    d.setAttribute("aria-label", "Go to slide " + (i+1));
+    d.addEventListener("click", function(){ current = i; navPaint(); });
+    dotsWrap.appendChild(d);
+    return d;
+  });
+
+  /* Wheel geometry. WHEEL_STEP is the angle between neighbouring cards on
+     the rim; everything else follows from it because the pivot lives far
+     below the stage (see --wheel-origin in styles.css). Index 0 is the
+     centre card, 1 its neighbours, 2 the pair clipped at the edges. */
+  var WHEEL_STEP  = 17;                 /* degrees between cards */
+  var WHEEL_SCALE = [1, 0.94, 0.86];
+  var WHEEL_OP    = [1, 0.9, 0.5];
+  var WHEEL_Z     = [10, 8, 6];
+
+  function paint(){
+    slides.forEach(function(slide, i){
+      var offset = ((i - current + total) % total);
+      var norm   = offset > total / 2 ? offset - total : offset;
+      var abs    = Math.abs(norm);
+      var step   = Math.min(abs, 2);
+
+      var angle = norm * WHEEL_STEP;
+      var scale = WHEEL_SCALE[step];
+      var op    = abs > 2 ? 0 : WHEEL_OP[step];
+      var zi    = WHEEL_Z[step];
+
+      var card = slide.firstElementChild;
+      var tf   = "rotate(" + angle + "deg)";
+
+      /* wrap-around: a card jumping from one end of the arc to the other
+         must snap rather than tween straight back through the centre */
+      var prevNorm = slide._norm;
+      if(prevNorm !== undefined && Math.abs(norm - prevNorm) > 2){
+        var saved     = slide.style.transition;
+        var savedCard = card ? card.style.transition : "";
+        slide.style.transition = "none";
+        if(card) card.style.transition = "none";
+        slide.style.transform = tf;
+        slide.style.opacity   = op;
+        if(card) card.style.transform = "scale(" + scale + ")";
+        void slide.offsetHeight;                 /* flush so it isn't animated */
+        slide.style.transition = saved;
+        if(card) card.style.transition = savedCard;
+      } else {
+        slide.style.transform = tf;
+        slide.style.opacity   = op;
+        if(card) card.style.transform = "scale(" + scale + ")";
+      }
+
+      slide._norm = norm;
+      slide.style.zIndex = zi;
+      slide.setAttribute("data-active", abs === 0 ? "true" : "false");
+      slide.style.cursor = abs === 0 ? "auto" : "pointer";
+    });
+    dots.forEach(function(d, i){ d.classList.toggle("active", i === current); });
+  }
+
+  /* rapid clicking switches to a short transition so cards don't
+     pile up mid-flight on the 2.5s glide */
+  var lastNav = 0, fastTimer = null;
+  function navPaint(){
+    var now = Date.now();
+    if(now - lastNav < 900){
+      stage.classList.add("fast");
+      clearTimeout(fastTimer);
+      fastTimer = setTimeout(function(){ stage.classList.remove("fast"); }, 900);
+    }
+    lastNav = now;
+    paint();
+    /* Give the visitor the full dwell time after they choose a card, instead
+       of letting the already-running timer fire moments later. Stay paused if
+       the pointer is still on the carousel. */
+    pause();
+    if(!hovering) resume();
+  }
+
+  track.querySelector(".bsc-prev").addEventListener("click", function(e){
+    e.stopPropagation();
+    current = (current - 1 + total) % total;
+    navPaint();
+  });
+  track.querySelector(".bsc-next").addEventListener("click", function(e){
+    e.stopPropagation();
+    current = (current + 1) % total;
+    navPaint();
+  });
+
+  /* touch/swipe */
+  var sx = 0;
+  stage.addEventListener("touchstart", function(e){ sx = e.touches[0].clientX; pause(); }, {passive:true});
+  stage.addEventListener("touchend", function(e){
+    var dx = e.changedTouches[0].clientX - sx;
+    if(Math.abs(dx) > 50){
+      current = dx < 0 ? (current+1)%total : (current-1+total)%total;
+      paint();
+    }
+    resume();
+  });
+
+  /* auto-rotate */
+  var timer = null;
+  /* 0.8s glide (the CSS transition) + 1.0s at rest in the centre. */
+  var WHEEL_GLIDE_MS = 800, WHEEL_HOLD_MS = 1000;
+  function resume(){
+    clearInterval(timer);
+    timer = setInterval(function(){
+      current = (current + 1) % total;      /* right-to-left travel */
+      paint();
+    }, WHEEL_GLIDE_MS + WHEEL_HOLD_MS);
+  }
+  function pause(){ clearInterval(timer); }
+
+  /* Track hover explicitly: navPaint() restarts the countdown after a manual
+     choice, and without this flag an arrow click would resume autoplay even
+     though the pointer is still resting on the carousel. */
+  var hovering = false;
+  track.addEventListener("mouseenter", function(){ hovering = true;  pause();  });
+  track.addEventListener("mouseleave", function(){ hovering = false; resume(); });
+
+  paint();
+  resume();
+}
+
+/* =================================================================
+   RENDER: certifications, FAQ, trust badges
+   ================================================================= */
+function renderCerts(){
+  const make = c => `<div class="cert"><span class="ring">${esc(c.code)}</span><small>${esc(c.label)}</small></div>`;
+  const aboutCerts = $("#about-certs");
+  if(aboutCerts) aboutCerts.innerHTML = CONFIG.certifications.map(make).join("");
+  /* #trust-badges removed — the element does not exist in any HTML file.
+     #about-certs and #foot-certs below are real and stay. */
+  const footCerts = $("#foot-certs");
+  if(footCerts) footCerts.innerHTML = CONFIG.certifications.map(c=>`<span>${esc(c.code)}</span>`).join("");
+}
+
+function createFaqItem(qa, idx){
+  const item = document.createElement("div");
+  item.className = "faq-item";
+  const aid = `faq-a-${idx}`, qid = `faq-q-${idx}`;
+  item.innerHTML = `
+    <button class="faq-q" id="${qid}" aria-expanded="false" aria-controls="${aid}">
+      <span>${esc(qa.q)}</span>
+      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+    <div class="faq-a" id="${aid}" role="region" aria-labelledby="${qid}"><div class="inner">${esc(qa.a)}</div></div>`;
+  const btn = $(".faq-q", item), ans = $(".faq-a", item);
+  btn.addEventListener("click", ()=>{
+    const open = item.classList.toggle("open");
+    btn.setAttribute("aria-expanded", open);
+    ans.style.maxHeight = open ? ans.scrollHeight + "px" : 0;
+  });
+  return item;
+}
+function renderFaqs(){
+  const wrap = $("#faq-wrap");
+  if(!wrap) return;
+  wrap.innerHTML = "";
+
+  if(!FAQS.length){
+    /* D14: an error state, never invented rows. Distinguishes "still loading"
+       from "we could not reach the server" — a visitor can act on the second
+       by trying again, and can act on neither if both look the same. */
+    const note = document.createElement("div");
+    note.className = "faq-empty muted";
+    note.style.cssText = "padding:18px 0;text-align:center";
+    note.textContent = FAQS_LOADED
+      ? "No questions have been published yet."
+      : "Couldn't load the questions just now — please refresh.";
+    wrap.appendChild(note);
+    return;
+  }
+
+  FAQS.forEach((qa,i)=> wrap.appendChild(createFaqItem(qa,i)));
+}
+
+/* =================================================================
+   UI PRIMITIVE: TOAST
+   ================================================================= */
+function showToast(msg, type="success", opts={}){
+  /* Two separate faults were fixed here.
+
+     1. `msg` went in as innerHTML. Callers compose it from database values —
+        `${p.name} added to cart` is the obvious one — so a product name
+        containing markup executed. The icon is ours and stays as markup; the
+        message is data and is escaped.
+
+     2. `wrap.appendChild(t)` ran with no null check. #toast-wrap does not exist
+        on profile.html or my-orders.html — both declare #toast-root — so EVERY
+        toast on the two customer account pages threw
+        "Cannot read properties of null (reading 'appendChild')" and the
+        customer was told nothing at all: not "Address saved", not "Password
+        changed", not any error. The saves themselves worked, which is what made
+        it invisible.
+
+     Both container ids are accepted, and a page with neither degrades to the
+     console instead of throwing — the same thing EbUI.toast() in
+     assets/js/core/ui.js has always done. That this file's twin lacked the
+     guard is the duplicate-implementation drift catalogued in REMEDIATION.md.
+
+     TWIN: EbUI.toast() in assets/js/core/ui.js serves the portal. It is a
+     different markup contract on purpose — #toast-container, types ok/err/warn,
+     a flat bordered card with no icon well — and its glyphs are already sized
+     by portal.css. Behaviour is what has to stay in step between the two, not
+     structure. Change one, read the other. */
+  const wrap = $("#toast-wrap") || $("#toast-root");
+  if(!wrap){ console.log(`[${type}] ${msg}`); return; }
+  const t = document.createElement("div");
+  t.className = `toast ${type}`;
+  /* The non-success marker is an EMPTY well, filled by CSS with a dot.
+
+     It used to be ICONS.cart, and that was wrong twice over. Geometrically:
+     ICONS.check draws `M20 6 9 17l-5-5`, inset well inside its 24x24 box, so
+     it sits happily in a 22px circle. ICONS.cart starts at `M1 1`, runs out to
+     x=23 and puts its two wheels down at cy=21 — corner to corner, so in the
+     same circle it touches the edge and reads bottom-left heavy. Semantically:
+     a shopping trolley says nothing at all on "Signed out." or on an upload
+     failure, which are two of the messages that carried it.
+
+     A dot carries no false meaning and cannot be off-centre. The check stays
+     for success, where it means something. */
+  t.innerHTML = `<span class="ic">${type==="success"?ICONS.check:""}</span><span class="toast-msg">${esc(msg)}</span>`;
+
+  let timer = null;
+  const dismiss = () => {
+    if(timer){ clearTimeout(timer); timer = null; }
+    t.classList.add("out");
+    setTimeout(()=>t.remove(), 320);
+  };
+
+  /* An optional action, so a destructive change can be offered back instead of
+     asked about first. Removing a cart line used to be the only way to empty
+     it and there was no way to take it back; a confirm() would have been the
+     obvious fix and is the wrong one — nothing else on this storefront uses a
+     browser dialog, and a prompt in front of every removal taxes the ninety
+     per cent of removals that were meant. Undo taxes the ten per cent that
+     were not.
+
+     The window is longer than a plain toast's: an undo the reader has not
+     finished reading is not an undo. */
+  if(opts.action && typeof opts.action.onClick === "function"){
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "toast-action";
+    btn.textContent = opts.action.label || "Undo";
+    btn.addEventListener("click", ()=>{ dismiss(); opts.action.onClick(); });
+    t.appendChild(btn);
+  }
+
+  wrap.appendChild(t);
+  timer = setTimeout(dismiss, opts.duration || (opts.action ? 6000 : 2600));
+}
+
+/* =================================================================
+   UI PRIMITIVE: MODAL  (serves product detail, login, register, checkout, receipt)
+   ================================================================= */
+let lastFocus = null;
+function openModal(title, bodyHTML, {wide=false, onOpen}={}){
+  lastFocus = document.activeElement;
+  $("#modal-title").textContent = title;
+  $("#modal-body").innerHTML = bodyHTML;
+  $("#modal").classList.toggle("wide", wide);
+  $("#modal-scrim").classList.add("open");
+  document.body.style.overflow = "hidden";
+  if(onOpen) onOpen($("#modal-body"));
+  const f = $("#modal-body").querySelector("input,select,textarea,button");
+  if(f) setTimeout(()=>f.focus(), 60);
+}
+function closeModal(){
+  $("#modal-scrim").classList.remove("open");
+  document.body.style.overflow = "";
+  $("#modal")?.classList.remove("is-auth");
+  if(lastFocus) lastFocus.focus();
+}
+
+/* =================================================================
+   CART logic
+   ================================================================= */
+/* PRODUCTS, not units.
+
+   This was `reduce((n,i)=>n+i.qty, 0)`, so two products at quantity 2 gave 4:
+   the header badge said 4 and the drawer said "Subtotal (4 items)" when two
+   things had been added. "Items" is the ambiguous word that let it pass — it
+   reads as either, so neither number looked wrong.
+
+   One definition, used by the badge, by the drawer label and by
+   api/shop/cart.php's `count`, so the badge cannot disagree with itself
+   depending on whether the cart came from the server or from local state.
+   The label says "products" rather than "items" so the number names itself.
+
+   The unit total is not computed anywhere any more. Nothing wanted it: the
+   old cartCount() had exactly these two callers. If the header badge is later
+   meant to show units, it is one helper and one call site. */
+const cartLineCount = () => state.cart.length;
+/* Guarded on the product. Every line used to be dereferenced straight through
+   getProduct(), which is a lookup into PRODUCTS — a list loaded asynchronously
+   from shop/products.php. Once the cart arrives from the server it can arrive
+   BEFORE that list does, and `getProduct(id).price` on undefined throws and
+   takes the whole drawer with it. mergeCartProducts() below means this should
+   never fire; it is here because "should never" is not a guarantee. */
+const cartSubtotal = () => state.cart.reduce((s,i)=>{
+  const p = getProduct(i.id);
+  return s + (p ? p.price * i.qty : 0);
+}, 0);
+
+let pendingCartAdd = null; // item queued while user logs in
+
+/* =================================================================
+   CART PERSISTENCE — the cart is on the account, not in the tab
+   -----------------------------------------------------------------
+   state.cart was `cart: []` and nothing else. A reload emptied it, signing out
+   emptied it, and a second device never saw it — so the badge rendering 0 was
+   not a badge defect, there genuinely was nothing there.
+
+   NOT localStorage, and the reason is already written down in this file: read
+   the comment above _savedAuth. The signed-in flag used to be restored from
+   localStorage, which made typing the right JSON into the console a login.
+   That flag is deliberately not restored any more. A cart in localStorage is
+   the same mistake one size down — per-browser rather than per-account, so it
+   misses the device change that is most of the point, and shared by everyone
+   who uses the machine.
+
+   db/migrations/007-persistent-cart.sql, api/shop/cart.php and
+   api/shop/cart-save.php are the other three quarters of this.
+   ================================================================= */
+
+/* Write one line through to the server.
+
+   The UI has already been updated and redrawn by the time this runs — a
+   stepper that waits for a round trip before moving is a stepper that feels
+   broken on a slow connection. What this owns is the failure: `rollback` puts
+   state.cart back the way it was, and the shopper is told, rather than being
+   left with a drawer that disagrees with the database.
+
+   Signed out is not a failure. addToCart() refuses before this point, so the
+   only way to be here without a session is a stale tab; there is nowhere to
+   save to and nothing to say about it. */
+async function saveCartLine(id, qty, rollback){
+  if(!state.auth.loggedIn) return false;
+  try {
+    await EbApi.post("shop/cart-save.php", { product_id: id, qty });
+    return true;
+  } catch(err){
+    if(typeof rollback === "function") rollback();
+    updateCartBadge(); renderCart();
+    showToast(err.message || "Your cart could not be saved. Please try again.", "info");
+    return false;
+  }
+}
+
+/* Fold the product fields the cart endpoint sends into PRODUCTS.
+
+   shop/cart.php joins each line to its product and returns name, price, image
+   and tint alongside the quantity, so the drawer can be drawn from the cart
+   response alone. Without this the drawer would depend on loadShopCatalog()
+   having already resolved — two independent requests, and renderCart() would
+   be correct or blank depending on which won.
+
+   Existing entries are not overwritten: the catalogue row is richer (it has
+   the long description, the nutrition line and the rating the product detail
+   modal needs) and this one is a subset of it. */
+function mergeCartProducts(items){
+  (items || []).forEach(it => {
+    if(getProduct(it.id)) return;
+    PRODUCTS.push({
+      id: it.id, name: it.name, price: it.price, image: it.image,
+      tint: it.tint, cat: it.cat, desc: "", long: "", nutri: "",
+      rating: 0, sold: 0, best: false,
+      inStock: it.inStock, stockLevel: it.stockLevel, stockLabel: it.stockLabel,
+    });
+  });
+}
+
+/* Load the signed-in customer's cart and render it.
+
+   Returns the server's payload so a caller can act on the count — signIn()
+   uses it for the "items waiting" reminder — or null when there is no session
+   or the request failed. A failed load leaves state.cart alone rather than
+   emptying it: "the request did not come back" says nothing about what is in
+   the cart, and rendering zero would read as "we lost it". */
+async function loadServerCart(){
+  if(!state.auth.loggedIn) return null;
+  try {
+    const { data } = await EbApi.get("shop/cart.php");
+    mergeCartProducts(data.items);
+    state.cart = data.items.map(i => ({ id: i.id, qty: i.qty }));
+    updateCartBadge();
+    renderCart();
+
+    /* The server reconciles a saved cart against the current catalogue —
+       archived products dropped, quantities clamped to stock — and reports
+       what it changed. Saying so is the entire point of reporting it; a cart
+       that quietly loses a line is worse than the stale line was. */
+    (data.changes || []).forEach(c => {
+      const what = c.action === "clamped"
+        ? `quantity reduced to ${c.qty}`
+        : "removed from your cart";
+      showToast(`${c.name} ${c.reason} — ${what}.`, "info");
+    });
+
+    return data;
+  } catch(err){
+    /* 401 is the ordinary "not signed in" case and says nothing worth saying. */
+    if(err && err.status !== 401) console.warn("cart load failed:", err.message);
+    return null;
+  }
+}
+
+async function addToCart(id, qty=1){
+  if(!state.auth.loggedIn){
+    pendingCartAdd = { id, qty };
+    openLogin(`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg> Sign in to add items to your cart`);
+    return;
+  }
+  const p = getProduct(id);
+  if(!productAvailable(p)) { showToast("That product is out of stock", "info"); return; }
+  const line = state.cart.find(i=>i.id===id);
+  const prevQty = line ? line.qty : 0;
+  const newQty = prevQty + qty;
+  /* Sanity cap only. The real availability check happens server-side at
+     checkout, which knows the actual number. */
+  if(newQty > CART_MAX_QTY){ showToast(`Maximum ${CART_MAX_QTY} per item`, "info"); return; }
+  if(line) line.qty = newQty; else state.cart.push({id, qty});
+  updateCartBadge(true);
+  renderCart();
+  showToast(`${p.name} added to cart`, "success");
+  /* Screen first, server second. If the write is refused — the product went
+     out of stock between the page loading and this click — the line goes back
+     to what it was and the shopper is told why. */
+  await saveCartLine(id, newQty, () => {
+    if(prevQty > 0){ const l = state.cart.find(i=>i.id===id); if(l) l.qty = prevQty; }
+    else state.cart = state.cart.filter(i=>i.id!==id);
+  });
+}
+function setQty(id, qty){
+  /* The floor stays at 1. This clamp is what protects the typed number input,
+     where 0 is not a quantity — "remove this line" is a decision made by the
+     minus button and the change handler, which know the difference. */
+  qty = Math.max(1, Math.min(qty, CART_MAX_QTY));
+  const line = state.cart.find(i=>i.id===id);
+  if(!line) return;
+  const prevQty = line.qty;
+  if(prevQty === qty) return;
+  line.qty = qty;
+  updateCartBadge(); renderCart();
+  saveCartLine(id, qty, () => { const l = state.cart.find(i=>i.id===id); if(l) l.qty = prevQty; });
+}
+/* Removal is immediate and reversible.
+
+   The line goes now — no dialog standing between the shopper and the thing
+   they just asked for — and the toast carries the way back. The index is kept
+   as well as the line so an undo puts it back WHERE it was rather than at the
+   bottom of the drawer, which reads as a different cart. */
+function removeFromCart(id){
+  const idx = state.cart.findIndex(i => i.id === id);
+  if(idx < 0) return;
+  const [line] = state.cart.splice(idx, 1);
+  const p = getProduct(id);
+  updateCartBadge(); renderCart();
+  showToast(`${p ? p.name : "Item"} removed from your cart`, "info", {
+    action: { label: "Undo", onClick: () => restoreCartLine(idx, line) },
+  });
+  /* qty 0 is the delete. If the delete is refused the line comes back, and
+     `false` stops that restore posting a write of its own — the row was never
+     removed server-side, so there is nothing to put back there. */
+  saveCartLine(id, 0, () => restoreCartLine(idx, line, false));
+}
+
+function restoreCartLine(idx, line, persist=true){
+  /* The shopper may have added the same product again while the toast was up.
+     Putting the old line back on top of the new one would silently overwrite
+     whatever quantity they just chose. */
+  if(state.cart.some(i => i.id === line.id)) return;
+  state.cart.splice(Math.min(idx, state.cart.length), 0, line);
+  updateCartBadge(true); renderCart();
+  if(persist){
+    saveCartLine(line.id, line.qty, () => {
+      state.cart = state.cart.filter(i => i.id !== line.id);
+    });
+  }
+}
+
+function updateCartBadge(bounce=false){
+  const n = cartLineCount();
+  // update both pill badge and mobile badge
+  [$("#cart-badge"), $("#cart-badge-mob")].forEach(b=>{ if(b){ b.textContent=n; b.classList.toggle("show",n>0); } });
+  if(bounce){
+    const ic = $("#cart-icon");
+    if(ic){ ic.classList.remove("cart-icon-anim"); void ic.offsetWidth; ic.classList.add("cart-icon-anim"); }
+  }
+}
+
+function renderCart(){
+  const body = $("#cart-body"), foot = $("#cart-foot");
+  if(!body || !foot) return;
+  if(!state.cart.length){
+    body.innerHTML = `<div class="cart-empty">${icon("bag")}<div><b style="font-family:'Cormorant Garamond';font-size:1.4rem">Your cart is empty</b><p>Add some gourmet goodness to get started.</p></div><button class="btn btn-ghost" id="cart-shop">Browse the Shop</button></div>`;
+    foot.innerHTML = "";
+    $("#cart-shop")?.addEventListener("click", goToShop);
+    return;
+  }
+  body.innerHTML = "";
+  state.cart.forEach(item=>{
+    const p = getProduct(item.id);
+    const line = document.createElement("div");
+    line.className = "cart-line";
+    line.innerHTML = `
+      <div class="thumb">${jarSVG(p.tint, p.name, 'jar', imageUrl(p))}</div>
+      <div class="cl-info">
+        <b>${esc(p.name)}</b>
+        <span class="cl-price">${peso(p.price)} each · <b style="color:var(--text)">${peso(p.price*item.qty)}</b></span>
+        <div class="stepper" data-cart-stepper="${escAttr(p.id)}" style="margin-top:6px">
+          <button type="button" data-cstep="-1" aria-label="Decrease">${ICONS.minus}</button>
+          <input type="number" value="${item.qty}" min="1" max="${CART_MAX_QTY}" aria-label="Quantity of ${escAttr(p.name)}" />
+          <button type="button" data-cstep="1" aria-label="Increase">${ICONS.plus}</button>
+        </div>
+      </div>
+      <button class="cl-remove" data-remove="${escAttr(p.id)}" aria-label="Remove ${escAttr(p.name)}">${ICONS.trash}</button>`;
+    body.appendChild(line);
+  });
+  const sub = cartSubtotal();
+  foot.innerHTML = `
+    <div class="summary-row"><span>Subtotal (${cartLineCount()} ${cartLineCount()===1?"product":"products"})</span><span>${peso(sub)}</span></div>
+    <div class="summary-row"><span>Shipping</span><span>Calculated at checkout</span></div>
+    <div class="summary-row total"><span>Total</span><span>${peso(sub)}</span></div>
+    <button class="btn btn-primary btn-block" id="checkout-btn">Proceed to Checkout</button>`;
+  $("#checkout-btn").addEventListener("click", openCheckout);
+}
+
+function openCart(){ $("#cart-scrim").classList.add("open"); $("#cart-drawer").classList.add("open"); document.body.style.overflow="hidden"; }
+function closeCart(){ $("#cart-scrim").classList.remove("open"); $("#cart-drawer").classList.remove("open"); document.body.style.overflow=""; }
+
+/* =================================================================
+   PRODUCT DETAIL modal
+   ================================================================= */
+function openProductDetail(id){
+  const p = getProduct(id);
+  const s = stockInfo(p);
+  const out = !productAvailable(p);
+  const body = `
+    <div class="pd-grid">
+      <div class="pd-media">${jarSVG(p.tint, p.name, 'jar', imageUrl(p))} ${p.best?`<span class="ribbon">${icon("star")} Best Seller</span>`:""}</div>
+      <div class="pd-info">
+        <span class="pc-cat">${esc(p.cat)}</span>
+        <div class="pc-meta" style="margin:8px 0">${starRating(p.rating)} <span>· ${p.sold.toLocaleString()} sold</span></div>
+        <p class="pd-desc">${p.long}</p>
+        <div class="pd-nutri"><b>Nutrition:</b> ${p.nutri}</div>
+        <span class="stock-pill ${s.cls}">${s.label}</span>
+        <div class="pd-price">${peso(p.price)}</div>
+        <div class="pd-actions">
+          ${out?"":`<div class="stepper" data-stepper>
+            <button type="button" data-step="-1" aria-label="Decrease quantity">${ICONS.minus}</button>
+            <input type="number" value="1" min="1" max="${CART_MAX_QTY}" aria-label="Quantity" />
+            <button type="button" data-step="1" aria-label="Increase quantity">${ICONS.plus}</button>
+          </div>`}
+          <button class="btn btn-primary" data-add-detail="${escAttr(p.id)}" ${out?"disabled":""}>${out?"Sold Out":icon("cart")+" Add to Cart"}</button>
+        </div>
+      </div>
+    </div>`;
+  openModal(p.name, body, {wide:true, onOpen:(root)=>{
+    root.querySelector("[data-add-detail]")?.addEventListener("click", e=>{
+      const qty = parseInt(root.querySelector(".stepper input")?.value || "1", 10);
+      addToCart(e.currentTarget.dataset.addDetail, qty);
+      closeModal(); openCart();
+    });
+  }});
+}
+
+/* =================================================================
+   CHECKOUT  (Delivery/Pickup · Cash/GCash/Bank · proof-of-payment mock)
+   ================================================================= */
+function openCheckout(){
+  if(!state.cart.length) return;
+  closeCart();
+  const sub = cartSubtotal();
+
+  /* Credit terms are a retail-partner facility. Rendered from
+     state.auth.status, which is what shop/me.php and shop/login.php report —
+     presentation only. api/shop/checkout.php re-derives the status from the
+     customers row inside the request and validates pay_method against
+     Payments::methods($isRetailer), so a hand-crafted `net30` from a regular
+     customer is refused there. A hidden tile stops nobody; that check does. */
+  const isRetailer = state.auth.status === "retailer";
+  /* Three columns, not "Name x 2". The old line said what was bought and what
+     it cost in total, and left the shopper to divide one by the other to check
+     the unit price — which is the number they actually remember from the shop
+     page. */
+  const itemsHTML = state.cart.map(i=>{
+    const p=getProduct(i.id);
+    return `<div class="li">
+      <span class="li-name">${esc(p.name)}</span>
+      <span class="li-qty">${i.qty} × ${peso(p.price)}</span>
+      <span class="li-amt">${peso(p.price*i.qty)}</span>
+    </div>`;
+  }).join("");
+
+  const body = `
+    <form id="checkout-form" novalidate>
+      <!-- Order summary -->
+      <div class="co-section">
+        <div class="co-title">Order Summary</div>
+        <div class="co-summary">
+          ${itemsHTML}
+          <div class="li tot"><span class="li-name">Total</span><span class="li-qty">${cartLineCount()} ${cartLineCount()===1?"product":"products"}</span><span class="li-amt">${peso(sub)}</span></div>
+        </div>
+      </div>
+
+      <!-- Order type -->
+      <div class="co-section">
+        <div class="co-title">Order Type</div>
+        <div class="toggle-group" id="order-type">
+          <button type="button" class="tg active" data-type="delivery">Delivery <small>via LBC courier</small></button>
+          <button type="button" class="tg" data-type="pickup">Pickup <small>Dagupan City</small></button>
+        </div>
+        <div class="field" id="address-field" style="margin-top:14px">
+          <label for="co-address">Delivery Address</label>
+          <textarea class="control" id="co-address" rows="2" placeholder="House no., street, barangay, city, province"></textarea>
+          <span class="field-error" data-err></span>
+        </div>
+      </div>
+
+      <!-- Contact -->
+      <div class="co-section">
+        <div class="co-title">Your Details</div>
+        <div class="field"><label for="co-name">Full Name</label><input class="control" id="co-name" type="text" placeholder="Juan dela Cruz" value="${escAttr(state.auth.loggedIn?state.auth.name:"")}"><span class="field-error" data-err></span></div>
+        <div class="field"><label for="co-contact">Contact Number</label><input class="control" id="co-contact" type="tel" placeholder="09xx xxx xxxx"><span class="field-error" data-err></span></div>
+        <!-- The five inline style properties that used to be on this label are
+             in .co-save now, and the checkbox is drawn rather than left as the
+             browser default — it was the one control on this form with no
+             relationship to the rest of the site. -->
+        <label class="co-save hide" id="co-save-profile-wrap">
+          <input type="checkbox" id="co-save-profile">
+          <span class="co-save-box" aria-hidden="true">${ICONS.check}</span>
+          <span class="co-save-text">Save this contact number and address to my profile</span>
+        </label>
+      </div>
+
+      <!-- Payment -->
+      <div class="co-section">
+        <div class="co-title">Payment Method</div>
+        <!-- Three choices, shown as three choices. This was a native <select>,
+             which meant the two options that change what the form ASKS FOR —
+             GCash and Bank Transfer both reveal a reference number and a
+             screenshot field — were hidden behind a dropdown that had to be
+             opened to discover them. The Order Type toggle directly above it
+             was already doing the same job in the pattern this now uses, so
+             the form was answering one question two different ways.
+             The values are unchanged: the payment variable still reads
+             "Cash" / "GCash" / "Bank Transfer" and still drives both the proof
+             block and the pay_method sent to the server. -->
+        <div class="toggle-group co-pay" id="co-payment" role="group" aria-label="Payment method">
+          <button type="button" class="tg active" data-pay="cash">Cash <small>On pickup or delivery</small></button>
+          <button type="button" class="tg" data-pay="gcash">GCash <small>Screenshot required</small></button>
+          <button type="button" class="tg" data-pay="bank">Bank Transfer <small>Screenshot required</small></button>
+          ${isRetailer ? CREDIT_METHODS.map(m => `
+          <button type="button" class="tg tg-credit" data-pay="${m.key}">${m.label} <small>${m.hint}</small></button>`).join("") : ""}
+        </div>
+        <div id="proof-block" class="hide">
+          <div class="field"><label for="co-ref">Reference Number</label><input class="control" id="co-ref" type="text" placeholder="e.g. 1234 5678 90"><span class="field-error" data-err></span></div>
+          <div class="field" id="co-proof-field">
+            <label for="co-proof">Payment Screenshot</label>
+            <!-- A REAL file input. What used to be here was a div with
+                 role=button whose click handler flipped a boolean and printed
+                 the hardcoded string "payment-proof.jpg attached (mock)". No
+                 file picker ever opened, no file was ever read, and no column
+                 existed to store one. That is defect 3.4.
+
+                 The input itself is now visually hidden and driven by the
+                 label below it. A file input carrying the generic .control
+                 class put Chrome's grey "Choose File" chrome inside a styled
+                 text field — two controls fighting, neither of them ours. It
+                 stays a real input in the DOM (not replaced by a click
+                 handler): the label's for-attribute opens the picker, it
+                 remains keyboard-reachable, and .up-input:focus-visible draws
+                 the ring on the zone.
+
+                 NOTE: this whole block is a template literal. No backticks. -->
+            <input class="up-input" id="co-proof" type="file" accept="image/png,image/jpeg,image/webp">
+            <label class="up-drop" for="co-proof" id="co-proof-drop">
+              <span class="up-ic" aria-hidden="true">${ICONS.camera || ICONS.search}</span>
+              <span class="up-cta">Choose an image</span>
+              <span class="up-hint">PNG, JPEG or WebP · up to ${UPLOAD_MAX_MB}MB · or drop it here</span>
+            </label>
+            <div class="up-card hide" id="co-proof-card">
+              <img class="up-thumb" id="co-proof-preview" alt="Payment screenshot preview">
+              <div class="up-meta">
+                <b id="co-proof-name"></b>
+                <span id="co-proof-size"></span>
+              </div>
+              <div class="up-acts">
+                <button type="button" class="up-btn" data-proof-replace>Replace</button>
+                <button type="button" class="up-btn up-btn-danger" data-proof-remove>Remove</button>
+              </div>
+            </div>
+            <span class="field-error" data-err></span>
+          </div>
+          <div class="note-mock">Your screenshot is sent to our staff for verification. We do not process card payments on this site.</div>
+        </div>
+      </div>
+
+      <!-- Notes -->
+      <div class="co-section">
+        <div class="co-title">Order Notes (optional)</div>
+        <div class="field"><textarea class="control" id="co-notes" rows="2" placeholder="Any special instructions?"></textarea></div>
+      </div>
+
+      <!-- Pinned, not appended. The button used to sit at the natural end of a
+           form six sections long, so on a phone the shopper scrolled past the
+           notes box to reach it and lost sight of the total on the way. Sticky
+           to the bottom of the scrolling modal, with the figure they are
+           agreeing to beside it. -->
+      <div class="co-footer">
+        <div class="co-foot-total"><span>Total</span><b>${peso(sub)}</b></div>
+        <button type="submit" class="btn btn-primary co-submit">Place Order</button>
+      </div>
+    </form>`;
+
+  openModal("Checkout", body, {wide:true, onOpen:(root)=>{
+    /* `payment` now holds the API key, not a display string. */
+    let orderType = "delivery", payment = "cash";
+    const addrField = root.querySelector("#address-field");
+
+    /* ---- PREFILL (decision I9) ---------------------------------------
+       A SUGGESTION, NOT AN OVERRIDE.
+
+       Rules, in the order they matter:
+         1. Identity comes from the SESSION. shop/profile.php takes no
+            customer id and no email; there is nothing to pass and nothing to
+            forge (D6, D7).
+         2. Only EMPTY fields are filled. The request is asynchronous, and a
+            shopper who starts typing their number before it lands must not
+            have it overwritten mid-keystroke — which is exactly what a naive
+            `el.value = data.contact` would do.
+         3. Every prefilled field stays editable. Nothing is disabled or
+            readonly.
+         4. Editing a prefilled field does NOT write back to the profile.
+            The checkbox does, and only if ticked. A checkout is often placed
+            for somebody else — a gift, an office delivery — and silently
+            rewriting the saved address because a customer typed a one-off
+            one is a bug that only shows up weeks later.
+
+       EMPTY CASES, all real and all handled:
+         - not signed in         no request is made
+         - no saved address      the address box is left empty and usable;
+                                 nothing announces a missing address
+         - partial address       whatever exists is joined and used
+         - request fails         logged, form untouched. A shopper cannot act
+                                 on "profile service unavailable" */
+    const prefilled = { contact: false, address: false };
+    if (state.auth.loggedIn) {
+      (async () => {
+        let profile;
+        try {
+          const { data } = await EbApi.get("shop/profile.php");
+          profile = data;
+        } catch (err) {
+          console.warn("[checkout] could not load profile for prefill:", err.message);
+          return;
+        }
+        /* The modal may already be closed by the time this resolves. */
+        if (!root.isConnected) return;
+
+        const fillIfEmpty = (sel, value) => {
+          const el = root.querySelector(sel);
+          if (!el || !value) return false;
+          if (el.value.trim() !== "") return false;   /* never clobber typing */
+          el.value = value;
+          el.classList.add("is-prefilled");
+          /* The marker is a hint about where the value came from, so it goes
+             the moment the customer makes it theirs. */
+          el.addEventListener("input", () => el.classList.remove("is-prefilled"), { once: true });
+          return true;
+        };
+
+        prefilled.contact = fillIfEmpty("#co-contact", profile.contact);
+        prefilled.address = fillIfEmpty("#co-address", profile.address.line);
+        if (!root.querySelector("#co-name").value.trim() && profile.name) {
+          root.querySelector("#co-name").value = profile.name;
+        }
+
+        /* The save-back offer only appears once there is something a save
+           could change. Showing it to somebody with nothing to save is an
+           invitation to wonder what it does. */
+        root.querySelector("#co-save-profile-wrap")?.classList.remove("hide");
+      })();
+    }
+
+    // order type toggle (delivery shows address, pickup hides)
+    root.querySelectorAll("#order-type .tg").forEach(b=>{
+      b.addEventListener("click", ()=>{
+        root.querySelectorAll("#order-type .tg").forEach(x=>x.classList.remove("active"));
+        b.classList.add("active");
+        orderType = b.dataset.type;
+        addrField.classList.toggle("hide", orderType==="pickup");
+      });
+    });
+
+    // payment method reveals proof fields for GCash/Bank
+    const proof = root.querySelector("#proof-block");
+    root.querySelectorAll("#co-payment .tg").forEach(b=>{
+      b.addEventListener("click", ()=>{
+        root.querySelectorAll("#co-payment .tg").forEach(x=>x.classList.remove("active"));
+        b.classList.add("active");
+        payment = b.dataset.pay;
+        /* Hidden for cash and for every credit term. A Net-30 order has nothing
+           to screenshot — nothing has been paid yet — and asking for proof of a
+           payment that is not due for a month is how a retailer concludes the
+           form is broken. */
+        proof.classList.toggle("hide", payment === "cash" || isCreditMethod(payment));
+      });
+    });
+
+    /* The screenshot is uploaded the moment it is chosen, and the ORDER
+       carries the path the server gives back. Uploading at submit time would
+       mean a checkout that fails halfway with the order already priced.
+
+       `proofPath` is the only thing that counts as "attached". The old boolean
+       could be true with no file anywhere. */
+    let proofPath = null;
+    const proofField = root.querySelector("#co-proof-field");
+    const proofErr   = proofField.querySelector("[data-err]");
+    const proofInput = root.querySelector("#co-proof");
+    const proofDrop  = root.querySelector("#co-proof-drop");
+    const proofCard  = root.querySelector("#co-proof-card");
+    const proofPrev  = root.querySelector("#co-proof-preview");
+    const proofName  = root.querySelector("#co-proof-name");
+    const proofSize  = root.querySelector("#co-proof-size");
+
+    /* Errors go in the field's own [data-err] span, styled by .field-error like
+       every other field on this form. They used to be written into a div whose
+       colour was set from JavaScript with `style.color = "var(--danger, …)"` —
+       a token that does not exist in this stylesheet, so the fallback literal
+       was what actually rendered, in one theme's worth of red on both themes.
+       The duplicate showToast() is gone too: a message shown twice in two
+       places is not twice as clear. */
+    const proofFail  = msg => { proofErr.textContent = msg; proofField.classList.add("has-error"); };
+    const proofClear = ()  => { proofErr.textContent = ""; proofField.classList.remove("has-error"); };
+
+    /* Delete a screenshot that was uploaded and then removed or replaced.
+
+       EbApi.upload() writes the file on pick, so without this every discarded
+       attempt would sit in uploads/references/ for ever with no row pointing
+       at it. api/uploads/discard.php authorises on the list of paths the
+       upload endpoint issued to this session, so nothing here has to be
+       trusted with a filename.
+
+       Fire and forget: a failed cleanup leaves an orphan, which is where we
+       were before, and is not worth interrupting a checkout over. */
+    const discardProof = path => {
+      if(!path) return;
+      EbApi.post("uploads/discard.php", { path })
+        .catch(err => console.warn("[checkout] could not discard", path, err.message));
+    };
+
+    const showDropzone = () => {
+      proofCard.classList.add("hide");
+      proofDrop.classList.remove("hide");
+      proofPrev.removeAttribute("src");
+      proofName.textContent = "";
+      proofSize.textContent = "";
+    };
+
+    const showAttached = (fileName, bytes, src) => {
+      proofPrev.src = src;
+      proofName.textContent = fileName;
+      proofSize.textContent = bytes < 1024 * 1024
+        ? `${Math.max(1, Math.round(bytes / 1024))} KB`
+        : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+      proofDrop.classList.add("hide");
+      proofCard.classList.remove("hide");
+    };
+
+    /* Type and size are checked here BEFORE the request goes out, so an
+       obviously wrong file is refused instantly instead of after a round trip
+       that uploads it first. This is not the gate — api/uploads/image.php
+       re-checks both, reads the MIME from the file's own bytes rather than
+       trusting file.type, and is the only opinion that counts. This one just
+       saves the shopper the wait. Both numbers mirror that file. */
+    const acceptProof = async file => {
+      proofClear();
+      if(!file) return;
+
+      if(!UPLOAD_ACCEPT[file.type]){
+        proofFail("Upload a JPEG, PNG or WebP image.");
+        proofInput.value = "";
+        return;
+      }
+      if(file.size > UPLOAD_MAX_MB * 1024 * 1024){
+        proofFail(`That image is too large. Keep it under ${UPLOAD_MAX_MB}MB.`);
+        proofInput.value = "";
+        return;
+      }
+
+      /* Whatever is attached now is being replaced, so it is discarded — but
+         only once the new one is safely on the server. Discarding first would
+         mean a failed upload that has already thrown away the good file. */
+      const previous = proofPath;
+      proofPath = null;
+
+      showDropzone();
+      proofDrop.classList.add("is-busy");
+      try {
+        const data = await EbApi.upload(file, "references");
+        proofPath = data.path;
+        showAttached(file.name, data.bytes, imageUrl(data.path));
+        discardProof(previous);
+      } catch(err){
+        /* A silent failure at checkout is worse than a refusal — the shopper
+           would place the order believing the proof went with it, and staff
+           would have nothing to verify. Said plainly in the field, and
+           proofPath is left null so the submit check below stops them. */
+        proofFail((err.fields && err.fields.file) || err.message);
+        proofInput.value = "";
+        showDropzone();
+      } finally {
+        proofDrop.classList.remove("is-busy");
+      }
+    };
+
+    proofInput.addEventListener("change", () => acceptProof(proofInput.files[0]));
+
+    /* An error clears when the shopper does something about it, not only on the
+       next submit. A field still outlined in red after it has been corrected
+       teaches people to ignore the outline. */
+    root.querySelectorAll(".field .control").forEach(el=>{
+      el.addEventListener("input", ()=>{
+        const f = el.closest(".field");
+        if(!f.classList.contains("has-error")) return;
+        f.classList.remove("has-error");
+        f.querySelector("[data-err]").textContent = "";
+      });
+    });
+
+    /* Drag-and-drop is an ADDITION. The label still opens the picker on click
+       and on Enter, because a drop target that is the only way in excludes
+       anyone using a keyboard or a phone. */
+    ["dragenter", "dragover"].forEach(ev =>
+      proofDrop.addEventListener(ev, e => {
+        e.preventDefault();
+        proofDrop.classList.add("is-over");
+      }));
+    ["dragleave", "dragend"].forEach(ev =>
+      proofDrop.addEventListener(ev, () => proofDrop.classList.remove("is-over")));
+    proofDrop.addEventListener("drop", e => {
+      e.preventDefault();
+      proofDrop.classList.remove("is-over");
+      const file = e.dataTransfer && e.dataTransfer.files[0];
+      if(file) acceptProof(file);
+    });
+    /* Without this the browser navigates away to the dropped file if the drop
+       lands anywhere in the modal but the zone — losing the whole checkout. */
+    ["dragover", "drop"].forEach(ev =>
+      root.addEventListener(ev, e => { if(!proofDrop.contains(e.target)) e.preventDefault(); }));
+
+    proofCard.querySelector("[data-proof-replace]").addEventListener("click", () => proofInput.click());
+
+    proofCard.querySelector("[data-proof-remove]").addEventListener("click", () => {
+      const discarded = proofPath;
+      proofPath = null;
+      /* Clearing .value matters. Without it, picking the SAME file again fires
+         no change event — the input's value has not changed — and the shopper
+         is stuck looking at an empty zone that will not accept the file they
+         want. */
+      proofInput.value = "";
+      showDropzone();
+      proofClear();
+      discardProof(discarded);
+    });
+
+    /* One in-flight submit at a time.
+
+       The button is disabled below once validation passes, which already
+       stopped a second click — but only from that moment, and only from the
+       button. A flag on the closure covers the gap before the disable and the
+       Enter-key path through the form, and costs one boolean. Placing an order
+       twice is not a defect anyone gets to shrug at. */
+    let submitting = false;
+
+    // place order
+    root.querySelector("#checkout-form").addEventListener("submit", e=>{
+      e.preventDefault();
+      if(submitting) return;
+      let ok = true;
+      /* .has-error puts the state on the input as well as the message under
+         it. A red sentence below a field that looks exactly like every other
+         field makes the reader hunt for which one it belongs to. */
+      const fail = (sel,msg)=>{
+        const f=root.querySelector(sel).closest(".field");
+        f.querySelector("[data-err]").textContent=msg;
+        f.classList.add("has-error");
+        ok=false;
+      };
+      root.querySelectorAll("[data-err]").forEach(x=>x.textContent="");
+      root.querySelectorAll(".field.has-error").forEach(f=>f.classList.remove("has-error"));
+
+      const name = root.querySelector("#co-name").value.trim();
+      const contact = root.querySelector("#co-contact").value.trim();
+      if(!name) fail("#co-name","Please enter your name.");
+      if(!/^[0-9 +\-]{7,}$/.test(contact)) fail("#co-contact","Enter a valid contact number.");
+      if(orderType==="delivery" && !root.querySelector("#co-address").value.trim()) fail("#co-address","Delivery address is required.");
+      /* Reference number and screenshot are demanded only by the two transfer
+         methods — the same pair api/shop/checkout.php checks. Written as an
+         explicit membership test rather than `payment !== "cash"`, because
+         that form is what would have started demanding a screenshot for Net 30
+         the moment the tile was added. */
+      if(payment === "gcash" || payment === "bank"){
+        if(!root.querySelector("#co-ref").value.trim()) fail("#co-ref","Reference number required for "+payLabel(payment)+".");
+        if(!proofPath){ fail("#co-proof","Attach a screenshot of your payment."); }
+      }
+      if(!ok) return;
+
+      /* THE ORDER IS NOW ACTUALLY PLACED.
+
+         This used to call showReceipt() with a locally-built object and stop.
+         The customer saw "Order Placed!", and nothing reached the staff portal —
+         no queue entry, no payment to verify, no record anywhere. The receipt
+         was the entire flow.
+
+         api/shop/checkout.php writes the order, its line items and a staff
+         notification in one transaction, prices every line from the database,
+         and returns the figures the receipt prints. */
+      submitting = true;
+      const submitBtn = root.querySelector("#checkout-form [type=submit]");
+      const restore = submitBtn ? (btn => { const l = btn.textContent, d = btn.disabled;
+        btn.disabled = true; btn.classList.add("is-busy"); btn.textContent = "Placing order…";
+        return () => { submitting = false; btn.disabled = d; btn.classList.remove("is-busy"); btn.textContent = l; }; })(submitBtn)
+        : () => { submitting = false; };
+
+      (async () => {
+        let order;
+        try {
+          const { data } = await EbApi.post("shop/checkout.php", {
+            items: state.cart.map(i => ({ id: i.id, qty: i.qty })),
+            name, contact,
+            /* No `email`. D6: the order is placed for the signed-in customer and
+               the server takes the address from the session. Sending one now
+               gets the request refused outright rather than silently ignored,
+               which is the point — a client that believes it can name the buyer
+               should be told it cannot. */
+            address: root.querySelector("#co-address").value.trim(),
+            notes: root.querySelector("#co-notes").value.trim(),
+            order_type: orderType === "delivery" ? "delivery" : "pickup",
+            /* Straight through. See PAY_METHODS_UI for what used to be here
+               and why a chained ternary ending in "bank" had to go. */
+            pay_method: payment,
+            ref_num: root.querySelector("#co-ref")?.value.trim() || null,
+            /* A path, not the image. The file is already on the server. */
+            proof_image: proofPath,
+          });
+          order = data;
+        } catch (err) {
+          /* Out of stock, an unavailable product, a bad field — all shown
+             against the form, with the cart left intact so the shopper can
+             adjust rather than losing everything. */
+          if (err.isValidation) {
+            Object.entries(err.fields).forEach(([f, msg]) => {
+              const el = root.querySelector(`#co-${f.replace("_","-")}`) || root.querySelector(`#co-${f}`);
+              const box = el && el.closest(".field")?.querySelector("[data-err]");
+              if (box) box.textContent = msg;
+            });
+            if (!Object.keys(err.fields).length) showToast(err.message, "info");
+          } else {
+            showToast(err.message, "info");
+          }
+          return;
+        } finally { restore(); }
+
+        /* Only clear the cart once the server has the order. */
+        state.cart = [];
+        updateCartBadge();
+
+        /* Save back to the profile ONLY if the customer asked (I9).
+           After the order, never before: the order is what the shopper came
+           for, and a profile-save failure must not cost them the checkout.
+           Failure is reported and does not touch the receipt. */
+        if (root.querySelector("#co-save-profile")?.checked) {
+          try {
+            await EbApi.post("shop/profile.php", {
+              contact: contact,
+              address: { street: root.querySelector("#co-address").value.trim() },
+            });
+            showToast("Saved to your profile.", "success");
+          } catch (err) {
+            showToast("Order placed, but your profile could not be updated: " + err.message, "info");
+          }
+        }
+
+        showReceipt({
+          id: order.id,
+          name: order.name, contact: order.contact,
+          orderType: order.orderType, payment: payLabel(payment),
+          /* Null unless the server opened a receivable. The scheme and the due
+             date come from the RESPONSE, not from the tile that was clicked:
+             the due date is computed by the database, and printing a date the
+             browser worked out from its own clock is how a receipt and a
+             statement come to disagree by a day. */
+          credit: order.credit || null,
+          address: order.address, notes: root.querySelector("#co-notes").value.trim(),
+          items: order.items.map(i => ({ ...getProduct(i.id), name: i.name, price: i.price, qty: i.qty })),
+          total: order.total,
+          placedAt: order.placedAt,
+          statusMessage: order.message,
+        });
+      })();
+    });
+  }});
+}
+
+/* =================================================================
+   RECEIPT (soft-copy)
+   ================================================================= */
+function showReceipt(order){
+  /* Use the order number the server assigned. txId() minted a random local id
+     that matched nothing in the database — a customer quoting it to staff would
+     have been quoting a number nobody could look up. The fallback covers only
+     the case where this is somehow called without a placed order. */
+  const id = order.id || txId();
+  const date = order.placedAt || new Date().toLocaleString("en-PH", {dateStyle:"medium", timeStyle:"short"});
+  const itemsHTML = order.items.map(it=>`<div class="rb-row"><span>${it.name} × ${it.qty}</span><span>${peso(it.price*it.qty)}</span></div>`).join("");
+  const body = `
+    <div class="receipt">
+      <div class="check">${ICONS.check}</div>
+      <h3 style="font-size:1.9rem">Order Placed!</h3>
+      <p style="color:var(--text-muted)">Thank you, ${esc(order.name)}. A soft-copy receipt is below.</p>
+      <div class="receipt-box">
+        <div class="rb-row"><span>Transaction ID</span><span class="txid">${id}</span></div>
+        <div class="rb-row"><span>Date</span><span>${date}</span></div>
+        <div class="rb-row"><span>Customer</span><span>${esc(order.name)}</span></div>
+        <div class="rb-row"><span>Contact</span><span>${esc(order.contact)}</span></div>
+        <div class="rb-row"><span>Order Type</span><span style="text-transform:capitalize">${order.orderType}</span></div>
+        ${order.orderType==="delivery"?`<div class="rb-row"><span>Address</span><span style="max-width:55%;text-align:right">${esc(order.address)}</span></div>`:""}
+        <div class="rb-row"><span>Payment</span><span>${esc(order.payment)}</span></div>
+        ${order.notes?`<div class="rb-row"><span>Notes</span><span style="max-width:55%;text-align:right">${esc(order.notes)}</span></div>`:""}
+        <div class="rb-items">${itemsHTML}</div>
+        <div class="rb-row" style="font-weight:700;font-size:1.1rem"><span>Total</span><span>${peso(order.total)}</span></div>
+        ${order.credit ? `
+        <!-- A credit order commits the retailer to a date. Saying so on the
+             receipt is the difference between terms they agreed to and terms
+             they find out about when the account goes overdue. The figures are
+             the server's: the due date is computed by the database, and the
+             same row is what their Payment Schemes page and the cashier's
+             screen read. -->
+        <div class="rb-credit">
+          <div class="rb-row"><span>Payment terms</span><span><b>${esc(order.credit.scheme)}</b></span></div>
+          <div class="rb-row"><span>Balance due</span><span><b>${peso(order.credit.balance)}</b></span></div>
+          <div class="rb-row"><span>Due date</span><span><b>${EbFormat.fmtDate(order.credit.dueDate)}</b></span></div>
+          <p class="rb-credit-note">This balance is now on your account. Track it under <a href="${escAttr(EbFormat.APP_BASE)}public/profile/my-payments.html">Payment Schemes</a>.</p>
+        </div>` : ""}
+      </div>
+      <button class="btn btn-primary btn-block" id="receipt-done">Done</button>
+    </div>`;
+  /* Local copy only. api/shop/checkout.php deletes the customer's cart_items
+     rows inside the same transaction that writes the order, so the server is
+     already empty by the time this runs — and a checkout that failed did not
+     touch the cart at all. This line just brings the drawer into line with
+     what the database already says. */
+  state.cart = [];
+  updateCartBadge(); renderCart();
+  openModal("Receipt", body, {wide:true, onOpen:(root)=>{
+    root.querySelector("#receipt-done").addEventListener("click", closeModal);
+  }});
+  showToast("Order placed successfully!", "success");
+}
+
+/* =================================================================
+   AUTH (login / register) — UI-only mock
+   ================================================================= */
+function pwToggle(){
+  return `<button type="button" class="toggle-eye" data-eye aria-label="Show password">${ICONS.eye}</button>`;
+}
+function strengthScore(v){
+  let s=0; if(v.length>=8)s++; if(/[A-Z]/.test(v))s++; if(/[0-9]/.test(v))s++; if(/[^A-Za-z0-9]/.test(v))s++; return s;
+}
+function wireEyeToggles(root){
+  root.querySelectorAll("[data-eye]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const inp = btn.parentElement.querySelector("input");
+      const show = inp.type==="password";
+      inp.type = show ? "text" : "password";
+      btn.innerHTML = show ? ICONS.eyeoff : ICONS.eye;
+    });
+  });
+}
+
+const _lockIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+
+const _authArrow = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg>';
+
+function openAuth(tab='login', hint=null){
+  const hintHTML = (hint && typeof hint === 'string') ? `<div class="auth-cart-hint">${hint}</div>` : '';
+  const eyeBtn = `<button type="button" class="auth-eye-btn" data-eye aria-label="Toggle password"><span data-eye-face>${ICONS.eye}</span></button>`;
+  const fishSVG = `<svg class="auth-fish-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M4 16C4 16 8 8 16 8C24 8 28 16 28 16C28 16 24 24 16 24C8 24 4 16 4 16Z" fill="rgba(255,255,255,0.15)"/><path d="M4 16C4 16 8 8 16 8C24 8 28 16 28 16" stroke="rgba(255,255,255,0.9)" stroke-width="1.8" stroke-linecap="round"/><path d="M4 16C4 16 8 24 16 24C24 24 28 16 28 16" stroke="rgba(232,163,23,0.85)" stroke-width="1.8" stroke-linecap="round"/><circle cx="21" cy="13" r="1.5" fill="rgba(255,255,255,0.9)"/><path d="M28 16L32 13M28 16L32 19" stroke="rgba(255,255,255,0.6)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+  const body = `
+  <div class="auth-split">
+
+    <!-- ── LEFT BRAND PANEL ── -->
+    <div class="auth-brand" aria-hidden="true">
+      <div class="auth-orb auth-orb-1"></div>
+      <div class="auth-orb auth-orb-2"></div>
+      <div class="auth-orb auth-orb-3"></div>
+      <div class="auth-brand-inner">
+        <div class="auth-logo-row">
+          ${fishSVG}
+          <div>
+            <span class="auth-brand-name">Elisha Bay</span>
+            <span class="auth-brand-sub">Juris Bay Foods</span>
+          </div>
+        </div>
+        <h2 class="auth-headline">"Every Mouthful<br>is <em>Delightful</em>."</h2>
+        <p class="auth-tagline">Premium gourmet bangus &amp; bottled tuyo, crafted from the finest catch of Dagupan City, Pangasinan.</p>
+        <ul class="auth-trust-list">
+          <li><span class="auth-trust-dot"></span>FDA Registered &amp; Certified</li>
+          <li><span class="auth-trust-dot"></span>All-Natural Ingredients</li>
+          <li><span class="auth-trust-dot"></span>Sealed Fresh in Glass</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ── RIGHT FORM PANEL ── -->
+    <div class="auth-form-panel">
+      ${hintHTML}
+
+      <div class="auth-tabs" role="tablist">
+        <button class="auth-tab ${tab==='login'?'active':''}"    role="tab" data-atab="login"    aria-selected="${tab==='login'}">Sign In</button>
+        <button class="auth-tab ${tab==='register'?'active':''}" role="tab" data-atab="register" aria-selected="${tab==='register'}">Create Account</button>
+        <span class="auth-tab-slide" aria-hidden="true"></span>
+      </div>
+
+      <!-- Login -->
+      <div class="auth-panel ${tab==='login'?'active':''}" id="ap-login" role="tabpanel">
+        <div class="auth-panel-head">
+          <h3>Welcome back!</h3>
+          <p>Sign in to track orders and check out faster.</p>
+        </div>
+        <form id="login-form" novalidate>
+          <div class="auth-field">
+            <label for="lg-email">Email Address</label>
+            <div class="auth-input-group">
+              <span class="auth-input-icon" aria-hidden="true">${ICONS.mail}</span>
+              <input class="auth-input" id="lg-email" type="email" placeholder="you@email.com" autocomplete="email"/>
+            </div>
+            <span class="field-error" data-err></span>
+          </div>
+          <div class="auth-field">
+            <label for="lg-pass">Password</label>
+            <div class="auth-input-group">
+              <span class="auth-input-icon" aria-hidden="true">${_lockIcon}</span>
+              <input class="auth-input auth-input-pw" id="lg-pass" type="password" placeholder="••••••••" autocomplete="current-password"/>
+              ${eyeBtn}
+            </div>
+            <span class="field-error" data-err></span>
+          </div>
+          <div class="auth-row">
+            <label class="auth-remember"><input type="checkbox" id="lg-remember"> Remember me</label>
+            <button type="button" class="auth-forgot" data-forgot>Forgot password?</button>
+          </div>
+          <button type="submit" class="auth-submit">Sign In ${_authArrow}</button>
+        </form>
+      </div>
+
+      <!-- Register -->
+      <div class="auth-panel ${tab==='register'?'active':''}" id="ap-register" role="tabpanel">
+        <div class="auth-panel-head">
+          <h3>Join the family</h3>
+          <p>Create an account for faster ordering and delivery updates.</p>
+        </div>
+        <form id="reg-form" novalidate>
+          <div class="auth-field">
+            <label for="rg-name">Full Name</label>
+            <div class="auth-input-group">
+              <span class="auth-input-icon" aria-hidden="true">${ICONS.user}</span>
+              <input class="auth-input" id="rg-name" type="text" placeholder="Juan dela Cruz" autocomplete="name"/>
+            </div>
+            <span class="field-error" data-err></span>
+          </div>
+          <div class="auth-field">
+            <label for="rg-contact">Contact Number</label>
+            <div class="auth-input-group">
+              <span class="auth-input-icon" aria-hidden="true">${ICONS.phone}</span>
+              <input class="auth-input" id="rg-contact" type="tel" placeholder="09xx xxx xxxx" autocomplete="tel"/>
+            </div>
+            <span class="field-error" data-err></span>
+          </div>
+          <div class="auth-field">
+            <label for="rg-email">Email Address</label>
+            <div class="auth-input-group">
+              <span class="auth-input-icon" aria-hidden="true">${ICONS.mail}</span>
+              <input class="auth-input" id="rg-email" type="email" placeholder="you@email.com" autocomplete="email"/>
+            </div>
+            <span class="field-error" data-err></span>
+          </div>
+          <div class="auth-field">
+            <label for="rg-address">Address</label>
+            <div class="auth-input-group auth-input-group-ta">
+              <span class="auth-input-icon auth-icon-ta" aria-hidden="true">${ICONS.pin}</span>
+              <textarea class="auth-input auth-textarea" id="rg-address" rows="2" placeholder="Barangay, city, province" autocomplete="street-address"></textarea>
+            </div>
+            <span class="field-error" data-err></span>
+          </div>
+          <div class="auth-field">
+            <label for="rg-pass">Password</label>
+            <div class="auth-input-group">
+              <span class="auth-input-icon" aria-hidden="true">${_lockIcon}</span>
+              <input class="auth-input auth-input-pw" id="rg-pass" type="password" placeholder="At least 8 characters" autocomplete="new-password"/>
+              ${eyeBtn}
+            </div>
+            <div class="auth-strength-wrap"><i id="rg-strength"></i></div>
+            <span class="strength-label" id="rg-strength-lbl"></span>
+            <span class="field-error" data-err></span>
+          </div>
+          <div class="auth-field">
+            <label for="rg-confirm">Confirm Password</label>
+            <div class="auth-input-group">
+              <span class="auth-input-icon" aria-hidden="true">${_lockIcon}</span>
+              <input class="auth-input auth-input-pw" id="rg-confirm" type="password" placeholder="Re-enter password" autocomplete="new-password"/>
+              ${eyeBtn}
+            </div>
+            <span class="field-error" data-err></span>
+          </div>
+          <button type="submit" class="auth-submit">Create Account ${_authArrow}</button>
+        </form>
+      </div>
+
+    </div><!-- /auth-form-panel -->
+  </div><!-- /auth-split -->`;
+
+  openModal('', body, { wide:true, onOpen:(root)=>{
+    // Mark modal for CSS overrides (close btn colour, no title, zero body padding)
+    root.closest('#modal')?.classList.add('is-auth');
+
+    // forgot password — no backend yet, point to Facebook
+    root.querySelector('[data-forgot]')?.addEventListener('click', ()=>{
+      showToast('Message us on Facebook to reset your password.', 'success');
+    });
+
+    /* ── Pill tab switcher ── */
+    const tabBtns = root.querySelectorAll('.auth-tab');
+    const slide   = root.querySelector('.auth-tab-slide');
+    const tabWrap = root.querySelector('.auth-tabs');
+    function moveSlide(btn, instant){
+      const wR = tabWrap.getBoundingClientRect(), bR = btn.getBoundingClientRect();
+      if(instant) slide.style.transition = 'none';
+      slide.style.left  = (bR.left - wR.left) + 'px';
+      slide.style.width = bR.width + 'px';
+      if(instant) requestAnimationFrame(()=>{ slide.style.transition = ''; });
+    }
+    requestAnimationFrame(()=>{ moveSlide(root.querySelector('.auth-tab.active'), true); });
+    tabBtns.forEach(btn=>btn.addEventListener('click', ()=>{
+      const t = btn.dataset.atab;
+      tabBtns.forEach(b=>{ b.classList.remove('active'); b.setAttribute('aria-selected','false'); });
+      btn.classList.add('active'); btn.setAttribute('aria-selected','true');
+      moveSlide(btn, false);
+      root.querySelectorAll('.auth-panel').forEach(p=>p.classList.remove('active'));
+      root.querySelector(`#ap-${t}`)?.classList.add('active');
+      setTimeout(()=>root.querySelector(`#ap-${t} input`)?.focus(), 60);
+    }));
+
+    /* ── Eye toggles ── */
+    root.querySelectorAll('.auth-eye-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const inp  = btn.closest('.auth-input-group').querySelector('input');
+        const face = btn.querySelector('[data-eye-face]');
+        const show = inp.type==='password';
+        inp.type = show ? 'text' : 'password';
+        if(face) face.innerHTML = show ? ICONS.eyeoff : ICONS.eye;
+      });
+    });
+
+    /* ── Password strength ── */
+    const strengthColors = ['var(--out)','var(--crit)','var(--warn)','#6fb83a','var(--ok)'];
+    const strengthLabels = ['Very weak','Weak','Fair','Good','Strong'];
+    root.querySelector('#rg-pass')?.addEventListener('input', function(){
+      const sc  = strengthScore(this.value);
+      const bar = root.querySelector('#rg-strength');
+      const lbl = root.querySelector('#rg-strength-lbl');
+      bar.style.width      = (this.value ? (sc/4)*100 : 0) + '%';
+      bar.style.background = strengthColors[sc];
+      lbl.textContent  = this.value ? strengthLabels[sc] : '';
+      lbl.style.color  = strengthColors[sc];
+    });
+
+    /* ── Login submit ── */
+    root.querySelector('#login-form')?.addEventListener('submit', async e=>{
+      e.preventDefault();
+      let ok=true;
+      root.querySelectorAll('#login-form [data-err]').forEach(x=>x.textContent='');
+      const fail=(sel,msg)=>{ root.querySelector(sel).closest('.auth-field').querySelector('[data-err]').textContent=msg; ok=false; };
+      const email = root.querySelector('#lg-email').value.trim();
+      const pass  = root.querySelector('#lg-pass').value;
+      if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail('#lg-email','Enter a valid email.');
+      if(pass.length<6) fail('#lg-pass','Password too short.');
+      if(!ok) return;
+
+      const btn = root.querySelector('#login-form [type=submit]');
+      const label = btn ? btn.textContent : '';
+      if(btn){ btn.disabled = true; btn.textContent = 'Signing in…'; }
+
+      /* Staff sign-in is the server's decision now.
+
+         This used to search a STAFF_ACCOUNTS array holding every staff
+         password in plaintext — in a file served to every visitor — and then
+         hand the matched account to the portal through sessionStorage, which
+         the portal trusted. Both halves are gone: credentials are checked
+         against bcrypt hashes in MySQL, and identity rides in an httponly
+         cookie this page cannot read.
+
+         A 401 means "not a staff account", so the customer path runs instead,
+         preserving the old order of precedence. */
+      try {
+        const user  = await EbSession.login(email, pass);
+        const route = STAFF_ROUTES[user.role];
+        if(route){
+          window.location.href = route;
+        } else {
+          showToast(`Welcome, ${user.name}. (${user.role} dashboard coming soon.)`, "info");
+        }
+        return;
+      } catch(err){
+        if(err.code === 'FORBIDDEN'){
+          /* A genuine staff account that may not sign in — archived, or no
+             role assigned. Saying so beats quietly logging them in as a
+             customer. */
+          fail('#lg-email', err.message);
+          return;
+        }
+        if(err.code === 'RATE_LIMITED' || err.code === 'NETWORK' || err.code === 'TIMEOUT'){
+          showToast(err.message, "info");
+          return;
+        }
+        /* 401 falls through to the customer path below. */
+      } finally {
+        if(btn){ btn.disabled = false; btn.textContent = label; }
+      }
+
+      /* Customer login — checked against the customers table.
+
+         This used to be a mock: it took the local part of whatever email was
+         typed, title-cased it, and called that a signed-in customer. Any
+         address with a six-character password got an account menu bearing that
+         name. Nothing was verified and no record was consulted.
+
+         api/shop/login.php verifies the password against the bcrypt hash on
+         the customer row and puts the customer id in its own session key --
+         separate from the staff key, so a shopper can never satisfy a
+         permission check. shop/my-orders.php reads that key and takes no id
+         parameter, which is why the mock could not actually reach anyone
+         else's orders; it just claimed a name it had not earned.
+
+         The staff attempt above ran first and fell through on 401, so the
+         order of precedence is unchanged. */
+      if(btn){ btn.disabled = true; btn.textContent = 'Signing in...'; }
+      try {
+        const { data } = await EbApi.post("shop/login.php", { email, password: pass });
+        EbApi.setCsrf(data.csrf);
+        signIn(data.customer);
+      } catch(err){
+        if(err.isValidation){
+          Object.entries(err.fields).forEach(([f,msg]) =>
+            fail('#lg-' + (f === 'password' ? 'pass' : 'email'), msg));
+        } else if(err.code === 'RATE_LIMITED'){
+          showToast(err.message, "info");
+        } else {
+          /* One message for a wrong password and for an email with no account.
+             Distinguishing them tells a stranger which addresses are
+             registered here. */
+          fail('#lg-email', 'Email or password is incorrect.');
+        }
+      } finally {
+        if(btn){ btn.disabled = false; btn.textContent = label; }
+      }
+    });
+
+    /* ── Register submit ── */
+    root.querySelector('#reg-form')?.addEventListener('submit', async e=>{
+      e.preventDefault();
+      let ok=true;
+      root.querySelectorAll('#reg-form [data-err]').forEach(x=>x.textContent='');
+      const fail=(sel,msg)=>{ root.querySelector(sel).closest('.auth-field').querySelector('[data-err]').textContent=msg; ok=false; };
+      const name    = root.querySelector('#rg-name').value.trim();
+      const contact = root.querySelector('#rg-contact').value.trim();
+      const email   = root.querySelector('#rg-email').value.trim();
+      const address = root.querySelector('#rg-address').value.trim();
+      const pw      = root.querySelector('#rg-pass').value;
+      const cf      = root.querySelector('#rg-confirm').value;
+      if(!name)    fail('#rg-name','Name is required.');
+      if(!/^[0-9 +\-]{7,}$/.test(contact)) fail('#rg-contact','Enter a valid contact number.');
+      if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail('#rg-email','Enter a valid email.');
+      if(!address) fail('#rg-address','Address is required.');
+      if(pw.length<8) fail('#rg-pass','Use at least 8 characters.');
+      if(cf!==pw)  fail('#rg-confirm','Passwords do not match.');
+      if(!ok) return;
+
+      /* Creates a real account. This used to call signIn(name) and nothing
+         else — no record was written, so there was nothing to sign back into
+         and the "account" vanished when localStorage was cleared.
+
+         An email matching a seeded customer claims that record instead of
+         creating a duplicate, so their existing order history follows them. */
+      try {
+        const { data } = await EbApi.post("shop/register.php", {
+          name, email, password: pw, contact, address,
+        });
+        signIn(data.customer);
+        if(data.claimedExistingRecord){
+          showToast("Welcome back — we found your previous orders.", "success");
+        }
+      } catch(err){
+        if(err.isValidation){
+          Object.entries(err.fields).forEach(([f,msg]) =>
+            fail('#rg-' + (f === 'password' ? 'pass' : f === 'name' ? 'name' : f), msg));
+        } else {
+          fail('#rg-email', err.message);
+        }
+      }
+    });
+
+    setTimeout(()=>root.querySelector('.auth-panel.active input')?.focus(), 80);
+  }});
+}
+function openLogin(hint=null)    { openAuth('login',    hint); }
+function openRegister(hint=null) { openAuth('register', hint); }
+
+/* ONE place that builds state.auth, because there were two and they disagreed.
+
+   bootstrapCustomer() built it with five keys including `status`; signIn() took
+   three positional strings and built it with four, so `status` was `undefined`
+   for the entire session of anyone who signed in through the modal. Reload the
+   page and the restore path filled it in — which is why the Payment Schemes
+   link on the profile looked intermittent rather than broken, and why it was a
+   shape problem rather than a logic problem.
+
+   Building it in a function means a new field is added once. Taking the whole
+   customer object rather than a fourth positional argument means adding one
+   does not change any call site's argument order — three positional strings
+   was already one too many to read at a glance. */
+function setAuthState(customer){
+  state.auth = customer
+    ? {
+        loggedIn: true,
+        name:   customer.name  || "",
+        email:  customer.email || "",
+        id:     customer.id    || null,
+        /* Drives the Payment Schemes link on the profile pages and the credit
+           tiles at checkout. Presentation in both cases: shop/my-payments.php
+           and shop/checkout.php each re-derive it from the database. */
+        status: customer.status || null,
+      }
+    : { loggedIn:false, name:"", email:"", id:null, status:null };
+
+  /* Announce it. The three account pages gate their whole content on "is this
+     person signed in?", and each ran that check exactly once, on window load,
+     against whenAuthReady().
+
+     That is correct for a page opened while already signed in and wrong for
+     the case those pages actually offer: the guard panel has a Sign In button
+     that opens the modal. Signing in through it left the page still showing
+     "Sign in to view this" over content the visitor was now entitled to, until
+     they reloaded. eb:auth-ready fires once per page load and had already
+     fired, so nothing was listening for the thing that had just happened.
+
+     Fired from here rather than from signIn(), so signing OUT is announced on
+     the same channel — the reverse case put a signed-out visitor in front of
+     somebody else's order history until they navigated away. */
+  try {
+    window.dispatchEvent(new CustomEvent("eb:auth-changed", {
+      detail: { loggedIn: state.auth.loggedIn, status: state.auth.status },
+    }));
+  } catch(_){}
+}
+
+/* simulate signed-in state — swap navbar Login for account menu */
+/* Reflect a signed-in customer in the UI.
+
+   `state.auth` is now a cache of what the server said, not the source of truth.
+   It used to BE the account: localStorage["eb-auth"] held a display name, and
+   "logged in" meant that string existed — no password, no record, nothing
+   linking an order to a person. The email is kept alongside so checkout can
+   attach the order to the right customer.
+
+   Takes the `customer` object the endpoint returned, whole. It used to take
+   (name, email, id) as three strings — see setAuthState() above for why that
+   is what dropped `status` on the floor. */
+function signIn(customer){
+  setAuthState(customer);
+  const name = state.auth.name;
+  try { localStorage.setItem("eb-name", name || ""); } catch(_){}
+  closeModal();
+  renderAccount();
+  showToast(`Welcome, ${name}!`, "success");
+
+  /* The account's saved cart, then the add that was waiting on this sign-in —
+     in that order, and never at the same time.
+
+     pendingCartAdd is replayed AFTER the load, not before it and not
+     alongside it. addToCart() merges into whatever line already exists, so
+     replaying first would have the load land on top of it and the item the
+     shopper explicitly asked for would silently vanish; running both at once
+     is two writes racing for the same cart_items row.
+
+     There is deliberately NO "you have N items waiting" toast. The badge
+     already says so, on every page, without stacking a second notification on
+     top of the welcome. The load itself stays — it is what puts the number on
+     the badge and the lines in the drawer. */
+  (async () => {
+    await loadServerCart();
+
+    if(pendingCartAdd){
+      const { id: pendingId, qty } = pendingCartAdd;
+      pendingCartAdd = null;
+      await addToCart(pendingId, qty);
+    }
+  })();
+}
+async function signOut(){
+  setAuthState(null);
+  try { localStorage.removeItem("eb-name"); localStorage.removeItem("eb-auth"); } catch(_){}
+  /* End the server session too — clearing local state alone would leave the
+     cookie valid, and the next page load would sign straight back in. */
+  try { await EbApi.post("auth/logout.php", {}); } catch(_){}
+  /* Clear the local copy and redraw the drawer with it — leaving the lines on
+     screen after the session ends shows the next person at this machine what
+     the last one was buying.
+
+     The SERVER rows stay. The cart belongs to the account and surviving a
+     sign-out is the whole point of storing it there; signing out is not
+     "empty my cart", and treating it as such would make the feature useless
+     to anyone who shares a computer. */
+  state.cart = [];
+  updateCartBadge();
+  renderCart();
+  renderAccount();
+  showToast("Signed out.", "info");
+}
+
+/* Ask the server who is signed in, and reconcile the cached copy with it.
+
+   A localStorage flag that says "logged in" while the server disagrees is worse
+   than no flag: the page renders an account menu, then every action fails. */
+async function bootstrapCustomer(){
+  try {
+    const { data } = await EbApi.get("shop/me.php");
+    /* Through setAuthState(), so this and signIn() cannot produce two
+       different shapes again — which is exactly what they did, and why a
+       retailer who signed in through the modal never saw the Payment Schemes
+       link until they reloaded. */
+    setAuthState(data.customer);
+    EbApi.setCsrf(data.csrf);
+    /* D8: a display name for first paint, and nothing else. The id and email
+       used to be cached here too — that is identity, and identity in
+       localStorage is precisely what this project already got wrong: a
+       hand-edited entry rendered a signed-in navbar. Nothing reads this back
+       as truth; it exists so the header does not flicker. */
+    try { localStorage.setItem("eb-name", data.customer.name || ""); } catch(_){}
+  } catch(err){
+    /* D8: any error renders as signed out — a 500, a timeout or a response we
+       cannot parse says nothing about who this is, and "nobody" is the only
+       safe reading of nothing. Clearing only on 401 left the previous value in
+       place, which was safe purely because the initialiser is signed-out. That
+       is a guarantee living in a distant line rather than here. */
+    setAuthState(null);
+    try { localStorage.removeItem("eb-name"); localStorage.removeItem("eb-auth"); } catch(_){}
+  }
+  renderAccount();
+
+  /* Announce that the server has answered.
+
+     Pages that gate their content on "is this person signed in?" cannot read
+     state.auth at window.load — bootstrapCustomer() is asynchronous and has
+     usually not resolved yet, so the flag is still its fail-closed initial
+     `false` (D8). public/profile/profile.html sampled it exactly once and
+     showed a signed-in customer the "please sign in" panel with the whole
+     profile hidden: the page was correctly wired and displayed the wrong
+     answer, which is the hardest kind of bug to see in a screenshot.
+
+     `EB_AUTH_READY` is set as well as dispatched, so a listener attached after
+     this has already run is not left waiting for an event that will never come
+     again. */
+  window.EB_AUTH_READY = true;
+  window.dispatchEvent(new CustomEvent("eb:auth-ready", { detail: { loggedIn: state.auth.loggedIn } }));
+
+  /* The cart is on the account, so it cannot be fetched until the server has
+     said which account this is. init() renders an empty drawer and a zero
+     badge before this resolves — correct for the moment it runs, since nobody
+     is signed in yet as far as the page knows — and loadServerCart() redraws
+     both the moment there is something real to draw. */
+  if(state.auth.loggedIn) loadServerCart();
+}
+
+/* Resolve once the server has said who this is. Pages awaiting an answer use
+   this rather than guessing from a flag that is only eventually correct. */
+function whenAuthReady(){
+  if (window.EB_AUTH_READY) return Promise.resolve(state.auth.loggedIn);
+  return new Promise(resolve => {
+    window.addEventListener("eb:auth-ready", e => resolve(e.detail.loggedIn), { once: true });
+    /* A bootstrap that never resolves — the request hung past its timeout and
+       the catch somehow did not run — must not leave the page blank for ever.
+       Falling back to signed-out matches D8. */
+    setTimeout(() => resolve(state.auth.loggedIn), 20000);
+  });
+}
+
+function renderAccount(){
+  const slot = $("#account-slot");
+  /* Preview mode removes the account surface entirely, so there is
+     nothing to render into. */
+  if(!slot) return;
+  if(state.auth.loggedIn){
+    const initials = state.auth.name.split(" ").map(s=>s[0]).slice(0,2).join("").toUpperCase();
+    const firstName = state.auth.name.split(" ")[0];
+    const chevSVG = '<svg class="nav-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+    slot.innerHTML = `
+      <div id="account-menu">
+        <button class="nav-profile-btn" id="account-avatar" aria-label="Account menu" aria-haspopup="true" aria-expanded="false">
+          <span class="nav-avatar">${initials}</span>
+          <span class="nav-username">${firstName}</span>
+          ${chevSVG}
+        </button>
+        <div class="account-pop" id="account-pop">
+          <div class="ap-head"><b>${state.auth.name}</b><small style="color:var(--text-muted);display:block;margin-top:2px">Signed in</small></div>
+          <button data-acc="dashboard">${icon("grid")} Dashboard</button>
+          <button data-acc="orders">${icon("bag")} My Orders</button>
+          <button data-acc="profile">${icon("user")} Profile</button>
+          <button data-acc="logout">${icon("logout")} Sign out</button>
+        </div>
+      </div>`;
+    const btn = $("#account-avatar"), pop = $("#account-pop");
+    btn.addEventListener("click", e=>{
+      e.stopPropagation();
+      const o = pop.classList.toggle("open");
+      btn.classList.toggle("open", o);
+      btn.setAttribute("aria-expanded", o);
+    });
+    pop.querySelectorAll("[data-acc]").forEach(b=>b.addEventListener("click", ()=>{
+      const a=b.dataset.acc; pop.classList.remove("open"); btn.classList.remove("open");
+      if(a==="logout") signOut();
+      else {
+        /* THE DIRECTORY IS `profile/`, NOT `MyProfile/`.
+
+           These three lines pointed at a folder that does not exist in this
+           project — a leftover from the layout before the restructure, when
+           public/MyProfile/ was the account area. Clicking My Orders or Profile
+           in the account menu gave Apache's 404 from every page on the site:
+
+               /elishabay/public/MyProfile/my-orders.html
+
+           Broken twice over, in fact. `inSub` tested the path for '/MyProfile/',
+           which never matched anything either — so from within the account area
+           itself the base stayed '' and the link resolved to
+           public/profile/MyProfile/my-orders.html, a second 404.
+
+           The test is now anchored: it asks whether the CURRENT FILE sits
+           directly inside a profile/ directory, rather than whether the string
+           appears anywhere in the path. */
+        const inProfileDir = /\/profile\/[^/]*$/.test(window.location.pathname);
+        const base  = inProfileDir ? '' : 'profile/';
+        /* Dashboard is the account area's front door — the summary the other
+           three pages are drilldowns from. */
+        if(a==="dashboard") window.location.href = base + "dashboard.html";
+        if(a==="orders")    window.location.href = base + "my-orders.html";
+        if(a==="profile")   window.location.href = base + "profile.html";
+      }
+    }));
+    document.addEventListener("click", ()=>{ pop.classList.remove("open"); btn.classList.remove("open"); });
+  } else {
+    slot.innerHTML = `<button class="nav-login-btn" id="login-btn">Login</button>`;
+    $("#login-btn").addEventListener("click", ()=>openLogin());
+  }
+}
+
+/* =================================================================
+   THEME
+   ================================================================= */
+function applyTheme(t){
+  state.theme = t;
+  document.documentElement.setAttribute("data-theme", t);
+  try { localStorage.setItem("eb-theme", t); } catch(_){}
+}
+
+/* =================================================================
+   Generic stepper delegation (cards + product detail)
+   ================================================================= */
+function wireSteppers(){
+  document.addEventListener("click", e=>{
+    const btn = e.target.closest("[data-step]");
+    if(!btn) return;
+    const input = btn.closest(".stepper").querySelector("input");
+    let v = parseInt(input.value||"1",10) + parseInt(btn.dataset.step,10);
+    const max = parseInt(input.max||"99",10);
+    v = Math.max(1, Math.min(v, max));
+    input.value = v;
+  });
+}
+
+/* =================================================================
+   Scroll helpers / smooth anchors / reveal / sticky nav / parallax
+   ================================================================= */
+function scrollToId(sel){
+  const el = $(sel); if(!el) return;
+  const y = el.getBoundingClientRect().top + window.scrollY - 64;
+  window.scrollTo({top:y, behavior:"smooth"});
+}
+
+/* The shop is a PAGE, not an anchor on this one.
+
+   Every control that wanted to reach the shop called scrollToId("#shop"), and
+   no element with id="shop" has ever existed anywhere in this project. The
+   shop is public/shop.html, which index.html reaches with <a href="shop.html">.
+   scrollToId() opens with `const el = $(sel); if(!el) return;`, so those
+   clicks did nothing at all — no navigation, no error, no clue.
+
+   The URL is resolved against the APPLICATION ROOT rather than the current
+   directory. The cart drawer is on seven pages at two different depths
+   (public/*.html and public/profile/*.html), so a bare "shop.html" would 404
+   from My Orders. EbFormat.APP_BASE is derived from the core module's own URL
+   for exactly this purpose; BASE_PATH at the top of this file is the same
+   derivation from this script's URL and is the fallback if the bridge has not
+   run. */
+function shopUrl(){
+  const base = (window.EbFormat && EbFormat.APP_BASE) || BASE_PATH || "/";
+  return base + "public/shop.html";
+}
+
+/* Reaching the shop from anywhere. On the shop page itself, reloading it to
+   land where you already are is worse than useless — scroll the grid into
+   view instead. #product-grid exists only on shop.html, which makes it the
+   test for "am I already there". */
+function goToShop(){
+  closeCart();
+  if($("#product-grid")){ scrollToId("#product-grid"); return; }
+  window.location.href = shopUrl();
+}
+/* ---- tubelight indicator ---- */
+function moveNavIndicator(linkEl){
+  const ind = $("#nav-indicator");
+  const nav = $("#navlinks");
+  if(!ind || !nav || !linkEl) return;
+  const cR = nav.getBoundingClientRect();
+  const lR = linkEl.getBoundingClientRect();
+  ind.style.left = (lR.left - cR.left) + "px";
+  ind.style.width = lR.width + "px";
+  $$(".nav-links a").forEach(a => a.classList.remove("active"));
+  linkEl.classList.add("active");
+}
+function initNavIndicator(){
+  // On dedicated pages (shop.html etc.), a .page-active link is already marked —
+  // just position the indicator there and skip scroll-spy.
+  const pageActive = document.querySelector('.nav-links a.page-active');
+  if(pageActive){ moveNavIndicator(pageActive); return; }
+
+  // find which section is in view and highlight the matching link
+  // hrefs must match the actual <a href="..."> values in the nav
+  const sections = [
+    {id:"home",    href:"index.html"},
+    {id:"best",    href:"#best"},
+    {id:"about",   href:"#about"},
+    {id:"contact", href:"#contact"},
+  ];
+  // default to Home
+  const firstLink = document.querySelector('.nav-links a[href="index.html"]')
+                    || document.querySelector(".nav-links a");
+  if(firstLink) moveNavIndicator(firstLink);
+
+  // scroll-spy: pick the last section whose top is above 40% of viewport
+  function updateActiveLink(){
+    const trigger = window.scrollY + window.innerHeight * 0.4;
+    let active = sections[0];
+    sections.forEach(s => {
+      const el = document.getElementById(s.id);
+      if(el && el.offsetTop <= trigger) active = s;
+    });
+    const link = document.querySelector('.nav-links a[href="'+active.href+'"]');
+    if(link) moveNavIndicator(link);
+  }
+  window.addEventListener("scroll", updateActiveLink, {passive:true});
+  updateActiveLink();
+}
+
+function wireSmoothScroll(){
+  $$('a[href^="#"]').forEach(a=>{
+    a.addEventListener("click", e=>{
+      const id = a.getAttribute("href");
+      if(id.length>1 && $(id)){
+        e.preventDefault();
+        scrollToId(id);
+        $("#navlinks").classList.remove("open");
+        // move tubelight to clicked nav link if it's in the nav
+        if(a.closest("#navlinks")) moveNavIndicator(a);
+      }
+    });
+  });
+}
+function wirePageLinks(){
+  // Nav links that navigate to a separate page (not anchor scrolls).
+  // Slide indicator + animate page out, then navigate.
+  $$(".nav-links a").forEach(a => {
+    const href = a.getAttribute("href");
+    if(!href || href.startsWith("#")) return; // anchor links handled by wireSmoothScroll
+    a.addEventListener("click", e => {
+      e.preventDefault();
+      moveNavIndicator(a);
+      document.body.classList.add("page-exit");
+      setTimeout(() => { window.location.href = href; }, 360);
+    });
+  });
+}
+function wireReveal(){
+  const els = $$(".reveal");
+  if(!("IntersectionObserver" in window)){ els.forEach(el=>el.classList.add("in")); return; }
+  const io = new IntersectionObserver((entries)=>{
+    entries.forEach(en=>{ if(en.isIntersecting){ en.target.classList.add("in"); io.unobserve(en.target); } });
+  }, {threshold:.12, rootMargin:"0px 0px -40px 0px"});
+  els.forEach(el=>io.observe(el));
+}
+function wireStickyNav(){
+  const nav=$("#nav");
+  const onScroll=()=>nav.classList.toggle("scrolled", window.scrollY>40);
+  onScroll(); window.addEventListener("scroll", onScroll, {passive:true});
+}
+
+function wireParallax(){
+  // parallax removed — accordion replaces the old hero jar
+}
+
+/* =================================================================
+   HERO ACCORDION  (interactive image accordion)
+   ================================================================= */
+const HERO_PANELS = [
+  { title:"Pesto Bangus",       tint:"#3f8f4f", bg:"linear-gradient(160deg,#2d6a3f,#1a4a2a)" },
+  { title:"Adobo Bangus",       tint:"#5a3a22", bg:"linear-gradient(160deg,#6b4226,#3d2515)" },
+  { title:"Asian Steak",        tint:"#7a4b2b", bg:"linear-gradient(160deg,#8a5a35,#4a2d18)" },
+  { title:"Tuyo Delizioso",     tint:"#c98a2e", bg:"linear-gradient(160deg,#b87d28,#7a5218)" },
+  { title:"Ba-yo Signature",    tint:"#b6702a", bg:"linear-gradient(160deg,#a06020,#5c3812)" },
+];
+
+/* ---- hero slider (right side of hero) ----
+   A FIFO queue that runs left-to-right toward the panel.
+
+   `order` holds product indices. order[0] is in the big panel and
+   order[1] is "next up" — the rightmost tile, sitting against the
+   panel edge. Reading the strip left to right you get order[3],
+   order[2], order[1], i.e. furthest-away first.
+
+   Advancing slides the whole rail one tile to the right: the rightmost
+   tile travels into the panel, everything shifts along, and a new tile
+   enters from the left. The rail carries a fourth tile (order[4]) off
+   the left edge for exactly that purpose, and rests one tile-width to
+   the left so that tile is hidden until it is needed.
+
+   Placeholder gradients stand in until real photos exist: add
+   img:"path/to/photo.jpg" to a HERO_PANELS entry and the panel and its
+   tile both switch to the photo automatically. */
+/* Timings, all in sync with styles.css:
+     HERO_SLIDE_MS   .ht-rail.is-moving  transform  .7s
+     HERO_PANEL_MS   .hs-slide           opacity    .55s
+   The panel swap is kicked off HERO_PANEL_LEAD_MS into the slide so the
+   two finish together: 150 + 550 = 700. Previously the panel only began
+   fading after the slide had fully finished and then took .8s of its own,
+   which read as the big image lagging well behind the tile. */
+const HERO_SLIDE_MS      = 700;
+const HERO_PANEL_LEAD_MS = 150;
+const HERO_CYCLE_MS      = 7000;
+
+function renderHeroSlider(){
+  const track  = $("#hs-track"),
+        thumbs = $("#hero-thumbs"),
+        slider = $("#hero-slider");
+  if(!track || !thumbs) return;
+
+  track.innerHTML = ""; thumbs.innerHTML = "";
+  let order = HERO_PANELS.map((_, i) => i);
+  let timer = null, busy = false;
+
+  const rail = document.createElement("div");
+  rail.className = "ht-rail";
+  thumbs.appendChild(rail);
+
+  function art(panel){
+    /* imageUrl(): panel.img is an application-root-relative path from
+       content/get.php now, not a data URL, and this page sits one level down
+       from the project root. */
+    const src = imageUrl(panel.img);
+    return src
+      ? '<img src="'+src+'" alt="'+panel.title+'" draggable="false">'
+      : '<div class="hs-ph" style="position:absolute;inset:0;background:'+panel.bg+';display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px">' +
+          '<span class="ph-icon" aria-hidden="true">'+ICONS.camera+'</span>' +
+          '<span class="ph-label">'+panel.title+'</span>' +
+        '</div>';
+  }
+
+  /* Panels are built once; only the .active class moves between them. */
+  HERO_PANELS.forEach(function(panel){
+    const slide = document.createElement("div");
+    slide.className = "hs-slide";
+    slide.innerHTML = art(panel) + '<span class="hs-caption">'+panel.title+'</span>';
+    track.appendChild(slide);
+  });
+  const slides = $$(".hs-slide", track);
+
+  /* order[0] is whatever belongs in the big panel. */
+  function paintPanel(){
+    slides.forEach((s,i)=> s.classList.toggle("active", i === order[0]));
+  }
+
+  /* Rebuild the rail at rest. Left to right: incoming, then the queue
+     with "next up" last, nearest the panel. */
+  function paintRail(){
+    const n = order.length;
+    rail.classList.remove("is-moving");
+    rail.innerHTML = "";
+
+    [4,3,2,1].forEach(function(depth, pos){
+      const panel = HERO_PANELS[order[depth % n]];
+      const tile  = document.createElement("button");
+      tile.type = "button";
+      tile.className = "hero-thumb" + (depth === 1 ? " next-up" : "");
+      tile.setAttribute("aria-label",
+        (depth === 1 ? "Up next: " : "Show ") + panel.title);
+      tile.setAttribute("aria-hidden", pos === 0 ? "true" : "false");
+      tile.tabIndex = pos === 0 ? -1 : 0;   /* the off-screen tile isn't reachable */
+      const tileSrc = imageUrl(panel.img);
+      tile.innerHTML = tileSrc
+        ? '<img src="'+tileSrc+'" alt="" draggable="false">'
+        : '<span class="ht-ph" style="background:'+panel.bg+'"></span>';
+      /* Clicking a tile pulls it to the head — `depth` advances away. */
+      tile.addEventListener("click", function(){ advance(depth); restart(); });
+      rail.appendChild(tile);
+    });
+
+    syncNotch();
+  }
+
+  function advance(n){
+    if(busy) return;
+    busy = true;
+    n = n || 1;
+
+    /* Rotate the queue up front, then run the tile slide and the panel
+       cross-fade together. The rail keeps showing the pre-rotation tiles
+       until it is rebuilt at the end, so the two stay visually in step. */
+    for(let i = 0; i < n; i++) order.push(order.shift());
+
+    rail.classList.add("is-moving");                       /* slide right */
+    setTimeout(paintPanel, HERO_PANEL_LEAD_MS);            /* panel fades in */
+
+    setTimeout(function(){
+      paintRail();                                          /* snap back to rest */
+      busy = false;
+    }, HERO_SLIDE_MS);
+  }
+
+  function restart(){
+    clearInterval(timer);
+    timer = setInterval(function(){ advance(1); }, HERO_CYCLE_MS);
+  }
+
+  /* Cut the panel's notch to match the tile that overlaps it.
+
+     The strip is flex-sized, so only the browser knows the tile's real box —
+     measure it and hand the numbers to the mask in styles.css. NOTCH_RING is
+     the gap left between tile and cut. Below 960px the grid is one column and
+     the strip sits above the panel rather than over it, so the notch
+     collapses to nothing. */
+  const NOTCH_RING = 12;
+  function syncNotch(){
+    if(!slider) return;
+    const tiles = $$(".hero-thumb", rail);
+    const tile  = tiles[tiles.length - 1];
+    const clear = function(){
+      slider.style.setProperty("--notch-w", "0px");
+      slider.style.setProperty("--notch-h", "0px");
+    };
+    if(!tile) return clear();
+
+    const p = slider.getBoundingClientRect();
+    const t = tile.getBoundingClientRect();
+
+    /* Only cut where the tile genuinely sits over the panel. Checking the
+       horizontal axis alone is not enough: in the single-column layout the
+       strip spans the same x range as the panel but sits well above it, which
+       would punch a hole into empty artwork. */
+    const intersects = t.right  > p.left + 1 && t.left < p.right &&
+                       t.bottom > p.top  + 1 && t.top  < p.bottom;
+    if(!intersects) return clear();
+
+    slider.style.setProperty("--notch-x", (t.left   - p.left - NOTCH_RING) + "px");
+    slider.style.setProperty("--notch-y", (t.top    - p.top  - NOTCH_RING) + "px");
+    slider.style.setProperty("--notch-w", (t.width  + NOTCH_RING * 2) + "px");
+    slider.style.setProperty("--notch-h", (t.height + NOTCH_RING * 2) + "px");
+  }
+
+  let notchTimer = null;
+  window.addEventListener("resize", function(){
+    clearTimeout(notchTimer);
+    notchTimer = setTimeout(syncNotch, 120);
+  });
+
+  paintPanel();
+  paintRail();
+  restart();
+  /* Fonts and the reveal animation can shift the strip after first paint. */
+  setTimeout(syncNotch, 400);
+
+  /* Pause while the visitor is reading the panel or choosing a tile. */
+  [slider, thumbs].forEach(function(el){
+    if(!el) return;
+    el.addEventListener("mouseenter", ()=> clearInterval(timer));
+    el.addEventListener("mouseleave", restart);
+  });
+}
+
+/* renderHeroAccordion() was here — 34 lines building a hover-and-click image
+   accordion for the hero.
+
+   Removed because #hero-accordion does not exist in any HTML file in this
+   project, and never has as far as the code shows. Line two of the function was
+   `const wrap = $("#hero-accordion"); if(!wrap) return;` — so it returned
+   immediately, every time, and rendered 0 panels. Verified on the live page
+   before removal: `document.querySelectorAll('.acc-panel').length === 0`.
+
+   The hero the site ACTUALLY shows is the slider — renderHeroSlider(), four
+   thumbnails, working — which is a different component and is untouched. The
+   accordion was a second, unused one.
+
+   Deleted on the owner's instruction after the two were distinguished. If an
+   accordion hero is wanted later it is a design decision, not a restoration. */
+
+/* =================================================================
+   INIT
+   ================================================================= */
+
+/* =================================================================
+   LANDING CONTENT  +  PREVIEW MODE
+   -----------------------------------------------------------------
+   THE localStorage BRIDGE IS GONE.
+
+   It worked like this: the Super Admin's Landing Page module wrote
+   localStorage["eb-landing-content"], and this page read it back and
+   patched itself. Same origin, so it functioned — inside one browser.
+   An edit made by an administrator was invisible to every actual
+   visitor, which is the only audience the screen has.
+
+   It was later demoted to "a first-paint cache, not the source of
+   truth", which was better and still wrong in one specific way that
+   produced defect 3.3: hero images were never sent to the server at
+   all, so the cache was the ONLY place they existed. The admin saw
+   the photo in the preview iframe because the preview ran in the same
+   browser and read the same key. Log out and it was gone.
+
+   Both ends are removed. content/get.php is the only source. The cost
+   is that the hero photos appear a beat after first paint instead of
+   instantly; the benefit is that what the administrator sees in the
+   preview is what a visitor in Manila sees.
+   ================================================================= */
+window.EB_LANDING = null;
+
+/* One-time cleanup of the retired key.
+
+   Removing the code that WROTE localStorage["eb-landing-content"] does not
+   remove what it already wrote. Every browser that ever opened the admin still
+   holds that blob — up to several megabytes of it, because hero photos used to
+   be base64'd into it — and it will sit there indefinitely with nothing left
+   that can read or clear it.
+
+   Deleting data the user did not ask us to delete deserves a sentence of
+   justification: this key was written by this application, is dead in this
+   version, and is not a user document. */
+try { localStorage.removeItem("eb-landing-content"); } catch(_){}
+
+/* Fetch the landing content from the database and apply it. */
+async function fetchLandingContent(){
+  try {
+    const { data } = await EbApi.get("content/get.php");
+    window.EB_LANDING = data;
+    applyLandingContent();
+    if (typeof renderFaqs === "function") renderFaqs();
+    if (typeof renderHeroSlider === "function") renderHeroSlider();
+    return true;
+  } catch(err){
+    /* The page still renders its shipped copy; a visitor cannot act on
+       "content service unavailable", so this is logged, not shown. */
+    console.warn("[landing] content unavailable:", err.message);
+    return false;
+  }
+}
+
+/* Patch the DOM hooks the page already ships with (#lp-live-*). Called
+   before the render functions so FAQ/hero/product overrides land first. */
+function applyLandingContent(){
+  /* Uses whatever is already in memory, falling back to the cache only if
+     nothing has been loaded yet.
+
+     This used to call loadLandingContent() unconditionally, which re-read
+     localStorage — so the fresh copy fetchLandingContent() had just taken from
+     the API was immediately replaced by the cached one. It happened to work
+     because the cache is written a line earlier, but a failed write (quota
+     exceeded, private browsing) would have silently applied stale content over
+     fresh, and the symptom would be an administrator's edit not appearing with
+     no error anywhere. */
+  const c = window.EB_LANDING;
+  if(!c) return;
+
+  const setText = (sel, val) => {
+    const el = $(sel);
+    if(el && typeof val === "string" && val.trim()) el.textContent = val;
+  };
+  setText("#lp-live-about",   c.about);
+  setText("#lp-live-vision",  c.vision);
+  setText("#lp-live-mission", c.mission);
+
+  if(c.contact){
+    setText("#lp-live-address", c.contact.address);
+
+    const phone = $("#lp-live-phone");
+    if(phone && c.contact.phone){
+      phone.textContent = c.contact.phone;
+      phone.href = "tel:" + c.contact.phone.replace(/[^\d+]/g, "");
+    }
+    const mail = $("#lp-live-email");
+    if(mail && c.contact.email){
+      mail.textContent = c.contact.email;
+      mail.href = "mailto:" + c.contact.email;
+    }
+    const fb = $("#lp-live-facebook");
+    if(fb && c.contact.facebook){
+      fb.textContent = c.contact.facebook;
+      fb.href = /^https?:/.test(c.contact.facebook)
+        ? c.contact.facebook : "https://" + c.contact.facebook;
+    }
+  }
+
+  /* FAQ list — replaced wholesale, so removing an entry in the admin
+     actually removes it here. renderFaqs() reads FAQS afterwards. */
+  if(Array.isArray(c.faqs) && c.faqs.length){
+    FAQS = c.faqs.filter(f => f && f.q && f.a);
+    FAQS_LOADED = true;
+  }
+
+  /* Hero slide photos, matched to HERO_PANELS by title.
+     `image` is the current key; `img` is read too so a cached older response
+     still resolves. Both are paths — imageUrl() turns them into a src. */
+  if(Array.isArray(c.hero)){
+    c.hero.forEach(function(entry){
+      if(!entry) return;
+      const path = entry.image || entry.img || "";
+      if(!path) return;
+      const panel = HERO_PANELS.find(p => p.title === entry.title);
+      if(panel) panel.img = path;
+    });
+  }
+
+  /* The `productImages` branch that used to sit here is gone.
+
+     It read c.productImages[p.id] and assigned p.img. content/get.php has never
+     returned a `productImages` key and no table backs one — the Landing Page
+     editor had a per-product photo picker writing to an in-memory object with
+     no endpoint, no column and no reader. Two halves of a feature that were
+     never joined, and the only thing that ever set p.img on this page.
+
+     A product has ONE photo and it lives on the product, set in Product
+     Maintenance and served by shop/products.php as `image`. */
+}
+
+/* -----------------------------------------------------------------
+   PREVIEW MODE  (?preview=1)
+
+   The admin's "View Live Page" opens this page in an iframe. Without
+   this the visitor login modal was reachable from inside the admin,
+   so a Super Admin could sign in as a customer over and over without
+   ever leaving their own session.
+
+   Preview keeps the page fully browsable — only the account surface
+   is removed, so edits can still be checked in context.
+   ----------------------------------------------------------------- */
+function isPreviewMode(){
+  try { return new URLSearchParams(location.search).get("preview") === "1"; }
+  catch(_){ return false; }
+}
+
+/* Who is looking at this preview. The admin passes it on the URL; the
+   sessionStorage hand-off is a fallback for a preview opened some other
+   way. Returns "" rather than guessing, so the badge degrades to a plain
+   "Preview mode" instead of naming the wrong person. */
+function previewIdentity(){
+  try {
+    const q    = new URLSearchParams(location.search);
+    const role = q.get("as"), who = q.get("who");
+    if(role) return who ? who + " · " + role : role;
+  } catch(_){}
+  try {
+    const staff = JSON.parse(sessionStorage.getItem("eb-staff") || "null");
+    if(staff && staff.role) return staff.name ? staff.name + " · " + staff.role : staff.role;
+  } catch(_){}
+  return "";
+}
+
+function applyPreviewMode(){
+  if(!isPreviewMode()) return;
+  document.documentElement.classList.add("eb-preview");
+
+  /* Remove the account/cart surface entirely rather than hiding it, so
+     nothing can be clicked or tabbed to. */
+  ["#account-slot", "#cart-btn", "#cart-btn-mob"].forEach(function(sel){
+    const el = $(sel);
+    if(el) el.remove();
+  });
+
+  /* Belt and braces: neutralise the auth entry points in case another
+     code path (a CTA, a deep link) tries to open them. */
+  if(typeof openAuth === "function") openAuth = function(){};
+  if(typeof openLogin === "function") openLogin = function(){};
+  if(typeof openRegister === "function") openRegister = function(){};
+
+  const chip = document.createElement("div");
+  chip.className = "eb-preview-chip";
+  chip.textContent = previewIdentity()
+    ? "Preview — signed in as " + previewIdentity()
+    : "Preview mode";
+  document.body.appendChild(chip);
+}
+
+/* Load the live catalogue. Failure is deliberately quiet on the storefront:
+   a shopper cannot act on "the API is down", and the seeded copy still renders
+   a browsable page. It is logged, and the checkout endpoint re-prices
+   everything from the database anyway, so a stale price here cannot become a
+   wrong charge. */
+async function loadShopCatalog(){
+  try {
+    const { data } = await EbApi.get("shop/products.php");
+    if (Array.isArray(data) && data.length) {
+      PRODUCTS.length = 0;
+      data.forEach(p => PRODUCTS.push(p));
+    }
+    return true;
+  } catch (err) {
+    console.warn("[shop] catalogue unavailable, showing cached copy:", err.message);
+    return false;
+  }
+}
+
+function init(){
+  /* Admin overrides first: they replace FAQS, hero photos and the
+     featured product list that the render calls below depend on. */
+  applyLandingContent();
+  applyPreviewMode();
+
+  // brand marks — decorative fish icon, not a product photo holder
+  const markHTML = '<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:28px;height:28px" aria-hidden="true"><path d="M4 16C4 16 8 8 16 8C24 8 28 16 28 16C28 16 24 24 16 24C8 24 4 16 4 16Z" fill="var(--red)" opacity=".15"/><path d="M4 16C4 16 8 8 16 8C24 8 28 16 28 16" stroke="var(--red)" stroke-width="1.8" stroke-linecap="round"/><path d="M4 16C4 16 8 24 16 24C24 24 28 16 28 16" stroke="var(--gold)" stroke-width="1.8" stroke-linecap="round"/><circle cx="21" cy="13" r="1.5" fill="var(--red)"/><path d="M28 16L32 13M28 16L32 19" stroke="var(--red)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  if($("#brand-mark")) $("#brand-mark").innerHTML = markHTML;
+  if($("#footer-mark")) $("#footer-mark").innerHTML = markHTML;
+
+  // about jar — image placeholder with big-jar class styling
+  const aboutJarEl = $("#about-jar");
+  if(aboutJarEl){
+    aboutJarEl.classList.add("about-map-card");
+    aboutJarEl.innerHTML =
+      '<iframe class="about-map" title="Elisha Bay location — Dagupan City, Pangasinan" ' +
+        'src="https://maps.google.com/maps?q=148%20Brgy.%20Mangin%2C%20Dagupan%20City%2C%20Pangasinan&z=15&output=embed" ' +
+        'loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>' +
+      '<div class="about-map-tag">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>' +
+        '148 Brgy. Mangin, Dagupan City' +
+      '</div>';
+  }
+
+  // hero accordion + hero slider
+  renderHeroSlider();
+
+  // tubelight nav indicator — defer until after first paint
+  setTimeout(initNavIndicator, 0);
+
+  // data-icon spans
+  $$("[data-icon]").forEach(el=>{ el.innerHTML = ICONS[el.dataset.icon] || ""; });
+
+  // category chips (from CATEGORIES)
+  const catChipsEl = $("#cat-chips");
+  if(catChipsEl) catChipsEl.innerHTML = CATEGORIES.map((c,i)=>`<button class="chip ${i===0?"active":""}" data-cat="${c}">${c}</button>`).join("");
+
+  // render content
+  renderBestSellers();
+  renderProducts();
+
+  /* Re-render once the real catalogue lands. Rendering twice is cheap and
+     avoids holding the whole page back on one request. */
+  loadShopCatalog().then(ok => {
+    if (ok) { renderBestSellers(); renderProducts(); }
+  });
+
+  /* Pick up a staff session if one exists.
+
+     Nothing on the storefront needs an identity — but CSRF protection applies
+     to any request made WITH a session, and a staff member who is signed into
+     the portal and then browses the shop in the same browser has one. Without
+     this, their checkout was refused 403 while an anonymous shopper's went
+     through: the more privileged visitor was the only one who could not buy
+     anything. Bootstrapping here fetches the token so the request carries it.
+
+     Anonymous visitors get a 401 from me.php, which bootstrap() treats as the
+     ordinary "not signed in" case and swallows. */
+  if (window.EbSession) {
+    EbSession.bootstrap().catch(() => {});
+  }
+
+  /* Reconcile the cached "logged in" flag with the server. */
+  bootstrapCustomer();
+
+  /* Pull the real landing content. */
+  fetchLandingContent();
+  renderCerts();
+  renderFaqs();
+  renderAccount();
+  renderCart();
+  updateCartBadge();
+  if($("#year")) $("#year").textContent = new Date().getFullYear();
+
+  /* ---- event wiring (delegated where possible) ---- */
+  wireSteppers();
+  wireSmoothScroll();
+  wirePageLinks();
+  wireReveal();
+  wireStickyNav();
+  wireParallax();
+
+  // theme toggle
+  $("#theme-btn")?.addEventListener("click", ()=>applyTheme(state.theme==="light"?"dark":"light"));
+
+  // cart open/close (pill cart + mobile cart)
+  $("#cart-btn")?.addEventListener("click", openCart);
+  $("#cart-btn-mob")?.addEventListener("click", openCart);
+  $("#cart-close")?.addEventListener("click", closeCart);
+  $("#cart-scrim")?.addEventListener("click", closeCart);
+
+  // modal close
+  $("#modal-close")?.addEventListener("click", closeModal);
+  $("#modal-scrim")?.addEventListener("click", e=>{ if(e.target===$("#modal-scrim")) closeModal(); });
+  document.addEventListener("keydown", e=>{
+    if(e.key==="Escape"){ closeModal(); closeCart(); $("#navlinks")?.classList.remove("open"); }
+  });
+
+  // login button (initial)
+  $("#login-btn")?.addEventListener("click", openLogin);
+
+  // search box (in shop sidebar only)
+  $("#shop-search")?.addEventListener("input", e=>{ state.filter.search=e.target.value; renderProducts(); });
+
+  // sort
+  $("#sort-select")?.addEventListener("change", e=>{ state.filter.sort=e.target.value; renderProducts(); });
+
+  // category chips
+  $("#cat-chips")?.addEventListener("click", e=>{
+    const chip=e.target.closest(".chip"); if(!chip) return;
+    $$("#cat-chips .chip").forEach(c=>c.classList.remove("active"));
+    chip.classList.add("active");
+    state.filter.category=chip.dataset.cat;
+    renderProducts();
+  });
+
+  // hamburger
+  const ham=$("#hamburger");
+  ham?.addEventListener("click", ()=>{ const o=$("#navlinks").classList.toggle("open"); ham.setAttribute("aria-expanded",o); });
+
+  // delegated: add-to-cart, open detail (grid + best sellers)
+  document.addEventListener("click", e=>{
+    const add=e.target.closest("[data-add]");
+    if(add){
+      const card=add.closest(".product-card");
+      const qty=parseInt(card?.querySelector(".stepper input")?.value || "1",10);
+      addToCart(add.dataset.add, qty);
+      return;
+    }
+    const detail=e.target.closest("[data-detail]");
+    if(detail){ openProductDetail(detail.dataset.detail); }
+  });
+  // keyboard open detail on media
+  document.addEventListener("keydown", e=>{
+    if((e.key==="Enter"||e.key===" ") && e.target.matches("[data-detail].pc-media")){
+      e.preventDefault(); openProductDetail(e.target.dataset.detail);
+    }
+  });
+
+  // delegated: cart drawer stepper + remove
+  $("#cart-body")?.addEventListener("click", e=>{
+    const step=e.target.closest("[data-cstep]");
+    if(step){
+      const wrap=step.closest("[data-cart-stepper]"); const id=wrap.dataset.cartStepper;
+      const input=wrap.querySelector("input");
+      const next = parseInt(input.value||"1",10) + parseInt(step.dataset.cstep,10);
+      /* Minus at one means "I do not want this". setQty() clamps the floor to
+         1 — correctly, because that clamp is what protects the typed number
+         input, where 0 is not a quantity — so asking it for 0 put the line
+         straight back and the button looked broken. The decision belongs
+         here, where the intent is known, not in the clamp. */
+      if(next < 1){ removeFromCart(id); return; }
+      setQty(id, next);
+      return;
+    }
+    const rm=e.target.closest("[data-remove]");
+    if(rm){ removeFromCart(rm.dataset.remove); }
+  });
+  $("#cart-body")?.addEventListener("change", e=>{
+    const input=e.target.closest("[data-cart-stepper] input");
+    if(!input) return;
+    const id  = input.closest("[data-cart-stepper]").dataset.cartStepper;
+    const raw = input.value.trim();
+    const n   = parseInt(raw, 10);
+    /* Cleared, or typed down to zero, is the same instruction the minus button
+       gives at one. Snapping back to 1 answered a question nobody asked. */
+    if(raw === "" || !Number.isFinite(n) || n < 1){ removeFromCart(id); return; }
+    setQty(id, n);
+  });
+
+  /* A #contact-form submit handler was here, reading #cf-name, #cf-email and
+     #cf-msg. None of those four elements has ever existed in any HTML file in
+     this project — the optional chaining meant it silently bound to nothing.
+
+     Its own comment said "JS validation only — no real submit": it called
+     form.reset() and showed "Message sent — we'll get back to you!" while
+     sending nothing anywhere. Had the markup existed, it would have lied to
+     every customer who used it.
+
+     Removed on the owner's instruction, once it was established that this was
+     NOT the partner-registration feature. That is a separate page —
+     public/become-partner.html — which now genuinely submits, via
+     api/b2b/apply.php, and emails the applicant. The Contact section on the
+     landing page stays as it is: address, phone and email, no form. */
+}
+
+document.addEventListener("DOMContentLoaded", init);
+
+/* =================================================================
+   V2 ENHANCEMENTS — Stats counter, parallax orbs, footer links
+   ================================================================= */
+
+/* ── Animated stat counters ── */
+/* animateCounter() was here. Its only caller was initCounters(), removed just
+   below for a #stats-bar that does not exist. */
+
+/* initCounters() was here — an IntersectionObserver that animated .stat-num
+   counters when #stats-bar scrolled into view.
+
+   Removed: #stats-bar exists in no HTML file, so the observer was never
+   attached and no counter ever animated. animateCounter() above is its only
+   caller and goes with it. */
+
+/* ── Parallax: hero orbs drift slightly on scroll ── */
+(function initOrbParallax() {
+  const orbs = document.querySelectorAll(".hero-canvas .orb");
+  if (!orbs.length) return;
+
+  const factors = [0.06, -0.04, 0.08, -0.05, 0.03];
+
+  let ticking = false;
+  window.addEventListener("scroll", () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+      const scrollY = window.scrollY;
+      orbs.forEach((orb, i) => {
+        const f = factors[i] ?? 0.05;
+        orb.style.transform = `translateY(${scrollY * f}px)`;
+      });
+      ticking = false;
+    });
+  }, { passive: true });
+})();
+
+/* ── Footer link animated underline on keyboard focus ── */
+document.querySelectorAll(".footer-links a").forEach(a => {
+  a.addEventListener("focus", () => a.style.color = "var(--red)");
+  a.addEventListener("blur",  () => a.style.color = "");
+});

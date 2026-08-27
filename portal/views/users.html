@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>users module</title>
+  <!-- ============================================================
+       MODULE PARTIAL — section id="mod-users".
+
+       Wrapped as a complete HTML document ON PURPOSE.
+
+       Dev servers inject a live-reload script into every .html file
+       they serve, placed just before the closing body tag. A bare
+       fragment has no closing body tag, so VS Code Live Server falls
+       back to injecting before the first closing svg tag instead —
+       which lands inside the Elisha Bay logo mark, corrupts the
+       parse, and leaves the portal showing "Portal failed to load".
+
+       With a real body element the injection lands harmlessly at the
+       end, and Core/module-loader.js strips every script element
+       before using this markup.
+
+       Keep the html/head/body wrapper. Also avoid writing a literal
+       closing body, head or svg tag anywhere in a comment in these
+       files — Live Server matches raw text and will inject there,
+       breaking the comment and everything after it.
+       ============================================================ -->
+  </head>
+  <body>
+<!-- ── USER MANAGEMENT ── -->
+<section
+  id="mod-users"
+  class="mod-panel"
+  aria-label="User Management"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Maintenance</div>
+      <h2>User Management</h2>
+    </div>
+    <div class="actions" id="users-header-actions"></div>
+  </div>
+  <div class="tabs" id="user-tabs" role="tablist">
+    <button
+      class="tab-btn active"
+      role="tab"
+      aria-selected="true"
+      data-user-tab="customers"
+    >
+      Customer Accounts
+    </button>
+    <button
+      class="tab-btn"
+      role="tab"
+      aria-selected="false"
+      data-user-tab="employees"
+    >
+      Employee Accounts
+    </button>
+  </div>
+  <div id="tab-customers" class="tab-panel active">
+    <div class="table-toolbar">
+      <div class="search-box">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="11" cy="11" r="8" />
+          <path d="M21 21l-4.35-4.35" />
+        </svg>
+        <input
+          type="search"
+          placeholder="Search customers…"
+          id="search-customers"
+          aria-label="Search customers"
+        />
+      </div>
+      <select
+        class="filter-select"
+        id="cust-page-size"
+        aria-label="Rows per page"
+      >
+        <option value="10">10 per page</option>
+        <option value="25">25 per page</option>
+        <option value="50">50 per page</option>
+      </select>
+      <select
+        class="filter-select"
+        id="filter-customers"
+        aria-label="Filter by status"
+      >
+        <option value="all">All Status</option>
+        <option value="active">Active</option>
+        <option value="retailer">Retailer</option>
+        <option value="archived">Archived</option>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table" id="customers-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Contact</th>
+            <th>Status</th>
+            <th>Joined</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="customers-tbody"></tbody>
+      </table>
+    </div>
+    <div class="table-toolbar" style="margin-top: 14px">
+      <span class="muted" id="cust-showing" style="font-size: 0.82rem"></span>
+      <div class="pagination" id="cust-pagination" style="margin-left: auto"></div>
+    </div>
+  </div>
+  <div id="tab-employees" class="tab-panel">
+    <div class="table-toolbar">
+      <div class="search-box">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="11" cy="11" r="8" />
+          <path d="M21 21l-4.35-4.35" />
+        </svg>
+        <input
+          type="search"
+          placeholder="Search employees…"
+          id="search-employees"
+          aria-label="Search employees"
+        />
+      </div>
+      <button class="btn btn-gold btn-sm" id="add-employee-btn">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        Add Employee
+      </button>
+      <select
+        class="filter-select"
+        id="emp-page-size"
+        aria-label="Rows per page"
+      >
+        <option value="10">10 per page</option>
+        <option value="25">25 per page</option>
+        <option value="50">50 per page</option>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table" id="employees-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="employees-tbody"></tbody>
+      </table>
+    </div>
+    <div class="table-toolbar" style="margin-top: 14px">
+      <span class="muted" id="emp-showing" style="font-size: 0.82rem"></span>
+      <div class="pagination" id="emp-pagination" style="margin-left: auto"></div>
+    </div>
+  </div>
+</section>
+  </body>
+</html>

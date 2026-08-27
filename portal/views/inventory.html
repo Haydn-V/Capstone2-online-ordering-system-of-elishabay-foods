@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>inventory module</title>
+  <!-- ============================================================
+       MODULE PARTIAL — section id="mod-inventory".
+
+       Wrapped as a complete HTML document ON PURPOSE.
+
+       Dev servers inject a live-reload script into every .html file
+       they serve, placed just before the closing body tag. A bare
+       fragment has no closing body tag, so VS Code Live Server falls
+       back to injecting before the first closing svg tag instead —
+       which lands inside the Elisha Bay logo mark, corrupts the
+       parse, and leaves the portal showing "Portal failed to load".
+
+       With a real body element the injection lands harmlessly at the
+       end, and Core/module-loader.js strips every script element
+       before using this markup.
+
+       Keep the html/head/body wrapper. Also avoid writing a literal
+       closing body, head or svg tag anywhere in a comment in these
+       files — Live Server matches raw text and will inject there,
+       breaking the comment and everything after it.
+       ============================================================ -->
+  </head>
+  <body>
+<!-- ── INVENTORY REPORT ── -->
+<section
+  id="mod-inventory"
+  class="mod-panel"
+  aria-label="Inventory Report"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Inventory</div>
+      <h2>Inventory Report</h2>
+    </div>
+  </div>
+  <div class="inv-legend">
+    <span class="inv-legend-item"
+      ><span class="inv-dot inv-ok"></span> Safe (&gt;100)</span
+    >
+    <span class="inv-legend-item"
+      ><span class="inv-dot inv-warn"></span> Low (11–100)</span
+    >
+    <span class="inv-legend-item"
+      ><span class="inv-dot inv-crit"></span> Critical (1–10)</span
+    >
+    <span class="inv-legend-item"
+      ><span class="inv-dot inv-out"></span> Out of Stock (0)</span
+    >
+  </div>
+  <div class="table-toolbar">
+    <div class="search-box">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="11" cy="11" r="8" />
+        <path d="M21 21l-4.35-4.35" />
+      </svg>
+      <input
+        type="search"
+        placeholder="Search products…"
+        id="search-inventory"
+        aria-label="Search inventory"
+      />
+    </div>
+    <select
+      class="filter-select"
+      id="filter-inventory"
+      aria-label="Filter by level"
+    >
+      <option value="all">All Levels</option>
+      <option value="ok">Safe</option>
+      <option value="warn">Low</option>
+      <option value="crit">Critical</option>
+      <option value="out">Out of Stock</option>
+    </select>
+    <select
+      class="filter-select"
+      id="filter-movement"
+      aria-label="Filter by movement"
+    >
+      <option value="all">All Movement</option>
+      <option value="fast">Fast Moving</option>
+      <option value="slow">Slow Moving</option>
+      <option value="non">Non-Moving</option>
+    </select>
+    <select
+      class="filter-select"
+      id="inv-report-page-size"
+      aria-label="Rows per page"
+    >
+      <option value="10">10 per page</option>
+      <option value="25">25 per page</option>
+      <option value="50">50 per page</option>
+    </select>
+  </div>
+  <div class="table-wrap viewport-bound">
+    <table class="data-table" id="inventory-table">
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Category</th>
+          <th>Stock</th>
+          <th>Level</th>
+          <th>Movement</th>
+          <th>Price</th>
+          <th>Total Sold</th>
+        </tr>
+      </thead>
+      <tbody id="inventory-tbody"></tbody>
+    </table>
+  </div>
+  <div class="table-toolbar" style="margin-top: 14px">
+    <span class="muted" id="inv-report-showing" style="font-size: 0.82rem"></span>
+    <div class="pagination" id="inv-report-pagination" style="margin-left: auto"></div>
+  </div>
+</section>
+  </body>
+</html>

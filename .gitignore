@@ -1,0 +1,43 @@
+# Real credentials. api/config/config.example.php is the committed template.
+api/config/config.php
+
+# Editor / tooling state
+.claude/
+.agents/
+skills-lock.json
+.mcp.json
+
+# Archived dead code and the pre-RBAC source zip
+_archive/
+
+# Node tooling — the project has no build step; this only exists because a
+# shadcn dependency was installed and never used.
+node_modules/
+
+# Runtime output.
+# storage/mail/ holds the full text of every email sent — recipients' names,
+# email addresses and business details. Personal data must not travel in a
+# repository. The .htaccess is exempted because the protection has to ship with
+# the directory: ignoring it would mean a fresh clone recreates storage/ with
+# nothing stopping a direct request for a filename.
+storage/*
+!storage/.htaccess
+*.log
+
+# User uploads. Ignore the contents, keep the directory and its protection.
+#
+# This said `public/uploads/*` — a path that DOES NOT EXIST in this project.
+# Uploads go to /uploads/ at the project root (decision I3), so nothing here
+# covered them: product photos and, worse, uploads/references/ — customers'
+# GCash and bank payment screenshots — were not ignored at all and would have
+# been committed.
+uploads/*
+!uploads/.htaccess
+!uploads/*/
+uploads/*/*
+!uploads/*/.gitkeep
+
+# OS noise
+Thumbs.db
+desktop.ini
+.DS_Store

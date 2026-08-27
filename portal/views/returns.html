@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>returns module</title>
+  <!-- ============================================================
+       MODULE PARTIAL — section id="mod-returns".
+
+       Wrapped as a complete HTML document ON PURPOSE.
+
+       Dev servers inject a live-reload script into every .html file
+       they serve, placed just before the closing body tag. A bare
+       fragment has no closing body tag, so VS Code Live Server falls
+       back to injecting before the first closing svg tag instead —
+       which lands inside the Elisha Bay logo mark, corrupts the
+       parse, and leaves the portal showing "Portal failed to load".
+
+       With a real body element the injection lands harmlessly at the
+       end, and Core/module-loader.js strips every script element
+       before using this markup.
+
+       Keep the html/head/body wrapper. Also avoid writing a literal
+       closing body, head or svg tag anywhere in a comment in these
+       files — Live Server matches raw text and will inject there,
+       breaking the comment and everything after it.
+       ============================================================ -->
+  </head>
+  <body>
+<!-- ── ONLINE ORDERS: RETURN MODULE ── -->
+<section
+  id="mod-returns"
+  class="mod-panel"
+  aria-label="Return Module"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Online Orders</div>
+      <h2>Return Module</h2>
+      <p class="field-hint" style="margin-top: 6px">
+        7-step return processing: Receive → Validate → Eligibility →
+        Approve → Process → Record
+      </p>
+    </div>
+  </div>
+  <div class="table-toolbar" style="margin-bottom: 14px">
+    <div class="search-box">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="11" cy="11" r="8" />
+        <path d="M21 21l-4.35-4.35" />
+      </svg>
+      <input
+        id="return-search"
+        type="search"
+        placeholder="Search return ID, order, customer, product…"
+        aria-label="Search returns"
+        data-refilters="returns"
+      />
+    </div>
+  </div>
+  <div class="return-tabs" id="return-tabs"></div>
+  <div id="returns-content" class="returns-scroll"></div>
+</section>
+  </body>
+</html>

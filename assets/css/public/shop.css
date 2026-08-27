@@ -1,0 +1,202 @@
+/* =================================================================
+   V4 SHOP PAGE — layered on styles.css
+   ================================================================= */
+
+/* Entrance animations */
+.shop-hero    { animation: pageIn .52s cubic-bezier(.22,.61,.36,1) both; }
+.shop-sidebar { animation: pageIn .52s cubic-bezier(.22,.61,.36,1) .1s both; }
+.shop-main    { animation: pageIn .52s cubic-bezier(.22,.61,.36,1) .2s both; }
+
+/* =================================================================
+   SHOP HERO — follows theme (matches index hero)
+   ================================================================= */
+.shop-hero {
+  position: relative;
+  background: var(--hero-bg);
+  padding-top: calc(var(--nav-h) + clamp(32px,4vw,52px));
+  padding-bottom: clamp(80px,12vw,130px);
+  overflow: hidden;
+  transition: background var(--t-slow) var(--ease);
+}
+.shop-hero-canvas {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+}
+.shop-hero-canvas .jar-glow {
+  position: absolute; top: 40%; left: 55%;
+  transform: translate(-50%,-50%);
+  width: 500px; height: 500px;
+  background: radial-gradient(circle, var(--hero-glow-a), var(--hero-glow-b) 45%, transparent 70%);
+  filter: blur(60px);
+  animation: jarGlowPulse 8s ease-in-out infinite;
+}
+.shop-hero .container { position: relative; z-index: 1; }
+
+/* Breadcrumb */
+.breadcrumb {
+  display: flex; align-items: center; gap: 8px;
+  font-family: "Montserrat", sans-serif;
+  font-size: .66rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--text) 45%, transparent); margin-bottom: 24px;
+}
+.breadcrumb a { color: color-mix(in srgb, var(--text) 55%, transparent); transition: color var(--t); }
+.breadcrumb a:hover { color: var(--gold); }
+.breadcrumb .sep { opacity: .35; }
+
+.shop-hero-title {
+  font-family: "Playfair Display SC", "Cormorant Garamond", Georgia, serif;
+  font-size: clamp(3rem,7vw,5.5rem);
+  font-weight: 700; line-height: 1.05;
+  color: var(--text); margin: 0 0 18px;
+  transition: color var(--t-slow) var(--ease);
+}
+.shop-hero-sub {
+  font-size: 1.02rem; color: var(--text-muted);
+  max-width: 52ch; line-height: 1.75;
+}
+
+/* Animated wave — hero to page body transition */
+.shop-wave {
+  position: absolute; bottom: -1px; left: 0; right: 0;
+  height: 140px; pointer-events: none;
+}
+.shop-wave svg { width: 100%; height: 100%; display: block; }
+
+.sw-fill {
+  fill: var(--bg);
+  animation: swFill 8s ease-in-out infinite;
+}
+.sw-gold {
+  fill: #e8a317; opacity: .55;
+  animation: swGold 6s ease-in-out infinite;
+}
+.sw-red {
+  fill: #d62828; opacity: .32;
+  animation: swRed 4.5s ease-in-out infinite;
+}
+
+@keyframes swFill {
+  0%,100% { d: path("M0,90 C240,45 480,120 720,82 C960,44 1200,118 1440,90 L1440,140 L0,140 Z"); }
+  50%      { d: path("M0,70 C240,110 480,38 720,70 C960,110 1200,40 1440,70 L1440,140 L0,140 Z"); }
+}
+@keyframes swGold {
+  0%,100% { d: path("M0,100 C200,55 400,125 600,95 C800,60 1000,125 1200,95 C1350,70 1440,110 1440,100 L1440,140 L0,140 Z"); }
+  50%      { d: path("M0,115 C200,85 400,50 600,110 C800,135 1000,52 1200,110 C1350,130 1440,80 1440,115 L1440,140 L0,140 Z"); }
+}
+@keyframes swRed {
+  0%,100% { d: path("M0,80 C180,30 360,125 540,80 C720,30 900,125 1080,80 C1260,30 1440,125 1440,80 L1440,140 L0,140 Z"); }
+  50%      { d: path("M0,115 C180,90 360,52 540,115 C720,140 900,55 1080,115 C1260,140 1440,85 1440,115 L1440,140 L0,140 Z"); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sw-fill, .sw-gold, .sw-red { animation: none; }
+}
+
+/* =================================================================
+   SHOP PAGE LAYOUT
+   ================================================================= */
+.shop-page-section { padding-block: clamp(40px,6vw,64px); }
+
+.shop-page-layout {
+  display: grid;
+  grid-template-columns: 256px 1fr;
+  gap: 36px; align-items: start;
+}
+
+/* =================================================================
+   SIDEBAR
+   ================================================================= */
+.shop-sidebar {
+  position: sticky; top: calc(var(--nav-h) + 16px);
+  display: flex; flex-direction: column; gap: 12px;
+}
+.sidebar-block {
+  background: var(--surface); border: 1px solid var(--border-lift);
+  border-radius: var(--r-lg); padding: 20px 18px;
+  box-shadow: var(--shadow-sm);
+}
+.sidebar-label {
+  font-family: "Montserrat", sans-serif;
+  font-size: .64rem; font-weight: 700; letter-spacing: .2em; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 13px; display: block;
+}
+.sidebar-block .search-box { flex: none; max-width: none; width: 100%; }
+.sidebar-block .search-box input { border-radius: var(--r-md); font-size: .88rem; }
+.sidebar-block .sort-select { width: 100%; border-radius: var(--r-md); font-size: .88rem; padding: 11px 13px; }
+
+/* Category chips inside sidebar = vertical list */
+.sidebar-cats { display: flex; flex-direction: column; gap: 3px; }
+.sidebar-cats .chip {
+  display: flex; align-items: center; justify-content: space-between;
+  border-radius: var(--r-md); padding: 9px 12px;
+  font-size: .88rem; font-weight: 500; text-align: left;
+  border: 1.5px solid transparent; background: transparent; color: var(--text);
+  transition: all var(--t) var(--ease); cursor: pointer;
+}
+.sidebar-cats .chip:hover { background: var(--bg-tint); border-color: var(--border); color: var(--text); }
+.sidebar-cats .chip.active {
+  background: color-mix(in srgb, var(--gold) 8%, var(--bg));
+  border-color: color-mix(in srgb, var(--gold) 35%, var(--border));
+  color: var(--text); font-weight: 600;
+}
+.chip-count {
+  font-size: .7rem; font-weight: 600;
+  background: var(--border-lift); color: var(--text-muted);
+  padding: 2px 7px; border-radius: var(--r-pill);
+  min-width: 22px; text-align: center; flex-shrink: 0;
+}
+.chip.active .chip-count { background: var(--gold); color: #1e1a0e; }
+
+.sidebar-clear {
+  font-size: .78rem; color: var(--red); font-weight: 600;
+  background: none; border: none; padding: 0; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px; margin-top: 10px;
+  opacity: 0; pointer-events: none; transition: opacity var(--t);
+}
+.sidebar-clear.visible { opacity: 1; pointer-events: auto; }
+.sidebar-clear:hover { text-decoration: underline; }
+
+/* =================================================================
+   SHOP MAIN
+   ================================================================= */
+.shop-main-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 22px; flex-wrap: wrap; gap: 10px;
+}
+.product-count { font-size: .86rem; font-weight: 600; color: var(--text-muted); }
+.product-count strong { color: var(--text); font-weight: 700; }
+.shop-main .product-grid { grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap: 18px; }
+
+/* =================================================================
+   RESPONSIVE
+   ================================================================= */
+@media (max-width: 900px) {
+  .shop-page-layout { grid-template-columns: 1fr; }
+  .shop-sidebar {
+    position: static;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  }
+}
+@media (max-width: 640px) {
+  .shop-sidebar { grid-template-columns: 1fr; }
+  .sidebar-cats { flex-direction: row; flex-wrap: wrap; gap: 7px; }
+  .sidebar-cats .chip { border-radius: var(--r-pill); border: 1.5px solid var(--border-lift); padding: 7px 13px; font-size: .82rem; }
+  .shop-hero { padding-top: calc(var(--nav-h) + 32px); padding-bottom: 40px; }
+  .shop-main .product-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shop-hero-canvas .jar-glow { display: none; }
+}
+
+/* A field the checkout filled in from the customer's saved profile.
+
+   Marked because a value that appears without the user typing it needs to be
+   distinguishable from one they entered — otherwise a wrong saved address gets
+   submitted unnoticed. It is a hint, not a lock: the field stays fully
+   editable (decision I9), and the marker is removed as soon as it is touched. */
+.control.is-prefilled {
+  border-color: var(--gold, #c9a227);
+  background-image: linear-gradient(0deg, rgba(201, 162, 39, .06), rgba(201, 162, 39, .06));
+}
+.control.is-prefilled:focus { background-image: none; }
+
+.co-save-profile.hide { display: none !important; }

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>transactions module</title>
+  <!-- ============================================================
+       MODULE PARTIAL — section id="mod-transactions".
+
+       Wrapped as a complete HTML document ON PURPOSE.
+
+       Dev servers inject a live-reload script into every .html file
+       they serve, placed just before the closing body tag. A bare
+       fragment has no closing body tag, so VS Code Live Server falls
+       back to injecting before the first closing svg tag instead —
+       which lands inside the Elisha Bay logo mark, corrupts the
+       parse, and leaves the portal showing "Portal failed to load".
+
+       With a real body element the injection lands harmlessly at the
+       end, and Core/module-loader.js strips every script element
+       before using this markup.
+
+       Keep the html/head/body wrapper. Also avoid writing a literal
+       closing body, head or svg tag anywhere in a comment in these
+       files — Live Server matches raw text and will inject there,
+       breaking the comment and everything after it.
+       ============================================================ -->
+  </head>
+  <body>
+<!-- ── PAYMENT HISTORY ── -->
+<section
+  id="mod-transactions"
+  class="mod-panel"
+  aria-label="Payment History"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Finance</div>
+      <h2>Payment History</h2>
+    </div>
+  </div>
+  <div class="table-toolbar">
+    <div class="search-box">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="11" cy="11" r="8" />
+        <path d="M21 21l-4.35-4.35" />
+      </svg>
+      <input
+        type="search"
+        placeholder="Search transactions…"
+        id="search-transactions"
+        aria-label="Search transactions"
+      />
+    </div>
+    <select
+      class="filter-select"
+      id="filter-tx-type"
+      aria-label="Filter by type"
+    >
+      <option value="all">All Types</option>
+      <option value="online">Online</option>
+      <option value="walk-in">Walk-in</option>
+    </select>
+    <select
+      class="filter-select"
+      id="filter-tx-method"
+      aria-label="Filter by payment"
+    >
+      <option value="all">All Methods</option>
+      <option value="Cash">Cash</option>
+      <option value="GCash">GCash</option>
+      <option value="Bank Transfer">Bank Transfer</option>
+    </select>
+    <select
+      class="filter-select"
+      id="tx-page-size"
+      aria-label="Rows per page"
+    >
+      <option value="10">10 per page</option>
+      <option value="25">25 per page</option>
+      <option value="50">50 per page</option>
+    </select>
+  </div>
+  <div class="table-wrap viewport-bound">
+    <table class="data-table" id="transactions-table">
+      <thead>
+        <tr>
+          <th>TX ID</th>
+          <th>Customer</th>
+          <th>Products</th>
+          <th>Batch</th>
+          <th>Total</th>
+          <th>Method</th>
+          <th>Type</th>
+          <th>Contact</th>
+          <!-- Proof of dispatch. Blank for pickup orders and for anything that
+               has not shipped — the courier is not integrated, this is the
+               number the customer quotes to them. -->
+          <th>Tracking #</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody id="transactions-tbody"></tbody>
+    </table>
+  </div>
+  <div class="table-toolbar" style="margin-top: 14px">
+    <span class="muted" id="tx-showing" style="font-size: 0.82rem"></span>
+    <div class="pagination" id="tx-pagination" style="margin-left: auto"></div>
+  </div>
+</section>
+  </body>
+</html>
