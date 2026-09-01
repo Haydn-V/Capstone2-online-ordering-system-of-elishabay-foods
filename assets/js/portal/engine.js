@@ -1104,6 +1104,13 @@ async function loadInventoryData(){
        constant. */
     if (batches.meta && batches.meta.today) adminState.serverToday = batches.meta.today;
 
+    /* The lot code the next restock would be given. Prefilled into the restock
+       and replenish forms so the operator sees what is about to be created
+       instead of inventing one — and can still override it. Refreshed here,
+       which runs after every stock movement, so the suggestion never lags the
+       lots actually on record. */
+    if (batches.meta && batches.meta.nextLotCode) adminState.nextLotCode = batches.meta.nextLotCode;
+
     if (adjustments) {
       ADJUSTMENTS.length = 0;
       adjustments.data.forEach(a => ADJUSTMENTS.push(a));
@@ -1621,7 +1628,7 @@ function renderDashboard(){
   const products = PRODUCTS.filter(p=>!p.archived);
   const maxStk   = Math.max(...products.map(p=>p.stock), 1);
   stockEl.innerHTML = products.map((p,i)=>{
-    const si = stockInfo(p.stock);
+    const si = stockInfo(p);
     const gradients = {
       ok:   "linear-gradient(90deg,#15803d,#22c55e)",
       warn: "linear-gradient(90deg,#a16207,#eab308)",
@@ -2463,7 +2470,7 @@ function renderBestSellerRows(){
   const body = rows.map(function(p, i){
     const on   = chosen.includes(p.id);
     const src  = imageUrl(p);
-    const st   = stockInfo(p.stock);
+    const st   = stockInfo(p);
     return `
       <tr class="${on ? "is-featured" : ""}">
         <td><input type="checkbox" data-feat="${p.id}" ${on ? "checked" : ""}></td>
@@ -2730,9 +2737,23 @@ function renderProductAdmin(){
     <div class="product-admin-card ${p.archived?"archived":""}">
       <div class="pac-thumb">
         ${src
-          /* loading="lazy" because this grid renders the WHOLE catalogue at
-             once — there is no pagination on this screen. */
-          ? `<img src="${escHtml(src)}" alt="${escHtml(p.name)}" loading="lazy">`
+          /* NOT loading="lazy", deliberately.
+
+             It was, because this grid renders the WHOLE catalogue at once and
+             there is no pagination here. The cost was the defect this comment
+             replaces: saving a photo re-renders this grid in place, and the
+             freshly-inserted lazy <img> never fetched — the card kept showing
+             the empty-state camera while Point of Sale, which does not set the
+             attribute, showed the same photo immediately. "It saved everywhere
+             except the screen I saved it on" is the worst possible reading of a
+             successful write, and it sent us looking at the uploader.
+
+             Affordable to drop: every image here has been through
+             api/uploads/image.php, which caps the longest edge at 1600px and
+             re-encodes to WebP q82 — tens of KB each, not hundreds. Restore
+             lazy loading only together with pagination or an IntersectionObserver
+             that is re-armed after each render. */
+          ? `<img src="${escHtml(src)}" alt="${escHtml(p.name)}">`
           : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`}
       </div>
       <div class="pac-body">
@@ -3443,25 +3464,42 @@ function renderInventory(){
       search: $("#search-inventory")?.value || null,
       level: ($("#filter-inventory")?.value === "all" ? null : $("#filter-inventory")?.value) || null,
       movement: ($("#filter-movement")?.value === "all" ? null : $("#filter-movement")?.value) || null,
+      expiring: ($("#filter-expiring")?.value === "all" ? null : $("#filter-expiring")?.value) || null,
     }),
     p => {
-      const si = stockInfo(p.stock);
-      const mt = movementType(p.sold);
+      const si  = stockInfo(p);
+      const mt  = movementType(p);
+      const inv = p.inventory || {};
+      const risk = inv.expiryRisk;
+
+      /* Cover is the answer to "how long does this last", so a product with no
+         sales in the window has no answer — not "forever". Shown as a dash
+         with the reason on hover rather than a number that would sort as the
+         safest thing in the catalogue. */
+      const cover = inv.daysCover == null
+        ? `<span class="muted" title="No sales in the last ${inv.windowDays || 90} days — no rate to measure cover against.">—</span>`
+        : `<span title="${escHtml(inv.levelReason || "")}">${inv.daysCover}d</span>`;
+
       return `<tr>
       <td class="td-name">${escHtml(p.name)}${p.archived?` <span class="badge badge-muted" style="font-size:.62rem">archived</span>`:""}</td>
       <td class="muted">${escHtml(p.cat)}</td>
       <td><strong>${p.stock}</strong></td>
-      <td><span class="badge ${si.cls}">${si.label}</span></td>
+      <td><span class="badge ${si.cls}"${si.reason?` title="${escHtml(si.reason)}"`:""}>${si.label}</span></td>
+      <td>${cover}</td>
       <td><span class="badge ${mt.cls}">${mt.label}</span></td>
+      <td class="muted">${(inv.perMonth ?? 0).toFixed(1)}/mo</td>
+      <td>${risk
+        ? `<span class="badge badge-warn" title="${escHtml(risk.note || "")}">${risk.daysToExpiry < 0 ? "Expired" : "Will expire"}</span>`
+        : `<span class="muted">—</span>`}</td>
       <td>${peso(p.price)}</td>
       <td>${p.sold.toLocaleString("en-PH")}</td>
     </tr>`;
     },
-    { colspan: 7, empty: { title: "No products match filters", hint: "Adjust the search or filters." } }
+    { colspan: 10, empty: { title: "No products match filters", hint: "Adjust the search or filters." } }
   );
 
   const reset = ()=>{ adminState.invReportPager.page = 1; renderInventory(); };
-  [["#search-inventory","input",true],["#filter-inventory","change",false],["#filter-movement","change",false]]
+  [["#search-inventory","input",true],["#filter-inventory","change",false],["#filter-movement","change",false],["#filter-expiring","change",false]]
     .forEach(([sel, evt, deb])=>{
       const el = $(sel);
       if(el && !el.dataset.wired){

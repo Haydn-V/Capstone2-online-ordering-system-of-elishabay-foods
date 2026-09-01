@@ -130,4 +130,16 @@ Response::ok($batches, [
     'total' => $total,
     'pages' => (int) ceil($total / $paging['limit']),
     'today' => date('Y-m-d'),
+    /* The code the next lot WOULD be assigned, so the restock and replenish
+       forms can prefill it and let the operator see — and override — what they
+       are about to create.
+
+       Carried on this response rather than given an endpoint of its own: the
+       inventory screens already load this list on entry and reload it after
+       every stock movement, so the suggestion refreshes exactly when it goes
+       stale, at no extra request. It is a SUGGESTION and nothing more; the
+       code that actually lands is decided by inventory/adjust.php at save
+       time, which re-derives it and rejects a duplicate. Two operators reading
+       the same suggestion cannot both write it. */
+    'nextLotCode' => Inventory::nextLotCode(),
 ]);

@@ -92,7 +92,7 @@ function renderPosProducts(){
 }
 
 function createPosProductTile(p){
-  const si     = stockInfo(p.stock);
+  const si     = stockInfo(p);
   const inCart = adminState.cart.find(c=>c.productId===p.id);
   const oos    = p.stock===0;
   const stripColor = p.cat.includes("Deboned")?"var(--red)":"var(--gold)";

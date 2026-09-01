@@ -2643,6 +2643,17 @@ async function fetchLandingContent(){
     applyLandingContent();
     if (typeof renderFaqs === "function") renderFaqs();
     if (typeof renderHeroSlider === "function") renderHeroSlider();
+    /* The carousel too. init() renders it once BEFORE this request resolves,
+       when EB_LANDING is still null — so it falls back to the `best` flag and
+       shows those three products. Without this line the administrator's chosen
+       list never reached the storefront: saving five products still produced
+       exactly three cards, and they were the wrong three.
+
+       loadShopCatalog() re-renders on its own completion, which covers the
+       opposite order (catalogue after content). Both callers are needed because
+       the two requests race, and renderBestSellers() reads PRODUCTS and
+       EB_LANDING at call time, so running it twice is correct, not wasteful. */
+    if (typeof renderBestSellers === "function") renderBestSellers();
     return true;
   } catch(err){
     /* The page still renders its shipped copy; a visitor cannot act on

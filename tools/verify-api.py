@@ -18,6 +18,8 @@ Exit code 0 = all checks pass, 1 = at least one failure.
 """
 
 import json
+import os
+import shutil
 import sys
 import urllib.parse
 import urllib.error
@@ -26,6 +28,49 @@ from http.cookiejar import CookieJar
 
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://localhost/elishabay").rstrip("/")
 API = BASE + "/api"
+
+# The project root is this file's parent's parent — tools/ sits inside it.
+# Derived rather than hardcoded, so a checkout can live on any drive.
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _find_exe(name, subdir):
+    """Locate mysql.exe / php.exe without assuming C:\\xampp.
+
+    This used to be a hardcoded C:\\xampp path, which made the whole suite
+    unrunnable on an install anywhere else — the first MySQL call died with
+    WinError 2 before a single check ran. Order: an explicit XAMPP_ROOT
+    override, then the XAMPP dir that actually contains this checkout, then
+    PATH, then the common install locations.
+    """
+    roots = []
+    env_root = os.environ.get("XAMPP_ROOT")
+    if env_root:
+        roots.append(env_root)
+
+    # .../<xampp>/htdocs/elishabay -> .../<xampp>
+    roots.append(os.path.dirname(os.path.dirname(PROJECT_DIR)))
+
+    for cand in roots:
+        exe = os.path.join(cand, subdir, name)
+        if os.path.isfile(exe):
+            return exe
+
+    found = shutil.which(name)
+    if found:
+        return found
+
+    for cand in (r"C:\xampp", r"D:\xampp", r"C:\xamp", r"D:\xamp"):
+        exe = os.path.join(cand, subdir, name)
+        if os.path.isfile(exe):
+            return exe
+
+    # Fall through to the bare name and let the caller's error surface.
+    return name
+
+
+MYSQL_EXE = _find_exe("mysql.exe", os.path.join("mysql", "bin"))
+PHP_EXE = _find_exe("php.exe", "php")
 
 GREEN, RED, DIM, RESET = "\033[32m", "\033[31m", "\033[2m", "\033[0m"
 try:
@@ -42,7 +87,7 @@ passed, failed = 0, []
 # rather than an unnoticed gap.
 CUST_HASH = "$2y$10$Ifp09DtbhlYyOWyOzma5ReusH/8v.hsZBfAjZOKhPh2/04vCBqCxO"   # bcrypt of Test@Cust1, matches db/seed.sql
 
-EXPECTED_CHECKS = 165
+EXPECTED_CHECKS = 168
 
 
 def check(ok, label, detail=""):
@@ -148,8 +193,6 @@ def main():
     # disagreed on path escaping.
     import subprocess
 
-    MYSQL_EXE = r"C:\xampp\mysql\bin\mysql.exe"
-
     def sql_scalar(q):
         """One value out of MySQL, as a string. Empty string when there is none."""
         r = subprocess.run([MYSQL_EXE, "-u", "root", "elisha_bay_db",
@@ -176,7 +219,7 @@ def main():
     _test_emails = "','".join([e for e, _ in ROLES.values()] +
                               ["admin2@elishabay.ph", "nobody@nowhere.ph",
                                "throttle-probe@example.com"])
-    _sp.run([r"C:\\xampp\\mysql\\bin\\mysql.exe", "-u", "root", "elisha_bay_db", "-e",
+    _sp.run([MYSQL_EXE, "-u", "root", "elisha_bay_db", "-e",
              "DELETE FROM login_attempts WHERE successful = 0 "
              "AND email IN ('" + _test_emails + "');"], capture_output=True)
 
@@ -216,7 +259,7 @@ def main():
     check(401 in codes and 429 in codes,
           "repeated failed sign-ins are throttled (401 then 429)",
           "got %s" % codes)
-    _sp.run([r"C:\\xampp\\mysql\\bin\\mysql.exe", "-u", "root", "elisha_bay_db", "-e",
+    _sp.run([MYSQL_EXE, "-u", "root", "elisha_bay_db", "-e",
              "DELETE FROM login_attempts WHERE email = '" + probe + "';"],
             capture_output=True)
 
@@ -294,9 +337,34 @@ def main():
 
     # ---------------------------------------------------------------- 5
     section("5. Business rules")
+    # A disposal now has to name the lot it came from, so these post a real one.
+    # Looked up rather than hardcoded: the lot codes move when the seed is
+    # re-imported, and a test that fails because a fixture was renamed teaches
+    # nothing.
+    steak_lot = sql_scalar("SELECT lot_code FROM batches WHERE product_id='db-steak' "
+                           "AND remaining_qty > 0 ORDER BY expiry_date LIMIT 1")
+    other_lot = sql_scalar("SELECT lot_code FROM batches WHERE product_id <> 'db-steak' "
+                           "AND remaining_qty > 0 ORDER BY expiry_date LIMIT 1")
+    check(bool(steak_lot) and bool(other_lot), "fixture: lots exist to adjust against",
+          f"steak_lot={steak_lot!r} other_lot={other_lot!r}")
+
     check(inv.code("inventory/adjust.php", "POST",
-          {"product_id": "db-steak", "qty": 99999, "type": "disposal", "reason": "over"}) == 409,
+          {"product_id": "db-steak", "qty": 99999, "type": "disposal",
+           "reason": "over", "batch_code": steak_lot}) == 409,
           "cannot dispose more stock than exists")
+
+    # The lot is REQUIRED for a disposal or return. It used to be optional, which
+    # left the disposal untraceable and put free text in front of a foreign key.
+    check(inv.code("inventory/adjust.php", "POST",
+          {"product_id": "db-steak", "qty": 1, "type": "disposal", "reason": "no lot"}) == 422,
+          "a disposal without a lot code is refused")
+
+    # A lot that exists but belongs to another product satisfies the foreign key
+    # and still means nothing.
+    check(inv.code("inventory/adjust.php", "POST",
+          {"product_id": "db-steak", "qty": 1, "type": "disposal",
+           "reason": "wrong lot", "batch_code": other_lot}) == 422,
+          "a lot belonging to another product is refused")
     cash = sessions["Cashier"]
 
     # SELF-CALIBRATING, and it has to be.
@@ -415,7 +483,7 @@ def main():
               "Online Orders Staff still may not archive")
         # cleanup
         import subprocess
-        subprocess.run(["C:\\xampp\\mysql\\bin\\mysql.exe", "-u", "root", "elisha_bay_db",
+        subprocess.run([MYSQL_EXE, "-u", "root", "elisha_bay_db",
                         "-e", f"DELETE FROM products WHERE id='{pid}'; "
                               f"DELETE FROM audit_logs WHERE description LIKE '%VERIFY Temp%';"],
                        capture_output=True)
@@ -868,9 +936,9 @@ def main():
     ]
     for ymd, n, want, label in php_cases:
         out = subprocess.run(
-            [r"C:\xampp\php\php.exe", "-r",
+            [PHP_EXE, "-r",
              'require "api/core/Dates.php"; echo Dates::addDays("%s", %d);' % (ymd, n)],
-            capture_output=True, text=True, cwd=r"C:\xampp\htdocs\elishabay")
+            capture_output=True, text=True, cwd=PROJECT_DIR)
         check(out.stdout.strip() == want, f"addDays: {label}",
               f"{ymd} {n:+d} gave {out.stdout.strip()!r}, expected {want!r}")
 

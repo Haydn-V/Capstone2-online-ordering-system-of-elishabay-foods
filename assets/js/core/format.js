@@ -48,18 +48,81 @@ function fmtDateTime(str) {
 const initials = name => String(name || "")
   .split(" ").filter(Boolean).map(w => w[0]).join("").slice(0, 2).toUpperCase();
 
-/* Non-overlapping thresholds — a value can only match one band. */
-function stockInfo(stock) {
-  if (stock <= 0)  return { cls: "badge-out",  label: "Out of Stock", level: "out"  };
-  if (stock <= 10) return { cls: "badge-crit", label: "Critical",     level: "crit" };
-  if (stock <= 100)return { cls: "badge-warn", label: "Low",          level: "warn" };
-  return                  { cls: "badge-ok",   label: "Safe",         level: "ok"   };
+/* ============================================================
+   STOCK LEVEL AND MOVEMENT
+   ------------------------------------------------------------
+   Both are decided by the SERVER now, in api/core/Inventory.php, from
+   measured sales velocity. Read that file for why — in short, a fixed
+   piece count cannot tell a shortage from three years of cover, and
+   `products.sold` is a lifetime counter that never decays, so given
+   enough trading it classifies every product as fast moving.
+
+   These functions no longer hold thresholds. They TRANSLATE what the
+   server decided into a badge class, and fall back to a piece count
+   only when handed a bare number.
+
+   PASS THE PRODUCT, NOT THE COUNT. `stockInfo(p)` uses the measured
+   band; `stockInfo(p.stock)` cannot, because a number carries no
+   velocity. The numeric path exists for the screens that genuinely
+   only have a quantity — a cart line, a batch quantity — and it is
+   deliberately conservative rather than clever.
+   ============================================================ */
+
+const STOCK_BADGE = {
+  out:  { cls: "badge-out",  label: "Out of Stock" },
+  crit: { cls: "badge-crit", label: "Critical"     },
+  warn: { cls: "badge-warn", label: "Low"          },
+  ok:   { cls: "badge-ok",   label: "Safe"         },
+};
+
+const MOVE_BADGE = {
+  fast: { cls: "badge-ok",    label: "Fast Moving" },
+  slow: { cls: "badge-warn",  label: "Slow Moving" },
+  non:  { cls: "badge-muted", label: "Non-Moving"  },
+};
+
+/* The floor from Inventory::DEFAULTS, and only the floor. Used when there is
+   no server verdict to read. It is intentionally NOT the full model: guessing
+   at velocity from a number nobody measured is how the old bands went wrong. */
+const STOCK_FLOOR_CRITICAL = 10;
+
+function stockInfo(input) {
+  if (input && typeof input === "object") {
+    const inv = input.inventory;
+    if (inv && STOCK_BADGE[inv.level]) {
+      return {
+        ...STOCK_BADGE[inv.level],
+        level:     inv.level,
+        /* Carried through so a screen can explain the badge on hover rather
+           than leaving the reader to reconcile "Critical" with a healthy
+           looking number. */
+        reason:    inv.levelReason || null,
+        daysCover: inv.daysCover ?? null,
+        perMonth:  inv.perMonth ?? null,
+      };
+    }
+    return stockInfo(Number(input.stock) || 0);
+  }
+
+  const stock = Number(input) || 0;
+  if (stock <= 0)                            return { ...STOCK_BADGE.out,  level: "out",  reason: null, daysCover: null, perMonth: null };
+  if (stock <= STOCK_FLOOR_CRITICAL)         return { ...STOCK_BADGE.crit, level: "crit", reason: null, daysCover: null, perMonth: null };
+  if (stock <= STOCK_FLOOR_CRITICAL * 3)     return { ...STOCK_BADGE.warn, level: "warn", reason: null, daysCover: null, perMonth: null };
+  return                                            { ...STOCK_BADGE.ok,   level: "ok",   reason: null, daysCover: null, perMonth: null };
 }
 
-function movementType(sold) {
-  if (sold > 1000) return { label: "Fast Moving", cls: "badge-ok" };
-  if (sold >= 200) return { label: "Slow Moving", cls: "badge-warn" };
-  return                  { label: "Non-Moving",  cls: "badge-muted" };
+function movementType(input) {
+  if (input && typeof input === "object") {
+    const inv = input.inventory;
+    if (inv && MOVE_BADGE[inv.movement]) {
+      return { ...MOVE_BADGE[inv.movement], movement: inv.movement, perMonth: inv.perMonth ?? null };
+    }
+    return { ...MOVE_BADGE.non, movement: "non", perMonth: null };
+  }
+  /* A bare number reaching here is the retired lifetime-total call. There is
+     no honest rate to derive from it, so it reports unknown rather than
+     resurrecting the thresholds this change removed. */
+  return { cls: "badge-muted", label: "—", movement: null, perMonth: null };
 }
 
 /* The canonical payment keys the database stores. Never return undefined —

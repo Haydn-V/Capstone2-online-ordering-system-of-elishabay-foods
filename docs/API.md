@@ -313,11 +313,48 @@ read it without managing it. Writes are gated separately.
 | `search` | — | Matches name, id or description. |
 | `category` | — | Category name. `All` is ignored. |
 | `status` | `active` | `active`, `archived` or `all`. |
-| `sort` | `name` | `name`, `price`, `stock`, `sold`, `newest`. Resolved through a whitelist — a sort column is an identifier and cannot be bound as a parameter, so it is never taken from input directly. |
+| `sort` | `name` | `name`, `price`, `stock`, `sold`, `newest`, `urgency`, `cover`, `movement`. Resolved through a whitelist — a sort column is an identifier and cannot be bound as a parameter, so it is never taken from input directly. |
+| `level` | — | `out`, `crit`, `warn`, `ok`. Filters on the measured band, not on a piece count. |
+| `movement` | — | `fast`, `slow`, `non`. Measured rate, not the lifetime `sold` total. |
+| `expiring` | — | `1` to return only products whose earliest-dated lot will not sell before it expires. |
 
 **Response 200** — array of products with `meta` paging. Numeric columns are
 cast at the edge, so `price` is a number and `best` is a boolean rather than the
 strings MySQL returns for `DECIMAL` and `TINYINT`.
+
+**Each product carries an `inventory` block.** Stock level and movement are
+computed from measured sales velocity — units sold in completed orders over a
+trailing window — rather than from fixed piece counts and the lifetime `sold`
+counter. See `api/core/Inventory.php` for why both of those were the wrong
+instrument; in short, a piece count cannot tell a shortage from three years of
+cover, and a lifetime total never decays, so it eventually calls every product
+fast moving.
+
+| Field | Notes |
+|---|---|
+| `level` / `levelLabel` | `out`, `crit`, `warn`, `ok`. The **more urgent** of a days-of-cover band and an absolute floor, so the floor can escalate a status but never soften one. |
+| `levelReason` | Why the band says what it says — whether it came from the shelf being low or from cover falling under the restock lead time. `null` when `ok`. |
+| `movement` / `movementLabel` | `fast`, `slow`, `non`, from units per month. |
+| `perDay`, `perMonth`, `windowUnits`, `windowDays` | The measured rate and what it was measured over. |
+| `daysCover` | Stock ÷ daily rate. **`null` when nothing sold in the window** — that is "no rate to measure against", not "infinite cover", and it must not sort as the safest thing in the catalogue. |
+| `leadDays` | The restock lead time the bands were compared against. |
+| `expiryRisk` | `null`, or an object naming the lot, its quantity, `daysToExpiry`, `daysToSell` and a plain-language `note`. |
+
+`meta.inventoryModel` echoes the thresholds in force, so a screen can label its
+own bands without a second request.
+
+**`expiryRisk` is a second axis, not a fifth stock level.** For a fast mover the
+risk is running out; for a slow one it is holding stock that spoils first. A
+product can be comfortably stocked, correctly labelled `ok`, and still be about
+to be written off — which is not a point on a scale running from empty to full.
+
+**Thresholds are settings, not constants.** `velocity_window_days`,
+`restock_lead_days`, `movement_fast_per_month`, `movement_slow_per_month` and
+`stock_floor_critical` are written through `settings/save.php` behind
+`inventory.manage`. The shipped defaults are calibrated against the transaction
+volume present when this was written; a business trading at real volume should
+raise the movement thresholds, and that is a settings change rather than a
+deployment.
 
 ### POST `products/save.php`
 
@@ -460,16 +497,62 @@ endpoint — read it before adding another.
 ```
 
 `type` is `restock`, `disposal` or `return`. The **sign is decided server-side**
-from the type — the client does not get to send a negative quantity. The three
-batch fields are only read on a restock that opens a new lot; topping up an
-existing batch is a valid restock with no lot code.
+from the type — the client does not get to send a negative quantity.
+
+**On a restock, `expiry_date` is what decides whether a lot is opened.** It used
+to be the presence of `batch_code`, which made the operator's typing the thing
+that determined whether a production run was recorded. A restock carrying an
+expiry date opens a lot; one without tops up stock already on the shelf and
+writes no batch row, which remains a valid restock.
+
+**`batch_code` is optional on a restock, and is assigned when omitted.**
+`Inventory::nextLotCode()` issues the next code in sequence for the year,
+stepping past anything taken — `batches.lot_code` is `UNIQUE`, and the form
+previously suggested `Math.random()` over 900 values, so a collision surfaced as
+a rejected form with no explanation. A caller may still supply its own code (to
+match a label already printed off-system); it is checked for uniqueness and used
+as given. The code that lands is returned as `lotCode`, `null` when no lot was
+opened — the operator no longer chooses it, so the response is where they learn
+what to write on the carton.
+
+`GET batches/list.php` carries the same next code in `meta.nextLotCode` so a
+form can prefill it. That value is a **suggestion**: this endpoint re-derives it
+at save time, so two operators reading the same suggestion cannot both write it.
+
+**`batch_code` is REQUIRED for `disposal` and `return`.** It was optional, and
+that defeated the module it belongs to: Batch Tracking exists so a unit can be
+traced to the lot it came from and so a recall can name the affected lots, and a
+disposal with no lot is untraceable. It was also free text meeting a foreign key
+(`inventory_adjustments.batch_code` → `batches.lot_code`, migration 002), so a
+typo produced a raw database error rather than a field message.
+
+The lot must **belong to the named product**. A lot code that exists but sits
+under a different product satisfies the foreign key and means nothing — it files
+one product's disposal against another product's production run.
+
+**The lot quantity moves with the stock.** A disposal decrements
+`batches.remaining_qty`; a return increments it. Nothing decremented that column
+before, so a disposed lot kept its full quantity, stayed in the Expiration
+Monitor asking to be disposed, and could be disposed again. A disposal is capped
+at what the lot actually holds.
+
+**Restock ordering:** the new lot row is written **before** the adjustment row
+that references it. InnoDB checks foreign keys per statement rather than at
+commit, so the previous order made every restock opening a new lot fail with a
+500 and a raw SQLSTATE.
 
 **Response 200** — the product's fresh stock level, read back from the database
 rather than calculated in PHP, plus the signed `movement`.
 
 **Errors:** 403 without the permission · 404 unknown product · 409 archived
-product, duplicate lot code, or a removal that would drive stock negative ·
-422 field errors.
+product, duplicate lot code, a disposal larger than the lot holds, or a removal
+that would drive stock negative · 422 field errors, including a missing lot, an
+unknown lot, or a lot belonging to another product.
+
+**Sales still do not draw lots down.** Nothing allocates an order against a lot,
+so `remaining_qty` drifts above the truth as stock sells. This endpoint makes
+disposal and returns exact; it does not make lot quantities exact everywhere.
+Fixing that means FIFO allocation at checkout and order acceptance.
 
 **What makes it the pattern:**
 
@@ -498,6 +581,13 @@ browser. `inventory.js` used to calculate it from `INV_TODAY = "2026-06-17"`,
 a constant frozen in the file, so every "days left" figure drifted further from
 reality each day. The response `meta` also carries `today`, which the client
 records so all its date defaults use the same clock.
+
+**`meta.nextLotCode`** is the code the next lot would be assigned. It rides on
+this response rather than having an endpoint of its own because the inventory
+screens already load this list on entry and reload it after every stock
+movement — so the suggestion refreshes exactly when it goes stale, at no extra
+request. It is only a suggestion; `inventory/adjust.php` re-derives the code at
+save time and rejects a duplicate.
 
 `expiring_within` deliberately includes already-expired lots: a batch that went
 out of date last week is more urgent than one going next week, and excluding it
@@ -1622,19 +1712,39 @@ checked. Illegal transitions answer 409.
 
 ### POST `settings/save.php`
 
-Requires `payments.manage`.
+**Permission is per key**, and only the ones actually present in the body are
+demanded. Asking for every permission on every request would mean the union of
+them, which is a role nobody holds — and a cashier who may record a settlement
+has no business redefining what "Critical" means.
 
-**Body:** `{ "penalty_rate": 2.5 }`
+**Body:** any subset of the keys below.
 
-The rate previously lived only in `adminState.penaltyRate` in the browser, so it
-reset on every reload and the penalties shown were computed from a number nobody
-had saved.
+| Key | Permission | Range | Notes |
+|---|---|---|---|
+| `penalty_rate` | `payments.manage` | 0–100 | % per month. |
+| `velocity_window_days` | `inventory.manage` | 7–730 | Trailing window sales rate is measured over. |
+| `restock_lead_days` | `inventory.manage` | 1–365 | How long a restock takes. Cover below this is `crit`; below twice it is `warn`. |
+| `movement_fast_per_month` | `inventory.manage` | > 0 | Must exceed the slow threshold. |
+| `movement_slow_per_month` | `inventory.manage` | > 0 | |
+| `stock_floor_critical` | `inventory.manage` | ≥ 0 | The absolute floor. `warn` floor is three times it. |
+
+The penalty rate previously lived only in `adminState.penaltyRate` in the
+browser, so it reset on every reload and the penalties shown were computed from
+a number nobody had saved. The inventory thresholds were worse: they were
+constants in two files that had to be edited together.
 
 **Only known keys are writable.** A settings endpoint that accepts arbitrary
 key/value pairs from the client is a way to write anything into the table.
 
-**Errors:** 422 negative or non-numeric rate · 400 when the body contains no
-recognised setting.
+**Validated whole, then written.** A request setting the fast threshold below
+the slow one fails entirely rather than leaving one of the two applied — the
+bands would overlap and "slow moving" would become unreachable.
+
+**An unchanged value is not rewritten**, so the audit log records decisions
+rather than form submissions.
+
+**Errors:** 422 out-of-range, non-numeric, non-integer where a whole number is
+required, or fast ≤ slow · 400 when the body contains no recognised setting.
 
 ---
 

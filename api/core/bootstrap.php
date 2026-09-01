@@ -20,6 +20,8 @@ require_once __DIR__ . '/Stock.php';
 require_once __DIR__ . '/Mailer.php';
 require_once __DIR__ . '/Orders.php';
 require_once __DIR__ . '/Dates.php';
+/* After Dates.php — Inventory::describe() resolves expiry against Dates::today(). */
+require_once __DIR__ . '/Inventory.php';
 
 $__cfg = Database::config();
 

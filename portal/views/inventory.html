@@ -93,6 +93,18 @@
       <option value="slow">Slow Moving</option>
       <option value="non">Non-Moving</option>
     </select>
+    <!-- Its own filter rather than a fifth stock level. Expiry risk is the
+         opposite failure to a shortage: the product is comfortably stocked and
+         still about to be written off, so it cannot be a point on a scale that
+         runs from empty to full. -->
+    <select
+      class="filter-select"
+      id="filter-expiring"
+      aria-label="Filter by expiry risk"
+    >
+      <option value="all">All Products</option>
+      <option value="1">Expiry Risk Only</option>
+    </select>
     <select
       class="filter-select"
       id="inv-report-page-size"
@@ -111,8 +123,16 @@
           <th>Category</th>
           <th>Stock</th>
           <th>Level</th>
+          <!-- The number the restock decision actually turns on. "Stock" says
+               how much is there; this says how long it lasts. -->
+          <th>Cover</th>
           <th>Movement</th>
+          <th>Rate</th>
+          <th>Expiry Risk</th>
           <th>Price</th>
+          <!-- Kept. A lifetime total is real information about a product; it
+               was only ever wrong as a MOVEMENT CLASSIFIER, which the Rate
+               column now does from measured sales. -->
           <th>Total Sold</th>
         </tr>
       </thead>

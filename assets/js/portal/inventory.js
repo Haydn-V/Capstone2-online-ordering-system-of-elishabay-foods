@@ -28,6 +28,18 @@ function invToday(){
 /* Kept as a name because ~10 call sites use it as a default date value. */
 Object.defineProperty(window, "INV_TODAY", { get: invToday, configurable: true });
 
+/* A default expiry for a lot being opened: one year out from today.
+   The restock form had `value="2027-06-17"` written into it — the same frozen
+   clock the comment above describes, surviving in the one field where a wrong
+   date is not cosmetic but becomes a batch record. A year is a placeholder the
+   operator is expected to correct, not a claim about shelf life; it is simply
+   never in the past, which the constant eventually would have been. */
+function defaultExpiry(){
+  const d = new Date(invToday() + "T00:00:00");
+  d.setFullYear(d.getFullYear() + 1);
+  return ymd(d);
+}
+
 function daysUntilExpiry(expiryDate){
   if(!expiryDate) return 0;
   const now = new Date(invToday()+"T00:00:00");
@@ -81,21 +93,37 @@ let ADJUSTMENTS = [];
    Each returns a boolean so existing callers keep working, but they
    are async now — callers must await them.
    ============================================================ */
-async function restock(productId, qty, lotCode, prodDate, expiryDate){
+/* `lotCode` is OPTIONAL and is a suggestion the operator may have edited. The
+   form prefills it with the server's next code, so leaving it alone and
+   clearing it both end up at the same place — passing nothing here makes
+   Inventory::nextLotCode() assign one at save time.
+
+   Callers used to pass "JBF-"+Date.now() when the field was blank, which is
+   not a lot code, it is a timestamp wearing one. A blank field now means
+   "assign it", which is why an empty string is never forwarded.
+
+   THE EXPIRY DATE is what decides whether a lot is opened at all. With one,
+   this restock records a new production run; without one it tops up stock
+   already on the shelf and writes no batch row — still a legitimate restock.
+
+   Returns the server's payload on success (truthy, so `if (await restock(…))`
+   still reads correctly) so the caller can report the assigned code. */
+async function restock(productId, qty, prodDate, expiryDate, lotCode){
   if(qty <= 0) return false;
   try {
     const body = { product_id: productId, qty, type: "restock",
                    reason: "Restocked via Inventory Management." };
-    /* Lot details only when opening a new batch; topping up an existing one
-       is a valid restock with no lot code. */
-    if(lotCode){
-      body.batch_code = lotCode;
+    if(expiryDate){
       body.production_date = prodDate || invToday();
-      body.expiry_date = expiryDate || "";
+      body.expiry_date = expiryDate;
+      /* Only when the operator actually supplied one. An empty field is not
+         an empty lot code — it means "assign it", and sending "" would make
+         the server validate a blank string instead of generating. */
+      if(lotCode) body.batch_code = lotCode;
     }
-    await EbApi.post("inventory/adjust.php", body);
+    const { data } = await EbApi.post("inventory/adjust.php", body);
     await refreshInventory();
-    return true;
+    return data || true;
   } catch(err){
     /* Field errors get shown against the form by the caller; anything else is
        a toast. Either way it is reported — a failed write that looks like a
@@ -115,12 +143,19 @@ async function replenish(entries){
   for(const e of entries){
     if(e.qty <= 0) continue;
     try {
+      /* No batch_code: each line opens its own lot and the server assigns the
+         code, so fifteen of them never have to be typed or kept distinct by
+         hand. Sending the dates is what opens the lot at all; without them
+         this stays a plain top-up.
+
+         One request per line means nextLotCode() runs per line and sees the
+         lot the previous line just created, so the codes come out sequential
+         and unique without the client doing arithmetic on them. */
       const body = { product_id: e.productId, qty: e.qty, type: "restock",
                      reason: "Bulk replenishment via Inventory Management." };
-      if(e.lotCode){
-        body.batch_code = e.lotCode;
+      if(e.expiryDate){
         body.production_date = e.prodDate || invToday();
-        body.expiry_date = e.expiryDate || "";
+        body.expiry_date = e.expiryDate;
       }
       await EbApi.post("inventory/adjust.php", body);
     } catch(err){
@@ -236,7 +271,7 @@ function fillStockOverview(){
       level: adminState.invOverviewLevel === "all" ? null : adminState.invOverviewLevel,
     }),
     p => {
-      const si = stockInfo(p.stock);
+      const si = stockInfo(p);
       const batches = BATCHES.filter(b=>b.productId===p.id).length;
       return `<tr class="${p.archived?"archived":""}">
       <td class="td-name">${escHtml(p.name)}${p.archived?` <span class="badge badge-muted" style="font-size:.6rem">archived</span>`:""}</td>
@@ -314,15 +349,27 @@ function buildRestockForm(){
         <input class="control" type="number" id="rs-qty" min="1" value="50" placeholder="e.g. 50"/>
         <span class="field-error" id="rs-qty-err"></span>
       </div>
+      <!-- Prefilled, still editable. The value is the server's suggestion —
+           the next code in sequence (Inventory::nextLotCode), carried on the
+           batch list's meta — rather than the random 3-digit number this used
+           to hold, which collided against a UNIQUE column and surfaced as a
+           rejected form with no explanation.
+
+           Editable because a lot code sometimes has to match something printed
+           off-system: a supplier's own code, or a run already labelled by hand.
+           Cleared to blank, the server assigns one anyway, so emptying the
+           field is a valid choice rather than an error. -->
       <div class="field"><label>Lot Code</label>
-        <input class="control" id="rs-batch" placeholder="e.g. JBF-2026-B120" value="JBF-2026-B${Math.floor(100+Math.random()*900)}"/>
+        <input class="control" id="rs-batch" placeholder="Leave blank to assign automatically"
+               value="${escHtml(adminState.nextLotCode || "")}"/>
+        <span class="field-error" id="rs-batch-err"></span>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="field"><label>Production Date</label>
           <input class="control" type="date" id="rs-prod" value="${INV_TODAY}"/>
         </div>
         <div class="field"><label>Expiry Date</label>
-          <input class="control" type="date" id="rs-expiry" value="2027-06-17"/>
+          <input class="control" type="date" id="rs-expiry" value="${defaultExpiry()}"/>
         </div>
       </div>
       <button type="submit" class="btn btn-gold">
@@ -338,9 +385,8 @@ function buildReplenishForm(){
   const rows = active.map(p=>`<tr>
     <td class="check-col"><input type="checkbox" class="rep-check" data-pid="${p.id}"/></td>
     <td class="td-name">${escHtml(p.name)}</td>
-    <td><span class="badge ${stockInfo(p.stock).cls}">${p.stock}</span></td>
+    <td><span class="badge ${stockInfo(p).cls}">${p.stock}</span></td>
     <td><input type="number" class="qty-input rep-qty" data-pid="${p.id}" value="0" min="0" aria-label="Qty for ${escHtml(p.name)}"/></td>
-    <td><input class="control rep-batch" data-pid="${p.id}" placeholder="JBF-BULK-XXX" style="font-size:.8rem;padding:6px 8px;height:34px;border-radius:var(--r-sm)"/></td>
   </tr>`).join("");
   return `<div class="panel">
     <div class="panel-header">
@@ -350,9 +396,34 @@ function buildReplenishForm(){
         Apply Replenishment
       </button>
     </div>
-    <p style="font-size:.84rem;color:var(--text-muted);margin-bottom:14px">Check products to restock, enter quantity and lot code per line, then click Apply.</p>
+    <!-- The dates are shared across every checked line, and the lot code is
+         not asked for at all.
+
+         Shared because a bulk replenishment is ONE event — a production run or
+         a delivery arriving together. Per-row dates would be more precise and
+         would also be fifteen pairs of date pickers to fill in for a form
+         whose entire purpose is doing several products at once.
+
+         No lot code column: each checked line opens its OWN lot, and the code
+         for it is assigned by inventory/adjust.php. Fifteen codes is exactly
+         the case nobody should be typing, and the previous column could not be
+         used successfully at all — this form sent no expiry date, which the
+         server requires to open a lot, so every code entered here returned 422.
+
+         Leave both dates blank to top up existing stock without opening lots,
+         which is the older behaviour and still valid. -->
+    <p style="font-size:.84rem;color:var(--text-muted);margin-bottom:14px">Check products, enter a quantity per line, then click Apply. The dates below apply to every line — each product opens its own lot, with a code assigned by the system. <strong>Leave the dates blank to top up existing stock without opening lots.</strong></p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:420px;margin-bottom:16px">
+      <div class="field"><label>Production Date</label>
+        <input class="control" type="date" id="rep-prod" value="${INV_TODAY}"/>
+      </div>
+      <div class="field"><label>Expiry Date</label>
+        <input class="control" type="date" id="rep-expiry" value="${defaultExpiry()}"/>
+        <span class="field-error" id="rep-expiry-err"></span>
+      </div>
+    </div>
     <div class="table-wrap"><table class="replenish-table">
-      <thead><tr><th class="check-col"></th><th>Product</th><th>Current Stock</th><th>Add Qty</th><th>Lot Code</th></tr></thead>
+      <thead><tr><th class="check-col"></th><th>Product</th><th>Current Stock</th><th>Add Qty</th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
   </div>`;
@@ -384,8 +455,10 @@ function buildAdjustForm(){
         <input class="control" type="number" id="adj-qty" min="1" value="1" placeholder="e.g. 5"/>
         <span class="field-error" id="adj-qty-err"></span>
       </div>
-      <div class="field"><label>Lot Code <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
-        <input class="control" id="adj-batch" placeholder="e.g. JBF-2026-B105"/>
+      <div class="field"><label>Lot Code</label>
+        <select class="control" id="adj-batch"></select>
+        <span class="field-error" id="adj-batch-err"></span>
+        <span class="field-hint" id="adj-batch-hint" style="font-size:.76rem;color:var(--text-muted)"></span>
       </div>
       <div class="field"><label>Reason</label>
         <textarea class="control" id="adj-reason" rows="3" placeholder="e.g. Expired product past due date, damage detected during QA…"></textarea>
@@ -554,7 +627,7 @@ function wireInventoryManageView(tab, container){
       const form      = e.target;
       const productId = container.querySelector("#rs-product").value;
       const qty       = +container.querySelector("#rs-qty").value;
-      const lot       = container.querySelector("#rs-batch").value.trim() || "JBF-"+Date.now();
+      const lot       = container.querySelector("#rs-batch").value.trim();
       const prodDate  = container.querySelector("#rs-prod").value;
       const expiry    = container.querySelector("#rs-expiry").value;
       container.querySelector("#rs-qty-err").textContent = "";
@@ -564,11 +637,16 @@ function wireInventoryManageView(tab, container){
          click used to mean two of them. */
       const restore = EbUI.busy(form.querySelector("[type=submit]"), "Restocking…");
       try {
-        if(await restock(productId, qty, lot, prodDate, expiry)){
+        const res = await restock(productId, qty, prodDate, expiry, lot);
+        if(res){
           /* Read the new level back from the reloaded catalogue rather than
              adding qty locally — the server is what decides the total. */
           const p = getProduct(productId);
-          toast(`Restocked ${p.name} +${qty} units. New stock: ${p.stock}.`, "ok");
+          /* Name the lot that was opened. The operator no longer chooses the
+             code, so this message is the only place they learn it — and they
+             need it to label the carton. */
+          const lot = res && res.lotCode ? ` Lot ${res.lotCode} opened.` : "";
+          toast(`Restocked ${p.name} +${qty} units. New stock: ${p.stock}.${lot}`, "ok");
           renderInventoryManage("restock");
         }
       } catch(err){
@@ -581,11 +659,20 @@ function wireInventoryManageView(tab, container){
   if(tab==="replenish"){
     container.querySelector("#rep-submit-btn")?.addEventListener("click", async (e)=>{
       const entries = [];
+      /* Read once, applied to every line — these are the form's shared dates,
+         not per-row values. Blank expiry means "top up, open no lots". */
+      const prodDate   = container.querySelector("#rep-prod")?.value || "";
+      const expiryDate = container.querySelector("#rep-expiry")?.value || "";
+      const expErr     = container.querySelector("#rep-expiry-err");
+      if(expErr) expErr.textContent = "";
+      if(expiryDate && prodDate && expiryDate <= prodDate){
+        if(expErr) expErr.textContent = "Expiry must be after the production date.";
+        return;
+      }
       container.querySelectorAll(".rep-check:checked").forEach(cb=>{
         const pid  = cb.dataset.pid;
         const qty  = +container.querySelector(`.rep-qty[data-pid="${pid}"]`)?.value||0;
-        const lot  = container.querySelector(`.rep-batch[data-pid="${pid}"]`)?.value.trim()||"JBF-BULK-"+Date.now();
-        if(qty > 0) entries.push({ productId:pid, qty, lotCode:lot, prodDate:INV_TODAY });
+        if(qty > 0) entries.push({ productId:pid, qty, prodDate, expiryDate });
       });
       if(!entries.length){ toast("No products selected or all quantities are 0.", "warn"); return; }
       const restore = EbUI.busy(e.currentTarget, "Replenishing…");
@@ -604,18 +691,76 @@ function wireInventoryManageView(tab, container){
     const typeDisposalBtn = container.querySelector("#adj-type-disposal");
     const typeReturnBtn   = container.querySelector("#adj-type-return");
     const typeHidden      = container.querySelector("#adj-type");
+
+    /* The lot picker.
+       --------------
+       This was a free-text box marked "(optional)". Requiring a code without
+       showing which codes exist would only move the problem: the person
+       disposing expired stock would still have to leave for the Expiry Monitor,
+       find the lot and type it back. The list is the point.
+
+       Read from the BATCHES array engine.js already loads (limit 200, sorted by
+       expiry) and refreshes after every movement, so there is no fetch here and
+       the quantities cannot be staler than the last adjustment. */
+    const batchSel  = container.querySelector("#adj-batch");
+    const batchHint = container.querySelector("#adj-batch-hint");
+
+    function paintLots(){
+      const pid  = container.querySelector("#adj-product").value;
+      const type = typeHidden.value;
+      const p    = getProduct(pid);
+
+      /* Disposal lists only lots that still hold something — there is nothing
+         to discard from an empty one. A RETURN lists every lot, including
+         emptied ones: a customer can return goods from a lot that has since
+         sold out, and refusing that would make the return unrecordable. */
+      const lots = BATCHES
+        .filter(b => b.productId === pid)
+        .filter(b => type === "disposal" ? b.remainingQty > 0 : true)
+        .sort((a, b) => String(a.expiryDate).localeCompare(String(b.expiryDate)));
+
+      if(!lots.length){
+        batchSel.innerHTML = `<option value="">No lots recorded for this product</option>`;
+        batchSel.disabled = true;
+        batchHint.textContent = type === "disposal"
+          ? `No lot of ${p?.name || "this product"} has stock left to discard. Register one in Batch Tracking.`
+          : `No lots recorded for ${p?.name || "this product"}. Register one in Batch Tracking.`;
+        return;
+      }
+
+      batchSel.disabled = false;
+      /* Expiry is shown for a DISPOSAL because that is the decision being made
+         — which lot has gone off. A return is about the unit coming back, not
+         its date, so the same list is shown without it rather than with a
+         number nobody is acting on. */
+      batchSel.innerHTML = lots.map(b => {
+        const left = `${b.remainingQty} left`;
+        const exp  = type === "disposal" ? ` · expires ${fmtDate(b.expiryDate)}` : "";
+        return `<option value="${escHtml(b.lotCode)}">${escHtml(b.lotCode)} — ${left}${exp}</option>`;
+      }).join("");
+      batchHint.textContent = lots.length === 1
+        ? "One lot on record for this product."
+        : `${lots.length} lots, soonest expiry first.`;
+    }
+
+    container.querySelector("#adj-product")?.addEventListener("change", paintLots);
+
     typeDisposalBtn?.addEventListener("click", ()=>{
       typeHidden.value="disposal";
       typeDisposalBtn.classList.add("active","disposal"); typeDisposalBtn.classList.remove("return");
       typeReturnBtn.classList.remove("active","return");
       container.querySelector("[type='submit']").className="btn btn-red";
+      paintLots();
     });
     typeReturnBtn?.addEventListener("click", ()=>{
       typeHidden.value="return";
       typeReturnBtn.classList.add("active","return"); typeReturnBtn.classList.remove("disposal");
       typeDisposalBtn.classList.remove("active","disposal");
       container.querySelector("[type='submit']").className="btn btn-ok";
+      paintLots();
     });
+
+    paintLots();
     container.querySelector("#adjust-form")?.addEventListener("submit", async e=>{
       e.preventDefault();
       const productId = container.querySelector("#adj-product").value;
@@ -625,8 +770,17 @@ function wireInventoryManageView(tab, container){
       const batch     = container.querySelector("#adj-batch").value.trim();
       container.querySelector("#adj-qty-err").textContent="";
       container.querySelector("#adj-reason-err").textContent="";
+      container.querySelector("#adj-batch-err").textContent="";
       if(qty<1){ container.querySelector("#adj-qty-err").textContent="Enter valid quantity."; return; }
       if(!reason){ container.querySelector("#adj-reason-err").textContent="Reason is required."; return; }
+      /* The server enforces this too, and its check is the real one. Doing it
+         here as well only saves a round trip on the case the picker already
+         knows about — a product with no lots to offer. */
+      if(!batch){
+        container.querySelector("#adj-batch-err").textContent =
+          "Select a lot. If none is listed, register one in Batch Tracking first.";
+        return;
+      }
       const form = container.querySelector("#adjust-form");
       const restore = EbUI.busy(form.querySelector("[type=submit]"), "Recording…");
       try {

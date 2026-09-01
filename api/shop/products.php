@@ -38,36 +38,50 @@ if ($category !== '' && $category !== 'All') {
     $params[] = $category;
 }
 
+/* Unprefixed: the ORDER BY now applies to the derived table these columns are
+   selected into, where there is no `p` to qualify them with. */
 $sortMap = [
-    'featured' => 'p.is_best DESC, p.sold DESC',
-    'price-asc'=> 'p.price ASC',
-    'price-desc'=> 'p.price DESC',
-    'rating'   => 'p.rating DESC',
-    'name'     => 'p.name ASC',
+    'featured' => 'is_best DESC, sold DESC',
+    'price-asc'=> 'price ASC',
+    'price-desc'=> 'price DESC',
+    'rating'   => 'rating DESC',
+    'name'     => 'name ASC',
 ];
 $order = $sortMap[$q['sort'] ?? 'featured'] ?? $sortMap['featured'];
 
-$rows = Database::all(
-    "SELECT p.id, p.name, p.description, p.price, p.stock, p.rating, p.sold,
-            p.is_best, p.tint, p.image_url, c.name AS category
-       FROM products p
-       JOIN categories c ON c.id = p.category_id
-      WHERE " . implode(' AND ', $where) . "
-      ORDER BY $order",
-    $params
-);
+/* The same derived-column stack the staff catalogue uses, so the band a
+   shopper sees and the band the inventory screen shows are one decision made
+   once. This file used to carry its own copy of the thresholds; the comment
+   below it claimed they were "the same thresholds the staff side uses", and
+   keeping that true depended on nobody editing one without the other. They are
+   now literally the same code. */
+$base = 'SELECT p.id, p.name, p.description, p.price, p.stock, p.rating, p.sold,
+                p.is_best, p.tint, p.image_url, c.name AS category,
+                COALESCE(vel.units, 0) AS window_units,
+                ' . Inventory::expirySelect() . '
+           FROM products p
+           JOIN categories c ON c.id = p.category_id
+           ' . Inventory::velocityJoin() . '
+          WHERE ' . implode(' AND ', $where);
 
-/* Same thresholds the staff side uses, reduced to a label. The exact count is
-   deliberately not sent. */
-$band = static function (int $stock): array {
-    if ($stock <= 0)  return ['level' => 'out',  'label' => 'Out of Stock'];
-    if ($stock <= 10) return ['level' => 'crit', 'label' => 'Only a few left'];
-    if ($stock <= 100)return ['level' => 'warn', 'label' => 'Low stock'];
-    return                   ['level' => 'ok',   'label' => 'In Stock'];
-};
+$derived = 'SELECT b.*, ' . Inventory::derivedSelect() . ' FROM (' . $base . ') b';
+$ranked  = 'SELECT d.*, ' . Inventory::rankSelect()    . ' FROM (' . $derived . ') d';
 
-Response::ok(array_map(static function (array $r) use ($band): array {
-    $b = $band((int) $r['stock']);
+$rows = Database::all("SELECT * FROM ($ranked) r ORDER BY $order", $params);
+
+/* Staff wording is an instruction to act; shopper wording is scarcity. Same
+   four bands underneath, relabelled here and nowhere else. The exact count is
+   still deliberately not sent, and neither is the velocity — how fast a
+   product sells is commercial information, not shopfront copy. */
+$SHOP_LABEL = [
+    'out'  => 'Out of Stock',
+    'crit' => 'Only a few left',
+    'warn' => 'Low stock',
+    'ok'   => 'In Stock',
+];
+
+Response::ok(array_map(static function (array $r) use ($SHOP_LABEL): array {
+    $inv = Inventory::describe($r);
     return [
         'id'          => $r['id'],
         'name'        => $r['name'],
@@ -80,7 +94,7 @@ Response::ok(array_map(static function (array $r) use ($band): array {
         'image'       => $r['image_url'],
         'cat'         => $r['category'],
         'inStock'     => (int) $r['stock'] > 0,
-        'stockLevel'  => $b['level'],
-        'stockLabel'  => $b['label'],
+        'stockLevel'  => $inv['level'],
+        'stockLabel'  => $SHOP_LABEL[$inv['level']] ?? $SHOP_LABEL['ok'],
     ];
 }, $rows));
