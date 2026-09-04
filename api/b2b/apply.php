@@ -284,13 +284,15 @@ try {
     );
 
     /* Staff need to know without polling the screen. Same mechanism a new
-       online order uses. */
-    Database::run(
-        'INSERT INTO notifications (id, type, message, created_at, is_read)
-         VALUES (?, ?, ?, NOW(), 0)',
-        ['n-' . strtolower(bin2hex(random_bytes(5))), 'audit',
-         sprintf('New B2B partner application %s — %s (%s)',
-             $appCode, $data['business_name'], $data['business_type'])]
+       online order uses.
+
+       Info: an application waits for a human decision and nothing degrades
+       while it does. It sits below the day's orders in the feed, which is
+       where a reviewer would want it. */
+    Notify::create(
+        'audit',
+        sprintf('New B2B partner application %s — %s (%s)',
+            $appCode, $data['business_name'], $data['business_type'])
     );
 
     /* Actor is the applicant, not a staff member, so actor_user_id stays NULL —

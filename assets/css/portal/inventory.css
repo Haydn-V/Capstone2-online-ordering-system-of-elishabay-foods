@@ -124,17 +124,9 @@
 .inv-action-tabs {
   display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 22px;
 }
-.inv-action-btn {
-  display: flex; align-items: center; gap: 7px;
-  padding: 9px 18px; border-radius: var(--r-pill);
-  font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
-  font-family: var(--font-ui);
-  border: 1.5px solid var(--border-lift); background: transparent;
-  color: var(--text-muted); cursor: pointer; transition: all var(--t);
-}
-.inv-action-btn svg { width: 15px; height: 15px; }
-.inv-action-btn:hover  { border-color: var(--gold); color: var(--text); }
-.inv-action-btn.active { background: var(--gold); color: #1E1A0E; border-color: var(--gold); }
+/* Shape, hover and active come from THE ONE TAB PILL block in portal.css —
+   this row WAS the reference the others were brought into line with, so it
+   keeps the default size and needs no rule of its own. */
 
 /* =================================================================
    RESPONSIVE
@@ -142,5 +134,7 @@
 @media (max-width: 600px) {
   .replenish-table .qty-input { width: 60px; }
   .inv-action-tabs { gap: 4px; }
-  .inv-action-btn  { padding: 7px 12px; font-size: .72rem; }
+  /* Through the shared custom properties, so a narrow window changes the size
+     and nothing else. */
+  .inv-action-btn  { --pill-py: 7px; --pill-px: 12px; --pill-fs: .72rem; }
 }

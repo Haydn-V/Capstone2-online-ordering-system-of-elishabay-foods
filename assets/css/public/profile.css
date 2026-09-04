@@ -929,3 +929,117 @@
 @media (prefers-reduced-motion: reduce) {
   .db-stat-skeleton { animation: none; }
 }
+
+/* =================================================================
+   RATE A PRODUCT — the control on a completed order line, and the
+   star input in its modal
+   -----------------------------------------------------------------
+   The control sits on its own row inside .order-item rather than
+   squeezed after the price: at 52px of thumbnail plus a name, a qty
+   and a price there is no horizontal room left, and a button that
+   wraps unpredictably beside a price reads as part of it.
+   ================================================================= */
+.order-item { flex-wrap: wrap; }
+.order-item-rate {
+  flex-basis: 100%;
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 10px; flex-wrap: wrap;
+  padding-top: 8px; margin-top: 2px;
+  border-top: 1px dashed var(--border);
+}
+
+/* What the customer already said. Outlined stars for the unearned
+   ones — a filled star that means "not chosen" is the same lie as a
+   seeded 4.9. */
+.rate-mine { display: inline-flex; gap: 1px; color: var(--gold); }
+.rate-mine svg { width: 13px; height: 13px; }
+
+/* Held / not published. The WORD carries it; the colour only tints
+   the border, so this survives being read aloud or in greyscale. */
+.rate-state {
+  font-size: .68rem; font-weight: 700; letter-spacing: .03em;
+  text-transform: uppercase; color: var(--text);
+  padding: 2px 8px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--bg-tint);
+}
+.rate-state-pending  { border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); }
+.rate-state-rejected { border-color: color-mix(in srgb, var(--red) 45%, var(--border)); }
+
+.btn-rate {
+  font: inherit; font-size: .78rem; font-weight: 700;
+  color: var(--text); background: var(--bg-tint);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 6px 12px; cursor: pointer;
+  transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+}
+.btn-rate:hover { background: var(--surface-2); border-color: var(--gold); }
+.btn-rate:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+/* ---- the star input ---------------------------------------------
+   A real fieldset of radio inputs. The input is CLIPPED, never
+   display:none — a hidden input cannot take focus, and the focus
+   ring is the only thing telling a keyboard user where they are in
+   the group. Arrow keys, the single tab stop and the "3 of 5" that
+   a screen reader announces all come from the radios themselves. */
+.rate-stars-wrap { border: 0; padding: 0; margin: 0 0 16px; }
+.rate-stars-wrap legend {
+  font-size: .78rem; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--text-muted); padding: 0 0 6px;
+}
+.rate-stars { display: inline-flex; gap: 2px; }
+.rate-radio {
+  position: absolute; width: 1px; height: 1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap;
+}
+.rate-star {
+  display: inline-flex; cursor: pointer; padding: 3px;
+  border-radius: var(--r-sm);
+  /* EMPTY BY DEFAULT. Filled by JS as the value changes — see the
+     note in openRatingModal() for why this is not a CSS sibling
+     selector. */
+  color: var(--text-muted);
+  transition: color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+}
+.rate-star svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+.rate-star.on svg { fill: var(--gold); stroke: var(--gold); }
+.rate-star:hover { transform: scale(1.06); }
+/* The ring follows the INPUT's focus onto its own label, which is the
+   visible thing. Without this the group is keyboard-operable and
+   invisible, which is worse than not being operable at all. */
+.rate-radio:focus-visible + .rate-star { outline: 2px solid var(--gold); outline-offset: 1px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rate-star, .btn-rate { transition: none; }
+  .rate-star:hover { transform: none; }
+}
+
+.rate-intro { font-size: .88rem; line-height: 1.6; margin-bottom: 14px; color: var(--text-muted); }
+.rate-intro strong { color: var(--text); font-size: 1rem; }
+
+.rate-note {
+  font-size: .82rem; line-height: 1.55; padding: 10px 13px; margin-bottom: 14px;
+  border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-tint);
+}
+.rate-note-pending  { border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
+.rate-note-rejected { border-color: color-mix(in srgb, var(--red) 40%, var(--border)); }
+
+.rate-field { margin-bottom: 14px; }
+.rate-field label {
+  display: block; font-size: .78rem; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px;
+}
+.rate-optional { font-weight: 500; text-transform: none; letter-spacing: 0; }
+.rate-field textarea {
+  width: 100%; font: inherit; font-size: .9rem; line-height: 1.55;
+  color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 10px 12px; resize: vertical;
+}
+.rate-field textarea:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; border-color: var(--gold); }
+
+.rate-hint { font-size: .76rem; color: var(--text-muted); margin-top: 6px; }
+.rate-err  { font-size: .82rem; color: var(--red); font-weight: 600; min-height: 1.2em; margin-bottom: 8px; }
+
+@media (max-width: 560px) {
+  .order-item-rate { justify-content: flex-start; }
+}

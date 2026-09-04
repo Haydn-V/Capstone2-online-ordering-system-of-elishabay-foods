@@ -3,11 +3,28 @@ USE elisha_bay_db;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
+/* THIS LIST MUST NAME EVERY TABLE THE FILE CREATES.
+
+   cart_items and verification_codes were created here but never dropped —
+   they arrived with later migrations and were folded into this file without
+   their DROP lines. The result is that a SECOND run of schema.sql aborts on
+   `CREATE TABLE cart_items` with "table already exists", after the drops above
+   have already run: the database is left with the early tables recreated and
+   every table declared after line ~300 dropped and gone. A reset script that
+   half-destroys a database is worse than one that refuses to run.
+
+   Both reference customers(id), so they are dropped before it, in the same
+   dependency order the rest of this list follows.
+
+   If you add a CREATE TABLE to this file, add its DROP here. */
+DROP TABLE IF EXISTS cart_items;
+DROP TABLE IF EXISTS verification_codes;
 DROP TABLE IF EXISTS settings;
 DROP TABLE IF EXISTS featured_products;
 DROP TABLE IF EXISTS hero_slides;
 DROP TABLE IF EXISTS faqs;
 DROP TABLE IF EXISTS site_content;
+DROP TABLE IF EXISTS product_reviews;
 DROP TABLE IF EXISTS notifications;
 DROP TABLE IF EXISTS product_returns;
 DROP TABLE IF EXISTS payment_accounts;
@@ -43,7 +60,17 @@ CREATE TABLE products (
     description TEXT NULL,
     price DECIMAL(10, 2) NOT NULL,
     stock INT DEFAULT 0,
-    rating DECIMAL(3, 2) DEFAULT 5.00,
+    /* WRITTEN FROM EVIDENCE, NOT SEEDED. Both columns are owned by
+       Reviews::recompute(), which derives them from PUBLISHED rows in
+       product_reviews. The default is 0, not 5.00: a brand-new product has
+       earned no score, and a table that hands it one is how every product in
+       this shop came to advertise a 4.9 nobody gave it.
+
+       review_count is what makes that safe to render. A surface that checks it
+       shows "No ratings yet" at zero instead of a number; one that forgets sees
+       0.00, which is visibly wrong rather than plausibly wrong. */
+    rating DECIMAL(3, 2) NOT NULL DEFAULT 0.00,
+    review_count INT NOT NULL DEFAULT 0 COMMENT 'published reviews behind products.rating',
     sold INT DEFAULT 0,
     is_best TINYINT(1) DEFAULT 0,
     tint VARCHAR(10) NULL,
@@ -451,7 +478,13 @@ CREATE INDEX idx_returns_status ON product_returns(status);
    set depending on type; audit-type rows carry none of them. */
 CREATE TABLE notifications (
     id VARCHAR(50) NOT NULL,
-    type ENUM('new-order','payment','hold','completed','return','inventory','audit') NOT NULL,
+    type ENUM('new-order','payment','hold','completed','return','inventory','audit','review') NOT NULL,
+    /* How much it matters, as opposed to what it was. Written by
+       api/core/Notify.php at insert time so the bell, the dashboard panel and
+       the Notifications module sort and label from one stored decision rather
+       than three copies of a type→level rule in three scripts. Migration 010
+       carries the reasoning and the mapping. */
+    priority ENUM('critical','warning','info') NOT NULL DEFAULT 'info',
     order_id VARCHAR(50) NULL,
     return_id VARCHAR(50) NULL,
     product_id VARCHAR(50) NULL,
@@ -469,6 +502,8 @@ CREATE TABLE notifications (
 
 CREATE INDEX idx_notif_read ON notifications(is_read);
 CREATE INDEX idx_notif_created ON notifications(created_at);
+/* The unread-per-level counts the bell asks for on every page load. */
+CREATE INDEX idx_notif_priority ON notifications(is_read, priority);
 
 /* System-wide settings. Holds the Payment Schemes penalty rate (adminState
    .penaltyRate, 2% today) and the brand strings CONFIG currently hard-codes. */
@@ -477,4 +512,38 @@ CREATE TABLE settings (
     value_text TEXT NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (key_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+/* Customer product reviews. Only a verified purchase can produce a row — see
+   db/migrations/011-product-reviews.sql for the full reasoning, including why
+   order_id is NOT NULL, why one vote per customer per product is a unique key
+   rather than application logic, and why a low rating publishes and notifies
+   rather than being held. */
+CREATE TABLE product_reviews (
+    id            INT AUTO_INCREMENT NOT NULL,
+    product_id    VARCHAR(50) NOT NULL,
+    customer_id   VARCHAR(50) NOT NULL,
+    order_id      VARCHAR(50) NOT NULL,
+    rating        TINYINT NOT NULL,
+    comment       TEXT NULL,
+    status        ENUM('published','pending','rejected') NOT NULL DEFAULT 'published',
+    hold_reason   VARCHAR(80) NULL COMMENT 'why it was held: keyword today',
+    reject_reason TEXT NULL COMMENT 'required when status = rejected',
+    moderated_by  VARCHAR(50) NULL,
+    moderated_at  DATETIME NULL,
+    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_review_customer_product (customer_id, product_id),
+    KEY idx_review_product_status (product_id, status),
+    KEY idx_review_status_created (status, created_at),
+    CONSTRAINT fk_review_product FOREIGN KEY (product_id)
+        REFERENCES products(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_review_customer FOREIGN KEY (customer_id)
+        REFERENCES customers(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_review_order FOREIGN KEY (order_id)
+        REFERENCES orders(id) ON UPDATE CASCADE,
+    CONSTRAINT fk_review_moderator FOREIGN KEY (moderated_by)
+        REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

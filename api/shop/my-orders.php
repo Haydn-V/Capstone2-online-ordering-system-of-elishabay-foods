@@ -61,17 +61,39 @@ $itemsByOrder = [];
 if ($rows !== []) {
     $ids = array_column($rows, 'id');
     $ph  = implode(',', array_fill(0, count($ids), '?'));
+    /* THE REVIEW JOIN IS SCOPED BY THE SESSION'S CUSTOMER, not by the order.
+       It has to be: uq_review_customer_product is per customer per PRODUCT, so
+       the same review attaches to every order of that product this person has
+       placed, and joining on the order would return nothing for all but one.
+
+       Fetched here rather than per-item from the browser because a five-order
+       page would otherwise fire twenty requests to render twenty buttons. */
     foreach (Database::all(
-        "SELECT oi.order_id, oi.qty, oi.price_at_purchase, p.name, p.tint
-           FROM order_items oi JOIN products p ON p.id = oi.product_id
+        "SELECT oi.order_id, oi.product_id, oi.qty, oi.price_at_purchase,
+                p.name, p.tint,
+                r.rating AS my_rating, r.comment AS my_comment, r.status AS my_status
+           FROM order_items oi
+           JOIN products p ON p.id = oi.product_id
+           LEFT JOIN product_reviews r
+                  ON r.product_id = oi.product_id AND r.customer_id = ?
           WHERE oi.order_id IN ($ph) ORDER BY oi.id",
-        $ids
+        array_merge([$customer['id']], $ids)
     ) as $it) {
         $itemsByOrder[$it['order_id']][] = [
+            /* The id the rating control posts. review-save.php still derives the
+               order itself — this is which PRODUCT is being rated, not proof of
+               anything. */
+            'productId' => $it['product_id'],
             'name'  => $it['name'],
             'tint'  => $it['tint'],
             'qty'   => (int) $it['qty'],
             'price' => (float) $it['price_at_purchase'],
+            /* The customer's own review of this product, if any, so the button
+               can read "Edit your rating" and the form can open filled in. Null
+               throughout when they have not reviewed it. */
+            'myRating'  => $it['my_rating'] === null ? null : (int) $it['my_rating'],
+            'myComment' => $it['my_comment'],
+            'myStatus'  => $it['my_status'],
         ];
     }
 

@@ -1147,6 +1147,15 @@ ul,ol { margin: 0; padding: 0; list-style: none; }
 .stars { display: inline-flex; align-items: center; gap: 2px; color: var(--gold); }
 .stars svg { width: 13px; height: 13px; }
 .stars .rv { color: var(--text-muted); font-size: .75rem; margin-left: 4px; font-weight: 600; }
+/* The review COUNT, beside the average. One five-star review and forty are the
+   same "5.0" and are not the same claim, so the average never appears without
+   it. Lighter than .rv so the score still leads. */
+.stars .rc { color: var(--text-muted); font-size: .72rem; margin-left: 3px; }
+/* NO STARS AT ALL when nothing has been rated. Five hollow stars beside "0.0"
+   reads as a product people rated badly, which is a worse lie than the seeded
+   4.9 this replaced. Muted and italic so it reads as an absence rather than a
+   value — and it says so in words, not by colour alone. */
+.stars-none { font-size: .74rem; font-style: italic; color: var(--text-muted); }
 .pc-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 6px; }
 .price { font-family: "Montserrat",sans-serif; font-weight: 700; font-size: 1.18rem; color: var(--text); }
 .price .cur { font-size: .82rem; color: var(--text-muted); margin-right: 1px; }
@@ -1157,6 +1166,10 @@ ul,ol { margin: 0; padding: 0; list-style: none; }
 .stock-out  { color: var(--out); }
 .pc-add { display: flex; gap: 8px; align-items: center; }
 .btn-add { padding: 10px 14px; font-size: .82rem; }
+/* Names the reason the stepper stops where it does. Only rendered when the
+   shelf is what is capping it, so it never appears as unexplained fine print
+   on a fully-stocked product. */
+.qty-cap { display: block; margin-top: 6px; font-size: .7rem; color: var(--text-muted); }
 
 /* =================================================================
    12. ABOUT — always-dark cinematic section
@@ -1512,6 +1525,105 @@ ul,ol { margin: 0; padding: 0; list-style: none; }
 .pd-actions { display:flex;gap:12px;align-items:center;margin-top:16px;flex-wrap:wrap; }
 .auth-cart-hint { display:flex;align-items:center;gap:10px;background:color-mix(in srgb,var(--red) 7%,var(--bg));border:1px solid color-mix(in srgb,var(--red) 20%,var(--border));border-radius:var(--r-md);padding:12px 15px;margin-bottom:18px;font-size:.86rem;font-weight:500; }
 .auth-cart-hint svg { flex-shrink:0;color:var(--red); }
+
+/* =================================================================
+   SIGN-IN LOCKOUT NOTICE
+   -----------------------------------------------------------------
+   Sits above the fields rather than under one of them, because it is
+   not about a field: neither the email nor the password is wrong, and
+   attaching it to either would be the same misdirection the old
+   "Email or password is incorrect" caused.
+
+   The WORD carries it — "Too many failed sign-in attempts" — and the
+   tint only reinforces. --warn rather than --red: a wait is not a
+   rejection, and painting it as an error invites people to keep
+   retrying the thing that is already correct.
+   ================================================================= */
+.auth-lock {
+  margin-bottom: 14px;
+  padding: 11px 14px;
+  border-radius: var(--r-sm);
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border));
+  background: color-mix(in srgb, var(--warn) 8%, var(--surface));
+  color: var(--text);
+  font-size: .85rem;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+
+/* =================================================================
+   PRODUCT REVIEWS — the list under the product detail
+   -----------------------------------------------------------------
+   Separated from the two-column .pd-grid by a rule rather than by a
+   gap: the reviews are a different kind of thing from the buy panel
+   and a shopper scrolling past should be able to see where one ends.
+
+   Every colour here is an existing token. The verified badge does NOT
+   rely on green alone to say "verified" — it carries the word and a
+   tick, because a coloured pill is unreadable to plenty of people and
+   invisible to anyone reading it aloud.
+   ================================================================= */
+.pd-reviews { margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--border); }
+.pd-rev-title { font-family: "Cormorant Garamond", serif; font-size: 1.45rem; font-weight: 600; margin-bottom: 12px; }
+.pd-rev-empty { font-size: .86rem; color: var(--text-muted); line-height: 1.55; max-width: 62ch; }
+
+.pd-rev-head { display: flex; gap: 26px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+.pd-rev-avg { display: flex; align-items: center; gap: 9px; }
+/* color IS SET EXPLICITLY here and on .rev-body rather than inherited.
+   `body` carries `transition: color`, and a transition does not advance while
+   the tab is in the background — so a theme switched there leaves body frozen
+   at the previous theme's text colour, and anything inheriting from it renders
+   at ~1:1 against the new background until the tab is looked at. Every other
+   component in this file already states its own colour, which is why the
+   problem has never shown; these two were the exception. */
+.pd-rev-num { font-family: "Montserrat", sans-serif; font-size: 2rem; font-weight: 700; line-height: 1; color: var(--text); }
+.pd-rev-count { font-size: .8rem; color: var(--text-muted); }
+
+/* The 1-5 histogram. Fixed column widths so the bars share a baseline
+   and the shape of the distribution is readable at a glance. */
+.rev-spread { display: grid; gap: 3px; min-width: 190px; flex: 1 1 190px; }
+.rev-spread-row { display: grid; grid-template-columns: 34px 1fr 26px; align-items: center; gap: 8px; font-size: .72rem; color: var(--text-muted); }
+.rev-spread-n { display: inline-flex; align-items: center; gap: 2px; color: var(--gold); font-weight: 600; }
+.rev-spread-n svg { width: 11px; height: 11px; }
+.rev-spread-bar { height: 6px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
+.rev-spread-bar i { display: block; height: 100%; background: var(--gold); }
+.rev-spread-c { text-align: right; font-variant-numeric: tabular-nums; }
+
+.rev-list { list-style: none; display: grid; gap: 14px; }
+.rev-item { padding: 13px 15px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); }
+.rev-top { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; font-size: .76rem; color: var(--text-muted); }
+.rev-author { font-weight: 700; color: var(--text); }
+.rev-date { margin-left: auto; }
+.rev-body { margin-top: 7px; font-size: .87rem; line-height: 1.6; color: var(--text); }
+
+/* THE WORD CARRIES THE MEANING, the colour only reinforces it.
+
+   THE LABEL IS --text, NOT --ok. Measured: --ok (#18a957) on the light
+   --surface-2 is 2.77:1, which fails AA badly for text this small, and it is
+   small precisely because it is a badge. Green on the TICK still reads as
+   "good" at a glance while the word itself stays legible — the same fix the
+   portal notification chip needed for the same reason. */
+.rev-verified { display: inline-flex; align-items: center; gap: 3px; font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text); }
+/* Darkened toward --text: bare --ok measures 2.77:1 on the light --surface-2,
+   under the 3:1 WCAG asks of a meaningful non-text graphic. Still reads green. */
+.rev-verified svg { width: 12px; height: 12px; color: color-mix(in srgb, var(--ok) 76%, var(--text)); }
+
+.pd-rev-more { margin-top: 10px; font-size: .78rem; color: var(--text-muted); }
+
+/* The customer's own review when it is NOT live. Bordered rather than
+   filled so it reads as a note about their submission, not as another
+   review in the list. */
+.rev-mine { margin-top: 14px; padding: 12px 15px; border-radius: var(--r-sm); font-size: .84rem; line-height: 1.55; border: 1px solid var(--border); background: var(--surface-2); }
+.rev-mine b { display: block; margin-bottom: 3px; color: var(--text); }
+.rev-mine-pending  { border-color: color-mix(in srgb, var(--warn) 34%, var(--border)); background: color-mix(in srgb, var(--warn) 7%, var(--surface-2)); }
+.rev-mine-rejected { border-color: color-mix(in srgb, var(--red) 34%, var(--border));  background: color-mix(in srgb, var(--red) 7%, var(--surface-2)); }
+
+@media (max-width: 640px) {
+  .pd-rev-head { gap: 14px; }
+  .rev-date { margin-left: 0; width: 100%; }
+}
+
 
 /* =================================================================
    18. AUTH MODAL — split panel

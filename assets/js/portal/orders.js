@@ -36,6 +36,60 @@
    it handles a null order, coerces a numeric string, and falls back to
    txTotal(o.items) with a console.warn instead of silently returning 0. */
 
+/* Put a screen's "rows per page" control into its merged toolbar row.
+
+   THESE WERE A THIRD BAND. Six render functions each opened their content with
+   a right-aligned .table-toolbar holding nothing but a page-size select, which
+   landed BELOW the tabs-and-filters row as another strip of chrome above the
+   table — the stacking Task 2 exists to remove, rebuilt from JavaScript where
+   the markup change could not reach it.
+
+   The select cannot simply be moved into the view's HTML: which page sizes are
+   offered and which is current are decided at render time. So the render keeps
+   owning it and this mounts it into the row instead of into the content.
+
+   Idempotent — a render replaces its own slot rather than appending a second
+   one, and creates the filter group only if the screen (a tabs-only one, say)
+   has not got one yet. */
+function mountToolbarControl(modId, slotName, html){
+  const row = document.querySelector(`#mod-${modId} .view-toolbar`);
+  if(!row){ return null; }                 /* screen has no merged row — leave it be */
+  /* On a screen with tabs the row holds two GROUPS and the control belongs in
+     the right-hand one. On a screen without tabs the row IS that group, and
+     nesting another inside it added a second auto-margin that fought the
+     first — mount straight into the row so the control simply lands after the
+     .vt-spacer the view declares. */
+  let group = row.classList.contains("view-toolbar-filters")
+    ? row
+    : row.querySelector(".view-toolbar-filters");
+  if(!group){
+    group = document.createElement("div");
+    group.className = "view-toolbar-filters";
+    row.appendChild(group);
+  }
+  /* A SCREEN'S TABS DO NOT SHARE A SLOT SET.
+
+     Inventory Management mounts different controls per tab — Stock Overview
+     wants search + level + page size, Adj. Log wants page size alone. Keyed by
+     name only, switching tabs ADDED a slot and left the previous tab's behind,
+     so Adj. Log ended up showing Stock Overview's search box as well as its
+     own control. Any slot other than the one being mounted is this render's
+     responsibility to remove. */
+  group.querySelectorAll("[data-slot]").forEach(el => {
+    if(el.dataset.slot !== slotName) el.remove();
+  });
+
+  let slot = group.querySelector(`[data-slot="${slotName}"]`);
+  if(!slot){
+    slot = document.createElement("span");
+    slot.dataset.slot = slotName;
+    slot.style.display = "contents";
+    group.appendChild(slot);
+  }
+  slot.innerHTML = html;
+  return slot;
+}
+
 function statusChip(status){
   return `<span class="status-chip status-${status}"><span class="status-dot ${status}"></span>${STATUS_LABEL[status] || status}</span>`;
 }
@@ -95,7 +149,105 @@ const NOTIF_PERM = {
   "scheme-due":    "payments.manage",
   "sales-summary": "sales.report",
   "audit":         "audit.view",
+  /* Only the people who can act on it. A low-rating alert names a customer,
+     an order and a complaint, and the one useful response is to open the
+     review — which needs reviews.moderate. */
+  "review":        "reviews.moderate",
 };
+
+/* ============================================================
+   NOTIFICATION URGENCY  —  three levels, one ordering
+   ------------------------------------------------------------
+   Every notification used to be equal: newest-first, and a plain
+   count on the bell. An expired batch sorted underneath an order
+   somebody had completed an hour later, and nothing in the topbar
+   distinguished "three things happened" from "something is on fire".
+
+   THE LEVEL IS NOT DECIDED HERE. Rows from the database carry a
+   stored `priority`, written by api/core/Notify.php at the moment
+   the event happened. The type->level table below is fetched from
+   that same helper (list.php returns it as meta.priorityMap) and is
+   used ONLY for the notifications this file derives client-side
+   from live records, which have no database row to carry a level.
+
+   The constant is a fallback for the window before the first
+   notifications request resolves, and for a load that fails. It is
+   the same table PHP holds; if the two ever disagree, PHP wins,
+   because it is what actually reaches the ORDER BY.
+   ============================================================ */
+const NOTIF_LEVELS = ["critical", "warning", "info"];
+
+const NOTIF_PRIORITY_FALLBACK = {
+  "inventory":     "critical",
+  "new-order":     "warning",
+  "payment":       "warning",
+  "hold":          "warning",
+  "return":        "warning",
+  "completed":     "info",
+  "audit":         "info",
+  "review":        "warning",
+  "expiry":        "warning",
+  "batch-qa":      "warning",
+  "scheme-due":    "warning",
+  "sales-summary": "info",
+};
+
+/* Replaced by the server's copy on the first successful load — see
+   loadOpsData() in engine.js. */
+let NOTIF_PRIORITY_MAP = { ...NOTIF_PRIORITY_FALLBACK };
+
+/* What each level LOOKS LIKE. A label and a glyph as well as a colour,
+   because a coloured dot alone is unreadable to anyone who cannot
+   separate the hues — and, on a small pill against two different theme
+   backgrounds, to plenty of people who can. */
+const NOTIF_LEVEL_META = {
+  critical: {
+    label: "Critical",
+    icon: `<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 2a1 1 0 01.894.553l7 14A1 1 0 0117 18H3a1 1 0 01-.894-1.447l7-14A1 1 0 0110 2zm0 5a1 1 0 00-1 1v3a1 1 0 002 0V8a1 1 0 00-1-1zm0 8a1 1 0 100 2 1 1 0 000-2z" clip-rule="evenodd"/></svg>`,
+  },
+  warning: {
+    label: "Warning",
+    icon: `<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>`,
+  },
+  info: {
+    label: "Info",
+    icon: `<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/></svg>`,
+  },
+};
+
+/* A stored level wins; a derived row falls back to its type. */
+function notifPriority(n){
+  if(n && n.priority && NOTIF_LEVEL_META[n.priority]) return n.priority;
+  return NOTIF_PRIORITY_MAP[n && n.type] || "info";
+}
+
+function notifLevelChip(n){
+  const level = notifPriority(n);
+  const meta  = NOTIF_LEVEL_META[level] || NOTIF_LEVEL_META.info;
+  /* The word is inside the pill, not a title or an aria-label, so it is
+     there for everyone rather than only for a screen reader or a mouse. */
+  return `<span class="notif-level notif-level-${level}">${meta.icon}${meta.label}</span>`;
+}
+
+/* THE ONE ORDER. Unread first, then urgency, then newest.
+
+   Mirrors Notify::orderBy() in PHP, and has to: the server already
+   returns rows in this order, but the three lists on screen merge those
+   rows with the client-derived ones, so the merged array has to be
+   re-sorted by the same rule or the derived alerts would land wherever
+   concat() put them.
+
+   Unread outranks urgency deliberately. Read state is shared across the
+   team, so "read" means somebody handled it — a critical alert already
+   dealt with should not sit above the thing that just happened. */
+function sortByUrgency(list){
+  return [...list].sort((a,b)=>{
+    if(a.read !== b.read) return a.read ? 1 : -1;
+    const d = NOTIF_LEVELS.indexOf(notifPriority(a)) - NOTIF_LEVELS.indexOf(notifPriority(b));
+    if(d !== 0) return d;
+    return a.time > b.time ? -1 : a.time < b.time ? 1 : 0;
+  });
+}
 
 /* Built lazily; rebuilt whenever inventory activity adds an audit row.
    NOTIF_READ remembers which derived alerts have been read, so a rebuild
@@ -117,7 +269,14 @@ function buildDerivedNotifications(){
       const days = Math.round(
         (new Date(acct.dueDate + "T00:00:00") - new Date(TODAY_ISO())) / 86400000);
       if(overdue){
-        out.push({ id:"nd-sch-"+acct.id, type:"scheme-due", accountId:acct.id, read:false,
+        /* Explicitly critical, not merely "scheme-due". The level of a
+           derived row depends on its STATE, not only its type: a payment
+           coming due next week and one that is already late are the same
+           type and are not the same problem. Past the due date is money
+           the business is owed and is not getting, which is the Critical
+           definition. */
+        out.push({ id:"nd-sch-"+acct.id, type:"scheme-due", priority:"critical",
+          accountId:acct.id, read:false,
           time: acct.dueDate + " 08:00",
           msg: acct.name + " is overdue on " + acct.scheme + " — " + peso(acct.balance) +
                " outstanding since " + fmtDate(acct.dueDate) });
@@ -137,7 +296,9 @@ function buildDerivedNotifications(){
       const name = prod ? prod.name : b.productId;
 
       if(b.labStatus === "failed"){
-        out.push({ id:"nd-qa-"+b.id, type:"batch-qa", batchId:b.id, read:false,
+        /* A failed lot is stock that must not be sold and may already have
+           been — the same shape of problem as an expired one. */
+        out.push({ id:"nd-qa-"+b.id, type:"batch-qa", priority:"critical", batchId:b.id, read:false,
           time: b.prodDate + " 09:00",
           msg: "Batch " + b.lotCode + " (" + name + ") FAILED lab testing — pulled from sale" });
       } else if(b.labStatus === "pending"){
@@ -146,15 +307,26 @@ function buildDerivedNotifications(){
           msg: "Batch " + b.lotCode + " (" + name + ") is awaiting lab results" });
       }
 
+      /* ALREADY-EXPIRED LOTS ARE NOT DERIVED HERE ANY MORE.
+
+         Stock on the shelf that can no longer be sold is Critical, and a
+         Critical alert has to be a durable row: it must survive a page
+         load, it must be markable as read by whoever deals with it, and
+         it must be orderable by the server. Notify::syncExpiredBatches()
+         materialises those on read — see that method for why it is a lazy
+         insert rather than a scheduler.
+
+         The 30/90-day warning stays here, because it is a countdown that
+         has to be recomputed against today on every render and nothing is
+         actually wrong yet. Excluding d < 0 is what keeps the two from
+         producing the same alert twice. */
       if(typeof daysUntilExpiry === "function" && b.remainingQty > 0){
         const d = daysUntilExpiry(b.expiryDate);
-        if(d <= 90){
+        if(d >= 0 && d <= 90){
           out.push({ id:"nd-exp-"+b.id, type:"expiry", batchId:b.id, productId:b.productId,
             read: d > 30,
             time: b.expiryDate + " 07:00",
-            msg: d < 0
-              ? "Batch " + b.lotCode + " (" + name + ") has EXPIRED — " + b.remainingQty + " units still in stock"
-              : "Batch " + b.lotCode + " (" + name + ") expires in " + d + " days — " + b.remainingQty + " units left" });
+            msg: "Batch " + b.lotCode + " (" + name + ") expires in " + d + " days — " + b.remainingQty + " units left" });
         }
       }
     });
@@ -253,6 +425,28 @@ if(typeof addAuditEntry === "function"){
   };
 }
 
+/* Throw away the derived cache so the next read rebuilds it.
+
+   THE CACHE IS BUILT ON FIRST READ, AND THE FIRST READ IS TOO EARLY.
+   applySignedInUser() calls initNotifBadge() the moment a session is
+   confirmed, which reads the list — at which point PAYMENT_ACCOUNTS,
+   BATCHES and ORDERS are still empty, because loadOpsData() has not run.
+   DERIVED_NOTIFS was then cached as [] and nothing ever cleared it, so a
+   Cashier's overdue-payment alerts and an Inventory user's expiry alerts
+   were built from nothing and stayed that way for the whole session.
+
+   That went unnoticed while the dashboard's System Notifications panel
+   built its own separate list at render time, after the data had landed —
+   it hid the fault by not using this path at all. Now that all three
+   readers share one list, the cache has to be invalidated when the records
+   it is derived FROM arrive. */
+function refreshDerivedNotifications(){
+  DERIVED_NOTIFS = null;
+  if(typeof initNotifBadge === "function") initNotifBadge();
+  if(adminState && adminState.currentModule === "notifications" &&
+     typeof renderNotifications === "function") renderNotifications();
+}
+
 /* Seed rows plus generated ones. */
 function allNotifications(){
   if(DERIVED_NOTIFS === null){
@@ -280,38 +474,81 @@ function TODAY_ISO(){
 }
 
 function initNotifBadge(){
-  const count = visibleNotifications().filter(n=>!n.read).length;
+  const unread   = visibleNotifications().filter(n=>!n.read);
+  const count    = unread.length;
+  const critical = unread.filter(n=> notifPriority(n) === "critical").length;
+
   const badge = $("#sidebar-notif-badge");
   if(badge) badge.textContent = count > 0 ? count : "";
+
+  /* TWO FACTS, ONE BADGE. The number answers "how many things happened";
+     the alert styling answers "is any of it on fire". Someone glancing at
+     the topbar needs the second without opening anything, and the count
+     alone never gave it — nine completed orders and one out-of-stock
+     product both read as a number in a red circle.
+
+     The count stays visible in both states rather than being replaced by
+     the critical count, because "1" when nine things are waiting would be
+     a worse lie than the one being fixed. The title and aria-label spell
+     the split out, since a border colour is not a fact anyone should have
+     to infer. */
   const topBadge = $("#notif-badge");
   if(topBadge){
     topBadge.textContent = count > 9 ? "9+" : (count > 0 ? count : "");
     topBadge.style.display = count > 0 ? "flex" : "none";
+    topBadge.classList.toggle("has-critical", critical > 0);
   }
+
+  const bell = $("#notif-btn");
+  if(bell){
+    const label = count === 0
+      ? "Notifications — none unread"
+      : critical > 0
+        ? `Notifications — ${count} unread, ${critical} critical`
+        : `Notifications — ${count} unread`;
+    bell.setAttribute("aria-label", label);
+    bell.title = label;
+    bell.classList.toggle("has-critical", critical > 0);
+  }
+
   renderNotifDropdown();
 }
 
 function renderNotifDropdown(){
   const list = $("#nd-list");
   if(!list) return;
-  const recent = [...visibleNotifications()].sort((a,b)=> a.time > b.time ? -1 : 1).slice(0,6);
+  /* Same order as the module and the dashboard panel, from the same
+     function — the dropdown used to sort by time alone, which put a
+     completed order above an out-of-stock product in the one list that is
+     only six rows long. */
+  const recent = sortByUrgency(visibleNotifications()).slice(0,6);
   list.innerHTML = recent.map(n => `
-    <div class="nd-item ${n.read ? "" : "unread"}" data-ndnotif="${n.id}">
+    <div class="nd-item ${n.read ? "" : "unread"}" data-ndnotif="${n.id}" role="button" tabindex="0">
       <div class="nd-item-icon type-${n.kind || n.type}">${NOTIF_ICONS[n.kind] || NOTIF_ICONS[n.type] || ""}</div>
       <div class="nd-item-body">
         <div class="nd-item-top">
           <span class="nd-item-msg">${escHtml(n.msg)}</span>
           ${!n.read ? `<span class="nd-item-dot"></span>` : ""}
         </div>
-        <div class="nd-item-time">${fmtDateTime(n.time)}</div>
+        <div class="nd-item-time">${notifLevelChip(n)}<span>${fmtDateTime(n.time)}</span></div>
       </div>
-    </div>`).join("") || `<div class="nd-empty">You're all caught up.</div>`;
+    </div>`).join("") || `<div class="nd-empty">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      <strong>Nothing waiting</strong>You're all caught up.
+    </div>`;
 
   $$("#nd-list .nd-item").forEach(el=>{
-    el.addEventListener("click", ()=>{
+    const go = ()=>{
       markRead(el.dataset.ndnotif);
       $("#topbar-notif")?.classList.remove("open");
+      $("#notif-btn")?.setAttribute("aria-expanded", "false");
       navigate("notifications");
+    };
+    el.addEventListener("click", go);
+    /* The row is a div acting as a button, so it has to answer Enter and Space
+       itself — the browser only does that for real buttons. */
+    el.addEventListener("keydown", e=>{
+      if(e.key === "Enter" || e.key === " "){ e.preventDefault(); go(); }
     });
   });
 }
@@ -320,14 +557,37 @@ function initNotifBell(){
   const wrap = $("#topbar-notif");
   const btn  = $("#notif-btn");
   if(!wrap || !btn) return;
+
+  /* aria-expanded has to move with the class, or the panel is open for
+     sighted users and closed for everybody else. One setter so the two
+     cannot drift — same shape as initUserDropdown(). */
+  const setOpen = open => {
+    wrap.classList.toggle("open", open);
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+  };
+  btn.setAttribute("aria-expanded", "false");
+  btn.setAttribute("aria-controls", "notif-dropdown");
+  btn.setAttribute("aria-haspopup", "menu");
+
   btn.addEventListener("click", (e)=>{
     e.stopPropagation();
-    wrap.classList.toggle("open");
+    setOpen(!wrap.classList.contains("open"));
   });
-  document.addEventListener("click", ()=> wrap.classList.remove("open"));
+  document.addEventListener("click", ()=> setOpen(false));
+
+  /* Escape closes and RETURNS FOCUS to the bell. Neither existed: the panel
+     could only be dismissed by clicking somewhere else, so a keyboard user who
+     opened it had no way back out — focus stayed where it was while the panel
+     vanished under a click they had no reason to make. */
+  document.addEventListener("keydown", (e)=>{
+    if(e.key !== "Escape" || !wrap.classList.contains("open")) return;
+    setOpen(false);
+    btn.focus();
+  });
+
   $("#nd-mark-all")?.addEventListener("click", (e)=>{ e.stopPropagation(); markAllRead(); });
   $("#nd-view-all")?.addEventListener("click", ()=>{
-    wrap.classList.remove("open");
+    setOpen(false);
     navigate("notifications");
   });
   renderNotifDropdown();
@@ -345,6 +605,7 @@ function initNotifBell(){
 const NOTIF_CATEGORY = {
   "new-order": "orders", "payment":"payments", "inventory":"inventory",
   "hold":"status", "completed":"status", "return":"returns", "audit":"audit",
+  "review":"reviews",
   /* Cashier / Inventory categories */
   "scheme-due":"payments", "sales-summary":"sales",
   "expiry":"inventory", "batch-qa":"quality",
@@ -357,6 +618,7 @@ const NOTIF_TABS = [
   { id:"status",    label:"Order Status" },
   { id:"returns",   label:"Refunds & Returns" },
   { id:"quality",   label:"Batch & QA" },
+  { id:"reviews",   label:"Reviews" },
   { id:"sales",     label:"Sales" },
   { id:"audit",     label:"Audit Log" },
 ];
@@ -377,6 +639,7 @@ const NOTIF_ICONS = {
   "adjust":        `<svg viewBox="0 0 20 20" fill="currentColor"><path d="M5 4a1 1 0 00-2 0v7.268a2 2 0 000 3.464V16a1 1 0 102 0v-1.268a2 2 0 000-3.464V4zM11 4a1 1 0 10-2 0v1.268a2 2 0 000 3.464V16a1 1 0 102 0V8.732a2 2 0 000-3.464V4zM16 3a1 1 0 011 1v7.268a2 2 0 010 3.464V16a1 1 0 11-2 0v-1.268a2 2 0 010-3.464V4a1 1 0 011-1z"/></svg>`,
   "archive":       `<svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 3a2 2 0 00-2 2v1a1 1 0 001 1h14a1 1 0 001-1V5a2 2 0 00-2-2H4z"/><path fill-rule="evenodd" d="M3 8h14v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8zm5 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>`,
   "sales-summary": `<svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/></svg>`,
+  "review":    `<svg viewBox="0 0 20 20" fill="currentColor"><path d="M9.05 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.957a1 1 0 00.95.69h4.162c.969 0 1.371 1.24.588 1.81l-3.367 2.446a1 1 0 00-.364 1.118l1.287 3.957c.3.921-.755 1.688-1.539 1.118l-3.366-2.446a1 1 0 00-1.176 0l-3.367 2.446c-.783.57-1.838-.197-1.538-1.118l1.286-3.957a1 1 0 00-.363-1.118L2.063 9.384c-.783-.57-.38-1.81.588-1.81h4.161a1 1 0 00.951-.69l1.286-3.957z"/></svg>`,
   "audit":     `<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 1.944A11.954 11.954 0 012.166 5C2.056 5.649 2 6.319 2 7c0 5.225 3.34 9.67 8 11.317C14.66 16.67 18 12.225 18 7c0-.682-.057-1.35-.166-2.001A11.954 11.954 0 0110 1.944zM11 14a1 1 0 11-2 0 1 1 0 012 0zm0-7a1 1 0 10-2 0v3a1 1 0 102 0V7z" clip-rule="evenodd"/></svg>`,
 };
 
@@ -385,14 +648,28 @@ function renderNotifications(){
 
   const tabsEl = $("#notif-tabs");
   if(tabsEl){
+    const scoped = visibleNotifications();
     tabsEl.innerHTML = NOTIF_TABS.map(t=>{
-      const scoped = visibleNotifications();
-      const count = t.id==="all" ? scoped.length : scoped.filter(n=>NOTIF_CATEGORY[n.type]===t.id).length;
+      const inTab = t.id==="all" ? scoped : scoped.filter(n=>NOTIF_CATEGORY[n.type]===t.id);
       /* Hide a tab this role can never fill — an Inventory user has no
-         use for an empty "Refunds & Returns" filter. */
-      if(t.id !== "all" && count === 0) return "";
+         use for an empty "Refunds & Returns" filter. Presence is decided by
+         the TOTAL; the badge is decided by the unread count below. */
+      if(t.id !== "all" && inTab.length === 0) return "";
+      /* UNREAD, not total. Read notifications are a record and a tab reading
+         "Audit Log 14" said only that fourteen things had ever happened. It
+         also reconciles the two places this number appears: these badges are
+         the same unread rows the topbar bell counts, split by category, so
+         the tabs and the bell can no longer disagree. */
+      const unread = inTab.filter(n=>!n.read).length;
       const active = (adminState.notifFilter||"all")===t.id;
-      return `<button class="return-tab-btn ${active?"active":""}" data-notiftab="${t.id}">${t.label}${count?` <span>(${count})</span>`:""}</button>`;
+      /* Every tab here gets the unread rule, "All" included: elsewhere All is a
+         record tab, but this whole screen is a queue and its unread total is
+         the one number a reader wants. Hence tabBadgeAlways rather than the
+         WORK_TABS gate. */
+      const b = tabBadgeAlways(t.label, unread, "unread");
+      return `<button class="return-tab-btn ${active?"active":""}" data-notiftab="${t.id}"
+                      role="tab" aria-selected="${active}"
+                      aria-label="${escHtml(b.aria)}">${b.html}</button>`;
     }).join("");
     $$("#notif-tabs .return-tab-btn").forEach(btn=>{
       btn.onclick = ()=>{ adminState.notifFilter = btn.dataset.notiftab; renderNotifications(); };
@@ -400,14 +677,19 @@ function renderNotifications(){
   }
   const sortSel = $("#notif-sort");
   if(sortSel){
-    sortSel.value = adminState.notifSort || "newest";
+    sortSel.value = adminState.notifSort || "urgency";
     sortSel.onchange = ()=>{ adminState.notifSort = sortSel.value; renderNotifications(); };
   }
 
   const filter = adminState.notifFilter || "all";
-  const sort   = adminState.notifSort || "newest";
+  /* Urgency is the default, and it is the order the bell and the dashboard
+     panel are fixed at, so the three agree unless somebody deliberately
+     asks this screen for something else. The other options stay: this is
+     the one screen where "show me everything oldest-first" is a reasonable
+     thing to want. */
+  const sort   = adminState.notifSort || "urgency";
   let list = visibleNotifications().filter(n=> filter==="all" || NOTIF_CATEGORY[n.type]===filter);
-  list = [...list].sort((a,b)=>{
+  list = sort === "urgency" ? sortByUrgency(list) : [...list].sort((a,b)=>{
     if(sort==="unread" && a.read!==b.read) return a.read ? 1 : -1;
     if(sort==="oldest") return a.time < b.time ? -1 : 1;
     return a.time > b.time ? -1 : 1;
@@ -422,6 +704,7 @@ function renderNotifications(){
           ${!n.read ? `<span class="notif-unread-dot"></span>` : ""}
         </div>
         <div class="notif-row-meta">
+          ${notifLevelChip(n)}
           <span class="notif-row-time">${fmtDateTime(n.time)}</span>
           ${n.orderId    ? `<span class="notif-row-action" data-goto="orderstatus">View Order →</span>` : ""}
           ${n.returnId   ? `<span class="notif-row-action" data-goto="returns">View Return →</span>` : ""}
@@ -497,6 +780,88 @@ async function markAllRead(){
 /* ============================================================
    ONLINE TRANSACTIONS
    ============================================================ */
+/* ============================================================
+   WHAT A NUMBER ON A TAB MEANS
+   ------------------------------------------------------------
+   One rule, portal-wide: a badge counts THINGS WAITING FOR YOU, and a
+   tab with nothing waiting shows no badge.
+
+   Every tab used to carry one, All and Completed and Cancelled
+   included, which made the number a row count — "how many of these
+   exist". That tells a staff member nothing about what to do next, and
+   it means the same digit signifies work on one tab and history on the
+   one beside it.
+
+   WHICH TABS QUALIFY. A queue is a state something is stuck in until a
+   person acts; a record is a state it has finished in.
+
+     pending / on-hold   an order waiting to be accepted or released
+     received…approved   a return still moving through its pipeline —
+                         approved included, because an approved refund
+                         is not a paid one
+     unread              a notification nobody has read
+
+   Everything else — All, Accepted, Shipping, Delivered, Completed,
+   Cancelled, Rejected, Processed — is a record and carries no badge.
+
+   NOT A SET OF SCREEN-LOCAL LISTS. One table here, consumed by all five
+   rows, so a sixth screen cannot quietly invent a seventh meaning. */
+const WORK_TABS = new Set([
+  /* Orders: Online Transactions, Order Queue, Payment Verification. */
+  "pending", "on-hold",
+  /* Returns still in flight. */
+  "received", "validated", "eligible", "approved",
+]);
+
+/* Two digits is all the row can hold without the pills reflowing; past
+   that the exact figure stops being the useful part anyway. */
+const BADGE_MAX = 99;
+
+/**
+ * The inner HTML of one tab, and the aria-label that explains it.
+ *
+ * THE LABEL MATTERS AS MUCH AS THE BADGE. A bare number in a span is
+ * announced as a stray digit after the tab name — "Pending, 7" could be a
+ * quantity, a page number or a code. The tab gets an explicit
+ * "Pending, 7 awaiting action" instead, so it is understandable without
+ * seeing the badge at all.
+ *
+ * @param {string} id     tab id, matched against WORK_TABS
+ * @param {string} label  visible text
+ * @param {number} count  how many are waiting
+ * @param {string} noun   what is being counted, for the spoken label
+ *
+ * `aria` is interpolated into a double-quoted attribute by the callers and is
+ * escaped with escHtml() there — which escapes `"` as well as the angle
+ * brackets, so it is safe for an attribute value. There is no escAttr() in the
+ * portal; site.js has one, but that is the storefront's own bundle.
+ */
+/* Every tab on the Notifications screen is a queue — the screen exists to be
+   cleared — so unread is meaningful on all of them, including All. This skips
+   the WORK_TABS gate and keeps everything else: nothing at zero, the same cap,
+   the same spoken label. */
+function tabBadgeAlways(label, count, noun){
+  const n = Number(count) || 0;
+  if(n <= 0) return { html: escHtml(label), aria: label };
+  const shown = n > BADGE_MAX ? BADGE_MAX + "+" : String(n);
+  return {
+    html: `${escHtml(label)} <span class="tab-count">${shown}</span>`,
+    aria: `${label}, ${n} ${noun}`,
+  };
+}
+
+function tabBadge(id, label, count, noun = "awaiting action"){
+  const n = Number(count) || 0;
+  if(!WORK_TABS.has(id) || n <= 0){
+    return { html: escHtml(label), aria: label };
+  }
+  const shown = n > BADGE_MAX ? BADGE_MAX + "+" : String(n);
+  return {
+    html: `${escHtml(label)} <span class="tab-count">${shown}</span>`,
+    aria: `${label}, ${n} ${noun}`,
+  };
+}
+
 const TXN_TABS = ["all","pending","accepted","shipping","delivered","completed","on-hold","cancelled"];
 
 function onlineOrders(){
@@ -512,14 +877,16 @@ function renderOnlineTxns(){
   const tabsEl = $("#txn-status-tabs");
   const filter = adminState.onlineTxnFilter;
 
+  /* Rows-per-page belongs in the merged toolbar row, not in a band of its
+     own above the table — see mountToolbarControl(). */
+  mountToolbarControl("online-txns", "page-size", `
+    <select class="filter-select" id="online-txn-page-size" aria-label="Rows per page">
+    <option value="10">10 per page</option>
+    <option value="25">25 per page</option>
+    <option value="50">50 per page</option>
+    </select>`);
+
   $("#txn-content").innerHTML = `
-    <div class="table-toolbar" style="justify-content:flex-end">
-      <select class="filter-select" id="online-txn-page-size" aria-label="Rows per page">
-        <option value="10">10 per page</option>
-        <option value="25">25 per page</option>
-        <option value="50">50 per page</option>
-      </select>
-    </div>
     <div class="table-wrap viewport-bound">
       <table class="data-table">
         <thead><tr><th>Order ID</th><th>Customer</th><th>Date</th><th>Payment</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
@@ -565,7 +932,11 @@ function renderOnlineTxns(){
           const all = Object.values(c).reduce((n,v)=>n+v, 0);
           tabsEl.innerHTML = TXN_TABS.map(t=>{
             const n = t === "all" ? all : (c[t] || 0);
-            return `<button class="tab-btn ${t===adminState.onlineTxnFilter?"active":""}" data-txnfilter="${t}">${t==="all"?"All":STATUS_LABEL[t]||t} <span class="tab-count">${n}</span></button>`;
+            /* Badge only where there is work waiting — see tabBadge(). */
+            const b = tabBadge(t, t==="all" ? "All" : (STATUS_LABEL[t]||t), n);
+            return `<button class="tab-btn ${t===adminState.onlineTxnFilter?"active":""}" data-txnfilter="${t}"
+                            role="tab" aria-selected="${t===adminState.onlineTxnFilter}"
+                            aria-label="${escHtml(b.aria)}">${b.html}</button>`;
           }).join("");
           $$("#txn-status-tabs .tab-btn").forEach(btn=>{
             btn.addEventListener("click", ()=>{
@@ -618,14 +989,16 @@ function renderQueue(){
 
   /* Shell first: the tabs and the paging chrome exist before rows arrive, so
      the loading state has somewhere to live. */
+  /* Rows-per-page belongs in the merged toolbar row, not in a band of its
+     own above the table — see mountToolbarControl(). */
+  mountToolbarControl("ordersqueue", "page-size", `
+    <select class="filter-select" id="queue-page-size" aria-label="Rows per page">
+    <option value="10">10 per page</option>
+    <option value="25">25 per page</option>
+    <option value="50">50 per page</option>
+    </select>`);
+
   $("#queue-content").innerHTML = `
-    <div class="table-toolbar" style="justify-content:flex-end">
-      <select class="filter-select" id="queue-page-size" aria-label="Rows per page">
-        <option value="10">10 per page</option>
-        <option value="25">25 per page</option>
-        <option value="50">50 per page</option>
-      </select>
-    </div>
     <div class="queue-list" id="queue-list"></div>
     <div class="table-toolbar" style="margin-top:14px">
       <span class="muted" id="queue-showing" style="font-size:.82rem"></span>
@@ -694,7 +1067,11 @@ function renderQueue(){
           const totalPre = QUEUE_TABS.slice(1).reduce((n,t)=> n + (counts[t]||0), 0);
           tabsEl.innerHTML = QUEUE_TABS.map(t=>{
             const n = t === "all" ? totalPre : (counts[t] || 0);
-            return `<button class="tab-btn ${t===adminState.queueFilter?"active":""}" data-queuefilter="${t}">${t==="all"?"All":STATUS_LABEL[t]||t} <span class="tab-count">${n}</span></button>`;
+            /* Badge only where there is work waiting — see tabBadge(). */
+            const b = tabBadge(t, t==="all" ? "All" : (STATUS_LABEL[t]||t), n);
+            return `<button class="tab-btn ${t===adminState.queueFilter?"active":""}" data-queuefilter="${t}"
+                            role="tab" aria-selected="${t===adminState.queueFilter}"
+                            aria-label="${escHtml(b.aria)}">${b.html}</button>`;
           }).join("");
           $$("#queue-status-tabs .tab-btn").forEach(btn=>{
             btn.addEventListener("click", ()=>{
@@ -764,14 +1141,16 @@ function renderPaymentVerify(){
   const tabsEl = $("#pv-status-tabs");
   const filter = adminState.pvFilter;
 
+  /* Rows-per-page belongs in the merged toolbar row, not in a band of its
+     own above the table — see mountToolbarControl(). */
+  mountToolbarControl("paymentverify", "page-size", `
+    <select class="filter-select" id="pv-page-size" aria-label="Rows per page">
+    <option value="10">10 per page</option>
+    <option value="25">25 per page</option>
+    <option value="50">50 per page</option>
+    </select>`);
+
   $("#pv-content").innerHTML = `
-    <div class="table-toolbar" style="justify-content:flex-end">
-      <select class="filter-select" id="pv-page-size" aria-label="Rows per page">
-        <option value="10">10 per page</option>
-        <option value="25">25 per page</option>
-        <option value="50">50 per page</option>
-      </select>
-    </div>
     <div class="pv-list" id="pv-list"></div>
     <div class="table-toolbar" style="margin-top:14px">
       <span class="muted" id="pv-showing" style="font-size:.82rem"></span>
@@ -843,7 +1222,11 @@ function renderPaymentVerify(){
           const c = meta.counts || {};
           tabsEl.innerHTML = PV_TABS.map(t=>{
             const n = t === "all" ? ((c.pending||0) + (c["on-hold"]||0)) : (c[t] || 0);
-            return `<button class="tab-btn ${t===adminState.pvFilter?"active":""}" data-pvfilter="${t}">${t==="all"?"All":STATUS_LABEL[t]||t} <span class="tab-count">${n}</span></button>`;
+            /* Badge only where there is work waiting — see tabBadge(). */
+            const b = tabBadge(t, t==="all" ? "All" : (STATUS_LABEL[t]||t), n);
+            return `<button class="tab-btn ${t===adminState.pvFilter?"active":""}" data-pvfilter="${t}"
+                            role="tab" aria-selected="${t===adminState.pvFilter}"
+                            aria-label="${escHtml(b.aria)}">${b.html}</button>`;
           }).join("");
           $$("#pv-status-tabs .tab-btn").forEach(btn=>{
             btn.addEventListener("click", ()=>{
@@ -917,14 +1300,16 @@ function cancelOrder(orderId){
    ============================================================ */
 /* Order Status — server-paged. */
 function renderOrderStatus(){
+  /* Rows-per-page belongs in the merged toolbar row, not in a band of its
+     own above the table — see mountToolbarControl(). */
+  mountToolbarControl("orderstatus", "page-size", `
+    <select class="filter-select" id="order-status-page-size" aria-label="Rows per page">
+    <option value="10">10 per page</option>
+    <option value="25">25 per page</option>
+    <option value="50">50 per page</option>
+    </select>`);
+
   $("#status-content").innerHTML = `
-    <div class="table-toolbar" style="justify-content:flex-end">
-      <select class="filter-select" id="order-status-page-size" aria-label="Rows per page">
-        <option value="10">10 per page</option>
-        <option value="25">25 per page</option>
-        <option value="50">50 per page</option>
-      </select>
-    </div>
     <div class="table-wrap viewport-bound">
       <table class="data-table">
         <thead><tr><th>Order ID</th><th>Customer</th><th>Date</th><th>Total</th><th>Status</th><th>Notes</th><th>Actions</th></tr></thead>
@@ -1167,14 +1552,16 @@ async function renderHistory(){
     </tr>`;
   }).join("");
 
+  /* Rows-per-page belongs in the merged toolbar row, not in a band of its
+     own above the table — see mountToolbarControl(). */
+  mountToolbarControl("orderhistory", "page-size", `
+    <select class="filter-select" id="ord-history-page-size" aria-label="Rows per page">
+    <option value="10">10 per page</option>
+    <option value="25">25 per page</option>
+    <option value="50">50 per page</option>
+    </select>`);
+
   $("#history-content").innerHTML = `
-    <div class="table-toolbar" style="justify-content:flex-end">
-      <select class="filter-select" id="ord-history-page-size" aria-label="Rows per page">
-        <option value="10">10 per page</option>
-        <option value="25">25 per page</option>
-        <option value="50">50 per page</option>
-      </select>
-    </div>
     <div class="table-wrap viewport-bound">
       <table class="data-table">
         <thead><tr><th>Order ID</th><th>Customer</th><th>Email</th><th>Date</th><th>Payment</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
@@ -1207,14 +1594,16 @@ async function renderHistory(){
 /* Receipt Generation — server-paged. Scoped to completed orders in the query
    rather than pulling every order and filtering to the completed ones. */
 function renderReceipts(){
+  /* Rows-per-page belongs in the merged toolbar row, not in a band of its
+     own above the table — see mountToolbarControl(). */
+  mountToolbarControl("receipts", "page-size", `
+    <select class="filter-select" id="receipts-page-size" aria-label="Rows per page">
+    <option value="10">10 per page</option>
+    <option value="25">25 per page</option>
+    <option value="50">50 per page</option>
+    </select>`);
+
   $("#receipts-content").innerHTML = `
-    <div class="table-toolbar" style="justify-content:flex-end">
-      <select class="filter-select" id="receipts-page-size" aria-label="Rows per page">
-        <option value="10">10 per page</option>
-        <option value="25">25 per page</option>
-        <option value="50">50 per page</option>
-      </select>
-    </div>
     <div class="table-wrap viewport-bound">
       <table class="data-table">
         <thead><tr><th>Order ID</th><th>Customer</th><th>Completed</th><th>Total</th><th>Payment</th><th>Actions</th></tr></thead>
@@ -1356,7 +1745,13 @@ function renderReturns(){
   const tabsEl = $("#return-tabs");
   tabsEl.innerHTML = RETURN_TABS.map(t=>{
     const count = t.id==="all" ? RETURNS.length : RETURNS.filter(r=>r.status===t.id).length;
-    return `<button class="return-tab-btn ${adminState.returnTab===t.id?"active":""}" data-returntab="${t.id}">${t.label}${count?` <span>(${count})</span>`:""}</button>`;
+    /* Was a parenthesised "(3)" on every tab including All, Rejected and
+       Processed. Same rule as the order rows now: a badge means a request
+       still needs somebody, and the finished states carry none. */
+    const b = tabBadge(t.id, t.label, count, "to process");
+    return `<button class="return-tab-btn ${adminState.returnTab===t.id?"active":""}" data-returntab="${t.id}"
+                    role="tab" aria-selected="${adminState.returnTab===t.id}"
+                    aria-label="${escHtml(b.aria)}">${b.html}</button>`;
   }).join("");
   $$("#return-tabs .return-tab-btn").forEach(btn=>{
     btn.addEventListener("click", ()=>{ adminState.returnTab = btn.dataset.returntab; renderReturns(); });

@@ -47,11 +47,14 @@ const MODULE_ORDER = [
   "pos", "pos-payment",
   "notifications", "online-txns", "ordersqueue", "paymentverify",
   "orderstatus", "orderhistory", "receipts", "returns",
-  "users", "b2b", "landing", "products",
+  "users", "b2b", "landing", "products", "reviews",
   "inventory", "inventory-manage", "expiry",
   "sales", "batches",
   "payments", "transactions", "audit",
   "roles",
+  /* Last, matching its position in the sidebar: the groups above are about the
+     business, this one is about the person using it. */
+  "profile",
 ];
 
 /* Each portal entry is portal/<role>/index.html, so the shell and the

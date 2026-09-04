@@ -54,8 +54,31 @@
     <!-- ===== SCAFFOLDING required by site.js ===== -->
     <div id="modal-scrim" class="modal-scrim">
       <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <button class="modal-close" id="modal-close" aria-label="Close">&times;</button>
-        <div id="modal-body"></div>
+        <!-- #modal-title WAS MISSING FROM THIS PAGE, AND THAT BROKE EVERY MODAL.
+
+             openModal() opens with `$("#modal-title").textContent = title`. With
+             no such element that line threw before anything opened, so SIGN IN
+             on the signed-out guard and Proceed to Checkout in the cart both
+             looked like dead buttons on all four profile pages while working
+             fine on index.html and shop.html, which have it.
+
+             aria-labelledby="modal-title" was already here, pointing at nothing
+             — a dangling reference, so role="dialog" also had no accessible
+             name. Both are fixed by the element existing.
+
+             The `modal-body` CLASS was missing too; .modal-body carries the
+             dialog's 18px/26px padding, so content sat flush against the edges.
+
+             Same drift as #toast-wrap vs #toast-root, written up on showToast().
+             The shared shell in assets/js/public/modal-shell.js now owns this
+             markup so the copies cannot diverge again. -->
+        <div class="modal-head">
+          <h3 id="modal-title"></h3>
+          <button class="modal-close" id="modal-close" aria-label="Close dialog">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="butt" stroke-linejoin="round" width="20" height="20"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="modal-body" id="modal-body"></div>
       </div>
     </div>
     <div class="scrim" id="cart-scrim"></div>
@@ -143,6 +166,7 @@
     </main>
 
     <script type="module" src="../../assets/js/core/index.js"></script>
+    <script defer src="../../assets/js/public/modal-shell.js"></script>
     <script defer src="../../assets/js/public/site.js"></script>
     <script defer src="../../assets/js/public/profile-shell.js"></script>
     <script>

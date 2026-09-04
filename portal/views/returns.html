@@ -42,7 +42,12 @@
       </p>
     </div>
   </div>
-  <div class="table-toolbar" style="margin-bottom: 14px">
+  <!-- Tabs left, filters right, one band — see .view-toolbar in portal.css.
+       These were two stacked rows: the search box, then the status tabs on
+       their own line below it. -->
+  <div class="view-toolbar">
+    <div class="return-tabs" id="return-tabs" role="tablist" aria-label="Return request stage"></div>
+    <div class="view-toolbar-filters">
     <div class="search-box">
       <svg
         viewBox="0 0 24 24"
@@ -63,8 +68,8 @@
         data-refilters="returns"
       />
     </div>
+    </div>
   </div>
-  <div class="return-tabs" id="return-tabs"></div>
   <div id="returns-content" class="returns-scroll"></div>
 </section>
   </body>

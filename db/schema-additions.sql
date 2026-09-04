@@ -133,9 +133,17 @@ CREATE TABLE IF NOT EXISTS login_attempts (
     id INT AUTO_INCREMENT NOT NULL,
     email VARCHAR(100) NOT NULL,
     ip_address VARCHAR(45) NOT NULL,       /* 45 chars fits IPv6 */
+    /* Which audience the attempt was against — see migration 012. The
+       storefront sign-in form probes the STAFF endpoint before the customer
+       one, so a single wrong password produces two failures; without this
+       column they share a streak and a customer is locked out on their second
+       press for one mistake. */
+    context VARCHAR(16) NOT NULL DEFAULT 'customer',
     successful TINYINT(1) NOT NULL DEFAULT 0,
     attempted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id)
+    PRIMARY KEY (id),
+    /* The lookup Lockout performs on every attempt. */
+    KEY idx_attempts_key (email, ip_address, context, attempted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE INDEX IF NOT EXISTS idx_attempts_email ON login_attempts(email, attempted_at);

@@ -63,11 +63,72 @@ final class Stock
             throw new InvalidArgumentException("Stock::sell needs a positive quantity, got {$qty}.");
         }
 
-        return Database::run(
+        /* Read the band BEFORE the movement. Every path that reduces stock goes
+           through this method, which is why the alert is raised here rather
+           than in pos/checkout.php and orders/status.php separately — two
+           copies of a threshold rule is how the four stock-writing rules this
+           class replaced came to disagree in the first place. */
+        $before = Inventory::levelForProduct($productId);
+
+        $rows = Database::run(
             'UPDATE products SET stock = stock - ?, sold = sold + ?
               WHERE id = ? AND stock >= ?',
             [$qty, $qty, $productId, $qty]
         );
+
+        if ($rows > 0) {
+            self::alertOnBandCrossing($productId, $before);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Raise a Critical notification when a sale takes a product INTO the
+     * critical or out-of-stock band.
+     *
+     * ON THE TRANSITION, NOT THE STATE. Firing whenever stock is low would put
+     * a row in the bell for every jar sold of an already-critical product — on
+     * a busy afternoon that is dozens of identical alerts, and a bell nobody
+     * reads is worse than no bell, because it also buries the ones that matter.
+     * Comparing the band on either side of the movement means one alert per
+     * crossing, which is one alert per thing that actually changed.
+     *
+     * Crossing DOWNWARD only: 'ok' to 'crit' fires, and 'crit' to 'out' fires
+     * again because running out is a different problem from running low. A sale
+     * cannot move a product upward, so there is no other direction to consider.
+     *
+     * NOT FATAL. This runs inside the caller's transaction alongside the order
+     * it belongs to, and an order must not be lost because the bell could not
+     * be rung. A failure here is logged and the sale stands.
+     */
+    private static function alertOnBandCrossing(string $productId, ?string $before): void
+    {
+        try {
+            $after = Inventory::levelForProduct($productId);
+            if ($after !== 'crit' && $after !== 'out') {
+                return;
+            }
+            if ($after === $before) {
+                return;
+            }
+
+            $row = Database::one('SELECT name, stock FROM products WHERE id = ?', [$productId]);
+            if ($row === null) {
+                return;
+            }
+
+            $stock = (int) $row['stock'];
+            $message = $after === 'out'
+                ? sprintf('%s is out of stock — 0 units remaining.', $row['name'])
+                : sprintf('%s has fallen to critical stock — %d unit(s) left.', $row['name'], $stock);
+
+            /* 'inventory' maps to Critical in Notify's one table; the level is
+               not passed from here, deliberately. */
+            Notify::createOnceWhileUnread('inventory', $productId, $message);
+        } catch (Throwable $e) {
+            error_log('[elishabay] stock alert failed for ' . $productId . ': ' . $e->getMessage());
+        }
     }
 
     /**

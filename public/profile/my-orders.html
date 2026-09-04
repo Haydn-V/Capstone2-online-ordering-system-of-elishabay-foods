@@ -54,8 +54,31 @@
     <!-- ===== SCAFFOLDING required by script.js ===== -->
     <div id="modal-scrim" class="modal-scrim">
       <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <button class="modal-close" id="modal-close" aria-label="Close">&times;</button>
-        <div id="modal-body"></div>
+        <!-- #modal-title WAS MISSING FROM THIS PAGE, AND THAT BROKE EVERY MODAL.
+
+             openModal() opens with `$("#modal-title").textContent = title`. With
+             no such element that line threw before anything opened, so SIGN IN
+             on the signed-out guard and Proceed to Checkout in the cart both
+             looked like dead buttons on all four profile pages while working
+             fine on index.html and shop.html, which have it.
+
+             aria-labelledby="modal-title" was already here, pointing at nothing
+             — a dangling reference, so role="dialog" also had no accessible
+             name. Both are fixed by the element existing.
+
+             The `modal-body` CLASS was missing too; .modal-body carries the
+             dialog's 18px/26px padding, so content sat flush against the edges.
+
+             Same drift as #toast-wrap vs #toast-root, written up on showToast().
+             The shared shell in assets/js/public/modal-shell.js now owns this
+             markup so the copies cannot diverge again. -->
+        <div class="modal-head">
+          <h3 id="modal-title"></h3>
+          <button class="modal-close" id="modal-close" aria-label="Close dialog">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="butt" stroke-linejoin="round" width="20" height="20"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="modal-body" id="modal-body"></div>
       </div>
     </div>
     <div class="scrim" id="cart-scrim"></div>
@@ -126,6 +149,7 @@
     </main>
 
     <script type="module" src="../../assets/js/core/index.js"></script>
+    <script defer src="../../assets/js/public/modal-shell.js"></script>
     <script defer src="../../assets/js/public/site.js"></script>
     <script defer src="../../assets/js/public/profile-shell.js"></script>
     <script>
@@ -159,7 +183,14 @@
           total: o.total,
           payMethod: o.payMethod,
           orderType: o.orderType,
-          items: o.items.map(i => ({ name: i.name, qty: i.qty, price: i.price })),
+          /* productId and the customer's own review travel with each line so
+             the rating control can be rendered and pre-filled without a second
+             request per item. All four come from shop/my-orders.php. */
+          items: o.items.map(i => ({
+            name: i.name, qty: i.qty, price: i.price,
+            productId: i.productId,
+            myRating: i.myRating, myComment: i.myComment, myStatus: i.myStatus,
+          })),
           /* Carried through so a cancelled card can show why, and a shipped one
              can show the courier number. Both come from the server; neither is
              invented here. */
@@ -231,6 +262,7 @@
               <div class="order-item-qty">Qty: ${item.qty}</div>
             </div>
             <div class="order-item-price">₱${(item.price * item.qty).toLocaleString()}</div>
+            ${order.status === "completed" ? ratingControl(item) : ""}
           </div>`).join("");
 
         const actions = getOrderActions(order.status, order.id);
@@ -288,7 +320,231 @@
           if (action === "cancel")   { await cancelOrder(id, btn); return; }
           if (action === "received") { await confirmReceived(id, btn); return; }
           if (action === "reorder")  { showToast(`Items from ${id} added to cart!`, "success"); }
+          if (action === "rate") {
+            /* Found by id rather than passed through the DOM: the button
+               carries an identifier, never a JSON blob of the record. */
+            const line = MY_ORDERS.flatMap(o => o.items)
+              .find(i => i.productId === btn.dataset.product);
+            if (line) openRatingModal(line);
+            return;
+          }
         });
+      });
+    }
+
+
+    /* ==========================================================
+       RATE A PRODUCT — only from a completed order
+       ----------------------------------------------------------
+       THE CONTROL LIVES HERE AND NOWHERE ELSE. A star input on the
+       shop page would have to be disabled for almost everyone who
+       saw it, and a control that is usually refused teaches people
+       to ignore controls. Here it appears exactly where the right
+       to use it was earned: on the line of an order that reached
+       `completed`.
+
+       IT IS NOT A SECURITY BOUNDARY. api/shop/review-save.php
+       re-derives the qualifying order from the database on every
+       write and never reads one from the request. This is the
+       presentation half of that rule — Rbac.php's header states
+       the general form: hiding a control is presentation, not
+       security, and every endpoint decides for itself.
+       ========================================================== */
+
+    /* The per-line control. Shows what the customer already said, if
+       anything, so the button is honest about what pressing it does —
+       "Rate this product" and "Edit your rating" are different promises.
+
+       A HELD OR REJECTED REVIEW STILL SHOWS ITS STATE HERE. Somebody
+       whose review is waiting needs to be told that rather than left to
+       conclude it vanished; the alternative is a button that looks like
+       it did nothing. */
+    function ratingControl(item) {
+      if (!item.productId) return "";
+      const rated = item.myRating != null;
+      const state = rated && item.myStatus !== "published"
+        ? `<span class="rate-state rate-state-${item.myStatus}">${
+            item.myStatus === "pending" ? "Waiting to be checked" : "Not published"
+          }</span>`
+        : "";
+      const stars = rated
+        ? `<span class="rate-mine" aria-hidden="true">${
+            [1,2,3,4,5].map(n => `<svg viewBox="0 0 24 24" fill="${n <= item.myRating ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.4"><path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.8L12 17.3 5.8 20.9l1.6-6.8L2.2 8.9l6.9-.6z"/></svg>`).join("")
+          }</span>`
+        : "";
+      return `<div class="order-item-rate">
+        ${stars}${state}
+        <button type="button" class="btn-rate" data-action="rate"
+                data-product="${esc(item.productId)}">
+          ${rated ? `Edit your rating<span class="sr-only"> of ${esc(item.name)}, currently ${item.myRating} of 5 stars</span>`
+                  : `Rate this product<span class="sr-only">: ${esc(item.name)}</span>`}
+        </button>
+      </div>`;
+    }
+
+    /* A REAL FIELDSET OF RADIO INPUTS. Not clickable spans.
+
+       The five stars are one radio group, so the browser gives us,
+       for free and correctly: arrow-key movement between options,
+       Tab in and out of the group as a single stop, the roving focus
+       ring, and a screen reader announcing "3 of 5 stars, radio
+       button, 3 of 5". A div with click handlers has none of that
+       and no amount of aria puts it back properly.
+
+       The visible star is the <label>; the input is clipped rather
+       than `display:none`, because a hidden input cannot receive
+       focus and the focus ring is what tells a keyboard user where
+       they are. */
+    function starFieldset(name, current) {
+      const opts = [1,2,3,4,5].map(n => `
+        <input type="radio" class="rate-radio" id="${name}-${n}" name="${name}"
+               value="${n}" ${current === n ? "checked" : ""} />
+        <label class="rate-star" for="${name}-${n}">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.8L12 17.3 5.8 20.9l1.6-6.8L2.2 8.9l6.9-.6z"/>
+          </svg>
+          <span class="sr-only">${n} of 5 stars</span>
+        </label>`).join("");
+      return `<fieldset class="rate-stars-wrap">
+        <legend>Your rating</legend>
+        <div class="rate-stars">${opts}</div>
+        <p class="rate-hint" id="${name}-hint" aria-live="polite">Choose 1 to 5 stars.</p>
+      </fieldset>`;
+    }
+
+    const RATE_WORDS = {
+      1: "1 of 5 — Poor",
+      2: "2 of 5 — Not good",
+      3: "3 of 5 — Okay",
+      4: "4 of 5 — Good",
+      5: "5 of 5 — Excellent",
+    };
+
+    function openRatingModal(item) {
+      const editing = item.myRating != null;
+      const name = "rate-" + String(item.productId).replace(/[^a-z0-9-]/gi, "");
+
+      const held = item.myStatus === "pending";
+      const rejected = item.myStatus === "rejected";
+
+      const body = `
+        <p class="rate-intro">
+          <strong>${esc(item.name)}</strong><br>
+          Only customers who bought a product can rate it, so this review will
+          show as a verified purchase.
+        </p>
+        ${held ? `<div class="rate-note rate-note-pending">
+          Your last review is waiting to be checked. Ratings are never held for
+          being low — only the wording is checked.</div>` : ""}
+        ${rejected ? `<div class="rate-note rate-note-rejected">
+          Your last review was not published. Editing it sends it to be looked
+          at again.</div>` : ""}
+        <form id="rate-form" novalidate>
+          ${starFieldset(name, item.myRating)}
+          <div class="rate-field">
+            <label for="rate-comment">Comment <span class="rate-optional">(optional)</span></label>
+            <textarea id="rate-comment" maxlength="1000" rows="4"
+              placeholder="What was it like? What would you tell someone thinking of buying it?">${esc(item.myComment || "")}</textarea>
+            <p class="rate-hint"><span id="rate-count">0</span>/1000</p>
+          </div>
+          <p class="rate-err" id="rate-err" role="alert"></p>
+          <button type="submit" class="btn btn-primary btn-block" id="rate-submit">
+            ${editing ? "Update my rating" : "Post my rating"}
+          </button>
+        </form>`;
+
+      openModal(editing ? "Edit your rating" : "Rate this product", body, {
+        onOpen: (root) => {
+          const form = root.querySelector("#rate-form");
+          const hint = root.querySelector(`#${name}-hint`);
+          const err  = root.querySelector("#rate-err");
+          const ta   = root.querySelector("#rate-comment");
+          const cnt  = root.querySelector("#rate-count");
+
+          /* THE FILL IS DRIVEN FROM HERE, not from CSS sibling selectors.
+
+             With inputs in DOM order 1..5, `:checked ~ label` can only
+             reach the stars AFTER the chosen one, so a pure-CSS fill has
+             to either reverse the DOM — which reverses the arrow keys
+             with it — or default every star to gold and grey out the
+             tail. Defaulting to gold would show five filled stars on a
+             product nobody has rated, which is the same lie this whole
+             feature exists to remove. So: default empty, filled here.
+
+             Says the value in words as well as shapes — the live region
+             announces it, and a sighted user gets the same confirmation
+             that five gold shapes alone do not give. */
+          const stars = [...form.querySelectorAll(".rate-star")];
+          const paint = (n) => stars.forEach((el, i) => el.classList.toggle("on", i < n));
+          const chosen = () => {
+            const v = form.querySelector(`input[name="${name}"]:checked`);
+            return v ? Number(v.value) : 0;
+          };
+          const sync = () => {
+            const n = chosen();
+            paint(n);
+            hint.textContent = n ? RATE_WORDS[n] : "Choose 1 to 5 stars.";
+          };
+          form.querySelectorAll(`input[name="${name}"]`)
+              .forEach(r => r.addEventListener("change", sync));
+
+          /* Mouse preview. Restores the real value on the way out, so the
+             control never keeps showing a rating nobody chose. Pointer
+             events only — a keyboard user moves the selection itself and
+             gets the announcement from the change handler above. */
+          stars.forEach((el, i) => {
+            el.addEventListener("mouseenter", () => paint(i + 1));
+          });
+          form.querySelector(".rate-stars")
+              ?.addEventListener("mouseleave", () => paint(chosen()));
+
+          sync();
+
+          const count = () => { cnt.textContent = String(ta.value.length); };
+          ta.addEventListener("input", count);
+          count();
+
+          form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            err.textContent = "";
+            const picked = form.querySelector(`input[name="${name}"]:checked`);
+            if (!picked) {
+              /* Refused here so the customer is not made to wait for a
+                 round trip to learn they missed the one required field.
+                 The server refuses it too — this is a courtesy. */
+              err.textContent = "Choose a rating from 1 to 5 stars.";
+              form.querySelector(".rate-star").focus();
+              return;
+            }
+            const btn = form.querySelector("#rate-submit");
+            const done = busy(btn, "Saving…");
+            try {
+              const { data } = await EbApi.post("shop/review-save.php", {
+                product_id: item.productId,
+                rating: Number(picked.value),
+                comment: ta.value.trim(),
+              });
+              closeModal();
+              /* TOLD PLAINLY WHEN IT IS HELD. A customer told "posted"
+                 who then cannot find their review learns that the shop
+                 lies to them. */
+              showToast(
+                data.held
+                  ? "Thanks — your review will appear once it has been checked."
+                  : (data.edited ? "Your rating has been updated." : "Thanks for your rating!"),
+                data.held ? "info" : "success"
+              );
+              loadMyOrders();
+            } catch (e2) {
+              done();
+              if (e2.isValidation && e2.fields) {
+                err.textContent = Object.values(e2.fields)[0] || e2.message;
+              } else {
+                err.textContent = e2.message;
+              }
+            }
+          });
+        }
       });
     }
 

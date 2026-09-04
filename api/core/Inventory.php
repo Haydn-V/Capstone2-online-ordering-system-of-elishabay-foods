@@ -320,6 +320,76 @@ final class Inventory
     ];
 
     /**
+     * The stock band ONE product is in right now.
+     *
+     * Built from the same three SQL builders every list screen stacks, scoped
+     * to a single row, so a band computed here cannot drift from the band the
+     * Inventory Report shows. A shorter version reading only
+     * stock_floor_critical was the obvious alternative and would have been
+     * wrong in a specific way: rankSelect() also calls a product critical when
+     * its days of cover fall under the restock lead time, so a fast seller can
+     * be critical holding well over the floor, and a producer using the floor
+     * alone would silently never fire for exactly the products that empty
+     * fastest.
+     *
+     * Returns 'out' | 'crit' | 'warn' | 'ok', or null when the product is gone.
+     * Two queries per sale — Stock::sell() needs the band on either side of the
+     * movement to tell a crossing from a sale of something already critical.
+     */
+    public static function levelForProduct(string $productId): ?string
+    {
+        $base = 'SELECT p.id, p.stock,
+                        COALESCE(vel.units, 0) AS window_units
+                   FROM products p
+                   ' . self::velocityJoin() . '
+                  WHERE p.id = ?';
+
+        $derived = 'SELECT b.*, ' . self::derivedSelect() . ' FROM (' . $base . ') b';
+        $ranked  = 'SELECT d.*, ' . self::rankSelect()    . ' FROM (' . $derived . ') d';
+
+        $rank = Database::scalar("SELECT level_rank FROM ($ranked) r", [$productId]);
+        if ($rank === false || $rank === null) {
+            return null;
+        }
+
+        return self::LEVELS[(int) $rank]['level'] ?? null;
+    }
+
+    /**
+     * The stock line a SHOPPER reads, quantity included.
+     *
+     * Staff wording is an instruction to act ("Critical"); shopper wording is
+     * scarcity plus the number, which is what the adviser asked for. Both read
+     * the same bands underneath — see the note on the storefront's exact-count
+     * trade-off in shop/products.php.
+     *
+     * WHY THE NUMBER OVERRIDES THE BAND AT TWO POINTS
+     * -----------------------------------------------
+     * `crit` is not only "few units left": rankSelect() also raises it when
+     * days_cover falls under the restock lead time, which a fast seller can hit
+     * holding 400 jars. "Only 400 left" is not a sentence anybody should read,
+     * so the phrasing is chosen by the count against the same
+     * stock_floor_critical the bands use, and only the pill colour comes from
+     * the band. Zero is Out of Stock whatever the band says, because a count of
+     * zero beside an enabled Add button is the one wrong answer here.
+     */
+    public static function shopLabel(string $level, int $stock): string
+    {
+        if ($stock <= 0) {
+            return 'Out of Stock';
+        }
+
+        $floor = (int) self::tunables()['stock_floor_critical'];
+        if ($stock <= $floor) {
+            return sprintf('Only %s left', number_format($stock));
+        }
+        if ($level === 'crit' || $level === 'warn') {
+            return sprintf('Low stock · %s left', number_format($stock));
+        }
+        return sprintf('In Stock · %s available', number_format($stock));
+    }
+
+    /**
      * Turn one row of derived columns into the shape the client renders.
      *
      * @param array<string,mixed> $r

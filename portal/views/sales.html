@@ -195,6 +195,44 @@
       <div class="pagination" id="sales-pagination" style="margin-left: auto"></div>
     </div>
   </div>
+
+  <!-- BEST SELLERS FOR THE SELECTED RANGE.
+
+       api/reports/sales.php has always computed this and nothing ever read it;
+       the same is true of the payment-method split below. Both are rendered by
+       renderSales() from the response that was already arriving.
+
+       The two labels below are load-bearing, not decoration:
+
+       "ranked by revenue" — the endpoint sorts by revenue on purpose, and its
+       comment says why: ranking by units flatters cheap products, and a report
+       used to decide what to make more of should rank by what earned. A reader
+       who assumes it is ordered by the units column will misread the table.
+
+       "in this period" — the Landing Page module has its own Best Sellers list
+       ranked by lifetime products.sold. These two WILL disagree, correctly, and
+       without the period on the heading someone will file that as a bug. -->
+  <div class="panel" style="margin-top: 20px">
+    <div class="panel-header">
+      <span class="panel-title"
+        style="font-size: 1rem; font-weight: 700; font-family: var(--font-ui)"
+        >Best Sellers in Period</span
+      >
+      <span class="lp-hint" id="top-products-note">ranked by revenue</span>
+    </div>
+    <div id="top-products-body"></div>
+  </div>
+
+  <div class="panel" style="margin-top: 20px">
+    <div class="panel-header">
+      <span class="panel-title"
+        style="font-size: 1rem; font-weight: 700; font-family: var(--font-ui)"
+        >Payment Methods in Period</span
+      >
+      <span class="lp-hint" id="by-method-note">share of orders and revenue</span>
+    </div>
+    <div id="by-method-body"></div>
+  </div>
 </section>
   </body>
 </html>

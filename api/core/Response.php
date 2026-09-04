@@ -35,19 +35,26 @@ final class Response
      *                        FORBIDDEN, NOT_FOUND, CONFLICT, RATE_LIMITED, SERVER
      * @param array  $fields  field name => message, for form rendering
      */
+    /**
+     * @param array $fields form-input errors, rendered against a form by the client
+     * @param array $meta   anything else the client needs to act on the refusal
+     *                      (a retry delay, say) — kept OUT of `fields` so it is
+     *                      never mistaken for an input name
+     */
     public static function error(
         string $code,
         string $message,
         int $status = 400,
-        array $fields = []
+        array $fields = [],
+        array $meta = []
     ): never {
         self::send([
             'ok'    => false,
-            'error' => [
+            'error' => array_merge($meta, [
                 'code'    => $code,
                 'message' => $message,
                 'fields'  => (object) $fields,
-            ],
+            ]),
         ], $status);
     }
 
@@ -83,9 +90,21 @@ final class Response
         self::error('CONFLICT', $message, 409);
     }
 
-    public static function rateLimited(string $message): never
+    /**
+     * @param int $retryAfter seconds the caller must wait, 0 when unknown.
+     *
+     * NOT PASSED AS A `fields` ENTRY. `fields` means "these form inputs are
+     * wrong" and the client renders it straight onto a form — a `retryAfter`
+     * key in there would have the sign-in modal hunting for an input by that
+     * name. It goes beside `fields` in the envelope instead, and out as a real
+     * `Retry-After` header, which is what the status code already promises.
+     */
+    public static function rateLimited(string $message, int $retryAfter = 0): never
     {
-        self::error('RATE_LIMITED', $message, 429);
+        if ($retryAfter > 0) {
+            header('Retry-After: ' . $retryAfter);
+        }
+        self::error('RATE_LIMITED', $message, 429, [], ['retryAfter' => $retryAfter]);
     }
 
     public static function serverError(string $message = 'Something went wrong.'): never

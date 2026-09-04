@@ -220,7 +220,25 @@ async function restoreInvProduct(productId){
    MODULE: INVENTORY MANAGEMENT
    ============================================================ */
 function renderInventoryManage(tab="overview"){
+  /* THE PILL ROW DOES NOT GO THROUGH navigate(), so it does not get
+     enterModule()'s reset. Without this, switching Restock -> Stock Overview on
+     the pills kept whatever filter the last visit left behind — the same stuck
+     filter the deep-link intent was rewritten to avoid, arriving by the other
+     door.
+
+     Keyed on the tab actually CHANGING, so a re-render of the tab you are
+     already on — a filter edit, a save, a restock that refreshes the list —
+     keeps what the operator set. And skipped when this render is carrying a
+     one-shot intent, because navigate() has just applied it and clearing it
+     here would undo the shortcut a line later. */
+  const changingTab = adminState.invTab !== tab;
   adminState.invTab = tab;
+  const carryingIntent = typeof navIntent === "function" && navIntent("level") !== undefined;
+  if(changingTab && tab === "overview" && !carryingIntent){
+    adminState.invOverviewLevel = "all";
+    adminState.invOverviewQuery = "";
+    adminState.stockOvwPager.page = 1;
+  }
 
   /* THE REPORTED BUG. This screen switched its panel and never told the
      sidebar, so clicking Restock in the sidebar and then Replenish (Bulk) in
@@ -246,6 +264,17 @@ function renderInventoryManage(tab="overview"){
     btn.classList.toggle("active", btn.dataset.tab===tab);
     btn.onclick = ()=> renderInventoryManage(btn.dataset.tab);
   });
+
+  /* Clear the merged row's controls before the tab rebuilds them.
+
+     Only the tabs with a TABLE mount anything — Restock, Replenish and
+     Adjustment are forms and have nothing to filter. Without this they kept
+     whichever control the previously open tab had left behind, so a form
+     screen showed a "10 per page" dropdown that paginated nothing. Clearing
+     here rather than inside each builder means a tab that mounts nothing
+     needs no code at all to say so. */
+  const toolbarGroup = $("#mod-inventory-manage .view-toolbar .view-toolbar-filters");
+  if(toolbarGroup) toolbarGroup.innerHTML = "";
 
   const container = $("#invmgmt-view-content");
   if(tab==="overview")  container.innerHTML = buildStockOverview();
@@ -309,25 +338,28 @@ function buildStockOverview(){
      markup is injected. */
   const rows = "";
 
-  return `<div class="table-toolbar">
-    <div class="search-box">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-      <input type="search" id="search-invmgmt-overview" placeholder="Search products…" aria-label="Search stock" value="${escHtml(q)}"/>
-    </div>
-    <select class="filter-select" id="filter-invmgmt-overview-level" aria-label="Filter stock level">
-      <option value="all" ${lv==="all"?"selected":""}>All Levels</option>
-      <option value="ok" ${lv==="ok"?"selected":""}>Safe</option>
-      <option value="warn" ${lv==="warn"?"selected":""}>Low</option>
-      <option value="crit" ${lv==="crit"?"selected":""}>Critical</option>
-      <option value="out" ${lv==="out"?"selected":""}>Out of Stock</option>
-    </select>
-    <select class="filter-select" id="stock-ovw-page-size" aria-label="Rows per page">
-      <option value="10">10 per page</option>
-      <option value="25">25 per page</option>
-      <option value="50">50 per page</option>
-    </select>
-  </div>
-  <div class="table-wrap viewport-bound"><table class="data-table" id="invmgmt-overview-table">
+/* Search, level and rows-per-page all belong in the pill row above,
+     alongside Stock Overview / Restock / Archive — not in a second band
+     underneath it. */
+  mountToolbarControl("inventory-manage", "overview-filters", `
+      <div class="search-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <input type="search" id="search-invmgmt-overview" placeholder="Search products…" aria-label="Search stock" value="${escHtml(q)}"/>
+      </div>
+      <select class="filter-select" id="filter-invmgmt-overview-level" aria-label="Filter stock level">
+        <option value="all" ${lv==="all"?"selected":""}>All Levels</option>
+        <option value="ok" ${lv==="ok"?"selected":""}>Safe</option>
+        <option value="warn" ${lv==="warn"?"selected":""}>Low</option>
+        <option value="crit" ${lv==="crit"?"selected":""}>Critical</option>
+        <option value="out" ${lv==="out"?"selected":""}>Out of Stock</option>
+      </select>
+      <select class="filter-select" id="stock-ovw-page-size" aria-label="Rows per page">
+        <option value="10">10 per page</option>
+        <option value="25">25 per page</option>
+        <option value="50">50 per page</option>
+      </select>`);
+
+  return `  <div class="table-wrap viewport-bound"><table class="data-table" id="invmgmt-overview-table">
     <thead><tr><th>Product</th><th>Category</th><th>Stock</th><th>Level</th><th>Batches</th><th>Actions</th></tr></thead>
     <tbody id="invmgmt-overview-tbody">${rows}</tbody>
   </table></div>
@@ -479,14 +511,15 @@ function buildAdjustForm(){
    slice of ADJUSTMENTS, which meant holding every stock movement ever recorded
    in memory to show ten of them. */
 function buildAdjLog(){
-  return `<div class="table-toolbar" style="justify-content:flex-end">
+  /* Rows-per-page lives in the pill row, not in a strip of its own. */
+  mountToolbarControl("inventory-manage", "page-size", `
     <select class="filter-select" id="adj-log-page-size" aria-label="Rows per page">
-      <option value="10">10 per page</option>
-      <option value="25">25 per page</option>
-      <option value="50">50 per page</option>
-    </select>
-  </div>
-  <div class="table-wrap viewport-bound"><table class="data-table">
+    <option value="10">10 per page</option>
+    <option value="25">25 per page</option>
+    <option value="50">50 per page</option>
+    </select>`);
+
+  return `<div class="table-wrap viewport-bound"><table class="data-table">
     <thead><tr><th>Date</th><th>Product</th><th>Type</th><th>Qty</th><th>Reason</th><th>Lot</th></tr></thead>
     <tbody id="adj-log-tbody"></tbody>
   </table></div>
@@ -571,14 +604,15 @@ function wireArchiveActions(){
 }
 
 function buildArchiveView(){
-  return `<div class="table-toolbar" style="justify-content:flex-end">
+  /* Rows-per-page lives in the pill row, not in a strip of its own. */
+  mountToolbarControl("inventory-manage", "page-size", `
     <select class="filter-select" id="archive-page-size" aria-label="Rows per page">
-      <option value="10">10 per page</option>
-      <option value="25">25 per page</option>
-      <option value="50">50 per page</option>
-    </select>
-  </div>
-  <div class="table-wrap viewport-bound"><table class="data-table">
+    <option value="10">10 per page</option>
+    <option value="25">25 per page</option>
+    <option value="50">50 per page</option>
+    </select>`);
+
+  return `<div class="table-wrap viewport-bound"><table class="data-table">
     <thead><tr><th>Product</th><th>Category</th><th>Stock</th><th>Status</th><th>Action</th></tr></thead>
     <tbody id="archive-tbody"></tbody>
   </table></div>
@@ -591,8 +625,12 @@ function buildArchiveView(){
 function wireInventoryManageView(tab, container){
   if(tab==="overview"){
     const rerender = ()=> renderInventoryManage("overview");
-    const filterSearch = container.querySelector("#search-invmgmt-overview");
-    const filterLevel  = container.querySelector("#filter-invmgmt-overview-level");
+    /* NOT container.querySelector any more. These two moved out of the tab
+       panel and into the merged pill row above it, which is a different
+       subtree — scoped to the container they came back null and the search box
+       and the level filter silently stopped responding. */
+    const filterSearch = $("#search-invmgmt-overview");
+    const filterLevel  = $("#filter-invmgmt-overview-level");
     filterSearch?.addEventListener("input", ()=>{
       adminState.invOverviewQuery = filterSearch.value.toLowerCase();
       adminState.stockOvwPager.page = 1;

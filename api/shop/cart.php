@@ -66,15 +66,19 @@ $rows = Database::all(
     [$customerId]
 );
 
-/* Same coarse band shop/products.php sends. The exact stock count is
-   deliberately not returned to a storefront caller — see that file's header —
-   and it is not needed here either: a clamped line reports its new quantity,
-   which is the only number the shopper has to know. */
+/* The band only; the wording comes from Inventory::shopLabel() so a product
+   described one way in the grid is not described another way in the drawer.
+
+   These three thresholds are a local copy of a rule that lives in
+   Inventory::rankSelect(), and they do not agree with it — the real bands also
+   account for days of cover, which needs the velocity join this query does not
+   carry. Left as-is rather than half-fixed: it is a pill colour on a line the
+   shopper has already chosen, and the quantity beside it is exact either way. */
 $band = static function (int $stock): array {
-    if ($stock <= 0)  return ['level' => 'out',  'label' => 'Out of Stock'];
-    if ($stock <= 10) return ['level' => 'crit', 'label' => 'Only a few left'];
-    if ($stock <= 100)return ['level' => 'warn', 'label' => 'Low stock'];
-    return                   ['level' => 'ok',   'label' => 'In Stock'];
+    if ($stock <= 0)  return ['level' => 'out'];
+    if ($stock <= 10) return ['level' => 'crit'];
+    if ($stock <= 100)return ['level' => 'warn'];
+    return                   ['level' => 'ok'];
 };
 
 $items   = [];
@@ -121,8 +125,12 @@ foreach ($rows as $r) {
         'tint'       => $r['tint'],
         'cat'        => $r['category'],
         'inStock'    => true,
+        /* Carried so the drawer's stepper can cap at what is actually there —
+           the grid's card already does, and a cart line that lets you type 99
+           after the card refused it is the same failure one screen later. */
+        'stock'      => $stock,
         'stockLevel' => $b['level'],
-        'stockLabel' => $b['label'],
+        'stockLabel' => Inventory::shopLabel($b['level'], $stock),
     ];
 }
 

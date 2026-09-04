@@ -46,16 +46,24 @@ const UPLOAD_TIMEOUT_MS = 60000;
  * strings.
  */
 class ApiError extends Error {
-  constructor(code, message, fields, status) {
+  constructor(code, message, fields, status, retryAfter) {
     super(message);
     this.name = "ApiError";
     this.code = code;
     this.fields = fields || {};
     this.status = status;
+    /* Seconds to wait, from a 429. Carried OUTSIDE `fields` on purpose: the
+       server puts it beside `fields` rather than in it, because `fields` is
+       rendered straight onto form inputs and a "retryAfter" key would have the
+       sign-in modal hunting for an input by that name. 0 when not applicable. */
+    this.retryAfter = Number(retryAfter) || 0;
   }
   get isAuth()       { return this.code === "UNAUTHENTICATED"; }
   get isForbidden()  { return this.code === "FORBIDDEN"; }
   get isValidation() { return this.code === "VALIDATION"; }
+  /* A lockout, not a wrong password. The two were indistinguishable to a
+     caller until the server started saying which — see api/core/Lockout.php. */
+  get isRateLimited(){ return this.code === "RATE_LIMITED"; }
   /* A distinct code, not just a 403. The server answers 403 with code "CSRF"
      rather than "FORBIDDEN" precisely so this is distinguishable: a CSRF
      failure is a stale page, not a permission problem, and telling someone
@@ -150,7 +158,8 @@ async function request(path, options = {}) {
     err.code || "SERVER",
     err.message || `Request failed (HTTP ${res.status}).`,
     err.fields || {},
-    res.status
+    res.status,
+    err.retryAfter
   );
 
   if (apiError.isAuth && typeof onUnauthenticated === "function") {
@@ -242,7 +251,8 @@ async function upload(file, purpose, { signal = null } = {}) {
     err.code || "SERVER",
     err.message || `Upload failed (HTTP ${res.status}).`,
     err.fields || {},
-    res.status
+    res.status,
+    err.retryAfter
   );
   if (apiError.isAuth && typeof onUnauthenticated === "function") onUnauthenticated(apiError);
   if (apiError.isCsrf) {

@@ -139,19 +139,56 @@ const peso = n => CONFIG.currency + n.toLocaleString("en-PH");
 const getProduct = id => PRODUCTS.find(p => p.id === id);
 const txId = () => "EB-" + Date.now().toString(36).toUpperCase() + "-" + Math.floor(Math.random()*900+100);
 
-/* Availability, from the public catalogue's coarse band.
+/* Availability, from the public catalogue.
 
-   api/shop/products.php deliberately does not send exact stock counts — "7 left
-   in Dagupan" is operational detail any competitor could poll. It sends
-   `inStock` plus a `stockLevel` band, and these read that, falling back to the
-   numeric field only for the seeded rows rendered before the catalogue loads.
+   api/shop/products.php now sends the exact `stock` alongside `inStock` and the
+   `stockLevel` band — see that file's header for what publishing the number
+   costs and how to narrow it to low-stock-only later. These read it, falling
+   back to the band alone for the seeded rows rendered before the catalogue
+   loads.
 
-   The consequence, stated plainly: the browser can no longer cap a quantity
-   input at the exact stock level. It never should have been the thing enforcing
-   that anyway — api/shop/checkout.php re-checks every line against the database
-   and refuses with "We only have N of X left". The client shows the band; the
-   server owns the number. */
+   WHAT THE CAP IS AND IS NOT. productMax() caps the quantity stepper at what is
+   actually on the shelf, which stops the storefront from printing "Only 6 left"
+   and then accepting 99 in the box beside it. It is a courtesy, not a control:
+   api/shop/checkout.php re-reads stock inside its transaction and refuses the
+   line with "We only have N of X left" regardless of what the browser allowed.
+   The client shows the number; the server still owns it. */
 const CART_MAX_QTY = 99;
+
+/* The most of one product a shopper may put in the box.
+
+   Falls back to CART_MAX_QTY when `stock` is absent — a cart line hydrated
+   before the catalogue arrived, or a seeded row — because refusing to add
+   anything is a worse answer to "we do not know yet" than deferring to the
+   server, which does know. */
+function productMax(p){
+  const stock = p && typeof p.stock === "number" ? p.stock : null;
+  if(stock === null) return CART_MAX_QTY;
+  return Math.max(1, Math.min(CART_MAX_QTY, stock));
+}
+
+/* The stepper's own description of its cap. Every capped stepper carries it, so
+   the limit is never silent, and it costs no space on a card. */
+function qtyCapAttrs(p){
+  const max = productMax(p);
+  if(max >= CART_MAX_QTY) return `aria-label="Quantity"`;
+  return `aria-label="Quantity, maximum ${max} available" title="Only ${max} in stock"`;
+}
+
+/* The VISIBLE line under the stepper, restricted to the scarcity bands.
+
+   Every product with fewer than 99 jars is capped, but printing "Max 143" under
+   a card whose pill already reads "In Stock · 143 available" is the same number
+   twice, and reads as a warning about a product nothing is wrong with. The line
+   earns its space only where a shopper might actually hit the cap, which is the
+   same crit/warn bands Inventory::shopLabel() words as scarcity. Above that the
+   cap still exists and is still announced — see qtyCapAttrs(). */
+function qtyCapHint(p){
+  const max = productMax(p);
+  if(!p || typeof p.stock !== "number" || max >= CART_MAX_QTY) return "";
+  if(p.stockLevel !== "crit" && p.stockLevel !== "warn") return "";
+  return `<small class="qty-cap">Max ${max} — all we have left</small>`;
+}
 
 /* Mirrors api/uploads/image.php — UPLOAD_MAX_BYTES (8MB) and its $ACCEPTED
    map. Held here so the checkout's dropzone can name the real limit in its
@@ -327,15 +364,46 @@ function jarSVG(tint, label, cls="jar", img=""){
   </div>`;
 }
 
-/* star rating markup */
-function starRating(r){
-  let html = '<span class="stars" aria-label="Rated '+r+' out of 5">';
+/* ===================================================================
+   STAR RATING — AND THE HONEST ZERO
+   -------------------------------------------------------------------
+   THE COUNT IS NOT OPTIONAL. Every product used to be seeded with a
+   rating between 4.5 and 4.9 that nothing had ever written from
+   evidence, so a product nobody had rated advertised "4.9" beside its
+   name. products.rating is now derived from published reviews
+   (Reviews::recompute) and is 0.00 when there are none.
+
+   Which makes rendering it blindly WORSE than before, not better: five
+   empty stars and "0.0" reads as a product people rated badly. So a
+   product with no reviews gets no stars at all — it gets a sentence
+   saying so. That is the honest thing to show, and it is the reason
+   reviewCount travels with rating from api/shop/products.php.
+
+   `count` is deliberately a required argument rather than one that
+   defaults to something. A call site that forgets it throws here, in
+   development, instead of quietly resurrecting the old lie.
+   =================================================================== */
+function starRating(r, count){
+  const n = Number(count);
+  if(!Number.isFinite(n)){
+    throw new TypeError("starRating(rating, count): count is required — see the note above.");
+  }
+  if(n <= 0){
+    /* Not "0.0", not five hollow stars. Nobody has said anything yet. */
+    return '<span class="stars stars-none">No ratings yet</span>';
+  }
+  const label = `Rated ${r.toFixed(1)} out of 5, from ${n} review${n === 1 ? "" : "s"}`;
+  let html = `<span class="stars" aria-label="${label}">`;
   for(let i=1;i<=5;i++){
     if(r >= i)        html += ICONS.star;
     else if(r >= i-.5)html += ICONS.starhalf;
     else              html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.8L12 17.3 5.8 20.9l1.6-6.8L2.2 8.9l6.9-.6z"/></svg>';
   }
-  html += `<span class="rv">${r.toFixed(1)}</span></span>`;
+  /* The number of reviews sits beside the average because the average
+     alone cannot be judged: one five-star review and forty are the same
+     "5.0" and are not the same claim. aria-hidden because the label
+     above already says all of it, in a sentence. */
+  html += `<span class="rv">${r.toFixed(1)}</span><span class="rc" aria-hidden="true">(${n})</span></span>`;
   return html;
 }
 
@@ -373,7 +441,7 @@ function createProductCard(p, {ribbon=false}={}){
       <h3 class="pc-name" data-detail="${escAttr(p.id)}">${esc(p.name)}</h3>
       <p class="pc-desc">${esc(p.desc)}</p>
       <div class="pc-meta">
-        ${starRating(p.rating)}
+        ${starRating(p.rating, p.reviewCount)}
         <span>${p.sold.toLocaleString()} sold</span>
       </div>
       <div class="pc-foot">
@@ -383,18 +451,58 @@ function createProductCard(p, {ribbon=false}={}){
       <div class="pc-add">
         ${out ? "" : `<div class="stepper" data-stepper>
             <button type="button" data-step="-1" aria-label="Decrease quantity">${ICONS.minus}</button>
-            <input type="number" value="1" min="1" max="${CART_MAX_QTY}" aria-label="Quantity" />
+            <input type="number" value="1" min="1" max="${productMax(p)}" ${qtyCapAttrs(p)} />
             <button type="button" data-step="1" aria-label="Increase quantity">${ICONS.plus}</button>
           </div>`}
         <button class="btn btn-primary btn-add" data-add="${escAttr(p.id)}" ${out?"disabled":""} style="flex:1">
           ${out ? "Sold Out" : icon("cart")+" Add"}
         </button>
       </div>
+      ${out ? "" : qtyCapHint(p)}
     </div>`;
   return el;
 }
 
-/* render the shop grid honoring filter/search/sort */
+/* The shop's sort options, as one table rather than a switch.
+
+   WHY A TABLE. Top 5 and Top 10 are a comparator PLUS a cap, and a switch
+   returning only a comparator has nowhere to put the cap — which is how a
+   "top 5" ends up implemented as a slice somewhere else in the function,
+   separated from the ranking it is supposed to be the top of.
+
+   `featured` and `best-selling` are deliberately different orders. `featured`
+   is the administrator's shelf: the products flagged is_best first, units sold
+   only as a tie-break. `best-selling` is the unedited ranking, and it is what
+   Top 5 and Top 10 are the top of — otherwise "Top 5" would mean "the five
+   flagged products, or fewer", which is a curation, not a ranking.
+
+   Mirrors the $sortMap in api/shop/products.php. The grid does not use that
+   map today (see renderProducts below), but the endpoint offers the same keys
+   so a future server-paged grid can send `sort` straight through. */
+const bySold = (a,b) => (b.sold - a.sold) || a.name.localeCompare(b.name);
+const SHOP_SORTS = {
+  "featured":     { cmp: (a,b)=> (b.best - a.best) || bySold(a,b),  limit: null },
+  "best-selling": { cmp: bySold,                                    limit: null },
+  "top-5":        { cmp: bySold,                                    limit: 5    },
+  "top-10":       { cmp: bySold,                                    limit: 10   },
+  "name-asc":     { cmp: (a,b)=> a.name.localeCompare(b.name),      limit: null },
+  "price-asc":    { cmp: (a,b)=> a.price - b.price,                 limit: null },
+  "price-desc":   { cmp: (a,b)=> b.price - a.price,                 limit: null },
+};
+
+/* render the shop grid honoring filter/search/sort
+
+   THE GRID IS NOT SERVER-PAGED. loadShopCatalog() fetches api/shop/products.php
+   once, with no page or limit parameter, into PRODUCTS; every filter, sort and
+   search below runs over that array. So the Top 5 / Top 10 cap belongs HERE and
+   only here — there is no page two for a client-side slice to contradict, and
+   pushing the cap to the endpoint would cap the catalogue the search box and
+   the category chips are filtering, not the list the shopper is looking at.
+
+   That last point is the whole of "Top 5 within a category". The cap is applied
+   AFTER the category and search filters, so Top 5 of Deboned Bangus is the five
+   best-selling Deboned Bangus — not the global five with the non-matching ones
+   removed, which would show two cards under a heading promising five. */
 function renderProducts(){
   const grid = $("#product-grid");
   if(!grid) return;
@@ -405,14 +513,35 @@ function renderProducts(){
     const matchQ = !q || p.name.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q) || p.cat.toLowerCase().includes(q);
     return matchCat && matchQ;
   });
-  list.sort((a,b)=>{
-    switch(sort){
-      case "name-asc":   return a.name.localeCompare(b.name);
-      case "price-asc":  return a.price - b.price;
-      case "price-desc": return b.price - a.price;
-      default:           return (b.best - a.best) || (b.sold - a.sold); // featured / best seller
-    }
-  });
+
+  const mode    = SHOP_SORTS[sort] || SHOP_SORTS.featured;
+  const matched = list.length;
+  list.sort(mode.cmp);
+  if(mode.limit) list = list.slice(0, mode.limit);
+
+  /* Say WHY the list is short. "Showing 5 products" beside a category holding
+     nine reads as a broken filter; naming the cap and the total it was taken
+     from does not.
+
+     THIS FUNCTION OWNS THE LINE OUTRIGHT, IN BOTH CASES. The first version
+     wrote the capped wording and merely cleared the flag when the cap came
+     off, leaving the previous sentence on screen and trusting shop.html's
+     MutationObserver to correct it. Observer callbacks are a microtask late,
+     so switching from Top 5 to Best Selling showed "the top 5 best sellers of
+     15" over a grid of fifteen until the next tick — and any render that
+     mutated nothing would never have corrected it at all. Writing both
+     sentences here means the line is never momentarily false. The `owned`
+     flag stays set from now on, so the DOM-counting fallback (which cannot
+     know the pre-cap total) permanently defers. */
+  const countEl = $("#product-count");
+  if(countEl){
+    countEl.dataset.owned = "1";
+    countEl.innerHTML = (mode.limit && matched > mode.limit)
+      ? `Showing the top <strong>${list.length}</strong> best sellers of <strong>${matched}</strong>` +
+        (category === "All" ? "" : ` in ${esc(category)}`)
+      : `Showing <strong>${list.length}</strong> product${list.length === 1 ? "" : "s"}`;
+  }
+
   grid.innerHTML = "";
   if(!list.length){
     grid.innerHTML = `<div class="no-results">${icon("search")}<h3 style="font-size:1.6rem;margin:10px 0 4px">No products found</h3><p>Try a different search or category.</p></div>`;
@@ -724,18 +853,45 @@ function showToast(msg, type="success", opts={}){
    ================================================================= */
 let lastFocus = null;
 function openModal(title, bodyHTML, {wide=false, onOpen}={}){
+  /* EVERY NODE IS OPTIONAL, AND THAT IS THE POINT.
+
+     This opened with `$("#modal-title").textContent = title` and nothing else.
+     The four pages under public/profile/ had no #modal-title, so that first
+     line threw TypeError and the function died before opening anything — SIGN
+     IN on the signed-out guard and Proceed to Checkout in the cart drawer both
+     read as dead buttons on those pages, while working on index.html and
+     shop.html, which have the element.
+
+     The markup is fixed as well (all five copies now carry the full shell), so
+     this guard should never fire again. It stays because the last identical
+     bug — #toast-wrap vs #toast-root, see showToast() — was also "fixed in the
+     markup", and the markup drifted again. A missing SCRIM is the one thing
+     worth refusing over: without it there is no dialog to show and pretending
+     otherwise would lock the page scroll with nothing on screen. */
+  const scrim = $("#modal-scrim");
+  const body  = $("#modal-body");
+  if(!scrim || !body){
+    console.warn("[modal] no #modal-scrim / #modal-body on this page — cannot open:", title);
+    return;
+  }
+
   lastFocus = document.activeElement;
-  $("#modal-title").textContent = title;
-  $("#modal-body").innerHTML = bodyHTML;
-  $("#modal").classList.toggle("wide", wide);
-  $("#modal-scrim").classList.add("open");
+  const titleEl = $("#modal-title");
+  if(titleEl) titleEl.textContent = title;
+  body.innerHTML = bodyHTML;
+  $("#modal")?.classList.toggle("wide", wide);
+  scrim.classList.add("open");
   document.body.style.overflow = "hidden";
-  if(onOpen) onOpen($("#modal-body"));
-  const f = $("#modal-body").querySelector("input,select,textarea,button");
+  if(onOpen) onOpen(body);
+  const f = body.querySelector("input,select,textarea,button");
   if(f) setTimeout(()=>f.focus(), 60);
 }
 function closeModal(){
-  $("#modal-scrim").classList.remove("open");
+  /* Guarded for the same reason openModal() is. This one could be reached on a
+     page with no modal at all — the Escape handler calls it unconditionally on
+     every keydown — and an unguarded scrim lookup would throw on every press of
+     Escape rather than only when something tried to open. */
+  $("#modal-scrim")?.classList.remove("open");
   document.body.style.overflow = "";
   $("#modal")?.classList.remove("is-auth");
   if(lastFocus) lastFocus.focus();
@@ -833,8 +989,12 @@ function mergeCartProducts(items){
     PRODUCTS.push({
       id: it.id, name: it.name, price: it.price, image: it.image,
       tint: it.tint, cat: it.cat, desc: "", long: "", nutri: "",
-      rating: 0, sold: 0, best: false,
-      inStock: it.inStock, stockLevel: it.stockLevel, stockLabel: it.stockLabel,
+      /* reviewCount 0 alongside rating 0 — starRating() requires it, and a
+         cart-derived stub genuinely knows nothing about this product's
+         reviews. "No ratings yet" is the correct thing for it to say. */
+      rating: 0, reviewCount: 0, sold: 0, best: false,
+      inStock: it.inStock, stock: it.stock,
+      stockLevel: it.stockLevel, stockLabel: it.stockLabel,
     });
   });
 }
@@ -885,9 +1045,16 @@ async function addToCart(id, qty=1){
   const line = state.cart.find(i=>i.id===id);
   const prevQty = line ? line.qty : 0;
   const newQty = prevQty + qty;
-  /* Sanity cap only. The real availability check happens server-side at
-     checkout, which knows the actual number. */
-  if(newQty > CART_MAX_QTY){ showToast(`Maximum ${CART_MAX_QTY} per item`, "info"); return; }
+  /* Refused against what is on the shelf, not a flat 99, now that the card has
+     told the shopper the number. The server still re-checks at checkout — this
+     only spares them a failure they could already see coming. */
+  const max = productMax(p);
+  if(newQty > max){
+    showToast(max < CART_MAX_QTY
+      ? `Only ${max} of ${p.name} left`
+      : `Maximum ${CART_MAX_QTY} per item`, "info");
+    return;
+  }
   if(line) line.qty = newQty; else state.cart.push({id, qty});
   updateCartBadge(true);
   renderCart();
@@ -904,7 +1071,7 @@ function setQty(id, qty){
   /* The floor stays at 1. This clamp is what protects the typed number input,
      where 0 is not a quantity — "remove this line" is a decision made by the
      minus button and the change handler, which know the difference. */
-  qty = Math.max(1, Math.min(qty, CART_MAX_QTY));
+  qty = Math.max(1, Math.min(qty, productMax(getProduct(id))));
   const line = state.cart.find(i=>i.id===id);
   if(!line) return;
   const prevQty = line.qty;
@@ -979,7 +1146,7 @@ function renderCart(){
         <span class="cl-price">${peso(p.price)} each · <b style="color:var(--text)">${peso(p.price*item.qty)}</b></span>
         <div class="stepper" data-cart-stepper="${escAttr(p.id)}" style="margin-top:6px">
           <button type="button" data-cstep="-1" aria-label="Decrease">${ICONS.minus}</button>
-          <input type="number" value="${item.qty}" min="1" max="${CART_MAX_QTY}" aria-label="Quantity of ${escAttr(p.name)}" />
+          <input type="number" value="${item.qty}" min="1" max="${productMax(p)}" aria-label="Quantity of ${escAttr(p.name)}" />
           <button type="button" data-cstep="1" aria-label="Increase">${ICONS.plus}</button>
         </div>
       </div>
@@ -999,6 +1166,184 @@ function openCart(){ $("#cart-scrim").classList.add("open"); $("#cart-drawer").c
 function closeCart(){ $("#cart-scrim").classList.remove("open"); $("#cart-drawer").classList.remove("open"); document.body.style.overflow=""; }
 
 /* =================================================================
+   LOCKOUT COUNTDOWN
+   -----------------------------------------------------------------
+   WHY A COUNTDOWN AND NOT JUST A MESSAGE
+
+   A lockout used to arrive as "Email or password is incorrect", which
+   sent people back to retype a password that was already right. It now
+   says it is a lockout and how long it lasts — but a static "try again
+   in 10 minutes" still leaves somebody watching a clock and guessing
+   whether the wait has elapsed. The number ticks so they can see it.
+
+   IT ALSO DISABLES THE BUTTON. A form that accepts a submission it
+   knows will be refused is teaching people that the message is
+   advisory. Re-enabled the moment the wait reaches zero.
+
+   The server is still the authority: this only mirrors `retryAfter`
+   from the 429. Reloading the page clears the countdown, and the next
+   attempt is refused again with a fresh number.
+   ================================================================= */
+let lockTimer = null;
+
+function stopLockCountdown(root){
+  if(lockTimer){ clearInterval(lockTimer); lockTimer = null; }
+  const box = (root || document).querySelector("#lg-lock");
+  if(box){ box.hidden = true; box.textContent = ""; }
+  const btn = (root || document).querySelector("#login-form [type=submit]");
+  if(btn) btn.disabled = false;
+}
+
+function startLockCountdown(root, seconds, message){
+  const box = root.querySelector("#lg-lock");
+  const btn = root.querySelector("#login-form [type=submit]");
+  if(!box){ showToast(message, "info"); return; }
+
+  if(lockTimer){ clearInterval(lockTimer); lockTimer = null; }
+
+  let left = Math.max(0, Number(seconds) || 0);
+
+  /* No number to count. Show what the server said and leave the form
+     usable — refusing to accept input on a wait we cannot measure would
+     strand the person entirely. */
+  if(left <= 0){
+    box.hidden = false;
+    box.textContent = message;
+    return;
+  }
+
+  const paint = () => {
+    const m = Math.floor(left / 60), sec = left % 60;
+    const clock = m > 0 ? `${m}:${String(sec).padStart(2, "0")}` : `${sec}s`;
+    box.textContent = `Too many failed sign-in attempts. Try again in ${clock}.`;
+  };
+
+  box.hidden = false;
+  paint();
+  if(btn) btn.disabled = true;
+
+  lockTimer = setInterval(() => {
+    left -= 1;
+    if(left <= 0){
+      clearInterval(lockTimer); lockTimer = null;
+      box.hidden = true; box.textContent = "";
+      if(btn) btn.disabled = false;
+      return;
+    }
+    paint();
+  }, 1000);
+}
+
+/* =================================================================
+   PRODUCT REVIEWS — the read-only list under the product detail
+   -----------------------------------------------------------------
+   NO STAR INPUT HERE, DELIBERATELY. The only place a rating can be
+   written is My Orders, on a line of an order that reached `completed`
+   (renderOrderReviewControl below). A star input on the product page
+   would have to be disabled for almost everyone who saw it, and a
+   control that is usually refused teaches people to ignore controls.
+   The path from purchase to review runs through the order, which is
+   also the evidence api/shop/review-save.php checks.
+
+   "Verified purchase" is rendered on EVERY row without checking a
+   field, because it is true of every row by construction — the table
+   requires an order id and the endpoint derives it. A flag would imply
+   some rows are unverified, which would be false and, worse, would be
+   something a future bug could make true without anyone noticing.
+   ================================================================= */
+function reviewStars(n){
+  let html = `<span class="stars" aria-label="${n} out of 5">`;
+  for(let i=1;i<=5;i++){
+    html += i <= n ? ICONS.star
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.8L12 17.3 5.8 20.9l1.6-6.8L2.2 8.9l6.9-.6z"/></svg>';
+  }
+  return html + "</span>";
+}
+
+/* The 1-5 histogram. An average alone cannot be judged: twenty fives and
+   four ones averages the same 4.2 as twenty-four fours, and they are not
+   the same product. The bar is aria-hidden because the row already reads
+   as "5 stars, 12 reviews" — a bar announced twice is noise. */
+function reviewSpread(spread, total){
+  if(!total) return "";
+  return `<div class="rev-spread">` + [5,4,3,2,1].map(n=>{
+    const c = Number(spread?.[String(n)] || 0);
+    const pct = total ? Math.round((c / total) * 100) : 0;
+    return `<div class="rev-spread-row">
+      <span class="rev-spread-n">${n}${ICONS.star}</span>
+      <span class="rev-spread-bar" aria-hidden="true"><i style="width:${pct}%"></i></span>
+      <span class="rev-spread-c">${c}</span>
+    </div>`;
+  }).join("") + `</div>`;
+}
+
+async function loadProductReviews(productId, root){
+  const host = root?.querySelector("#pd-reviews");
+  if(!host) return;
+  try{
+    const { data } = await EbApi.get("shop/reviews.php", { product_id: productId, limit: 20 });
+
+    /* THE ZERO CASE IS A SENTENCE, NOT AN EMPTY LIST. A heading with
+       nothing under it reads as a page that failed to load. */
+    if(!data.review_count){
+      host.innerHTML = `<h4 class="pd-rev-title">Reviews</h4>
+        <p class="pd-rev-empty">No ratings yet. Reviews come from customers who
+        bought this product — yours will appear here once your order is completed.</p>`;
+      return;
+    }
+
+    const head = `<h4 class="pd-rev-title">Reviews</h4>
+      <div class="pd-rev-head">
+        <div class="pd-rev-avg">
+          <span class="pd-rev-num">${data.avg_rating.toFixed(1)}</span>
+          ${reviewStars(Math.round(data.avg_rating))}
+          <span class="pd-rev-count">${data.review_count} review${data.review_count===1?"":"s"}</span>
+        </div>
+        ${reviewSpread(data.spread, data.review_count)}
+      </div>`;
+
+    const list = data.reviews.map(r=>`
+      <li class="rev-item">
+        <div class="rev-top">
+          ${reviewStars(r.rating)}
+          <span class="rev-author">${esc(r.author)}</span>
+          <span class="rev-verified" title="This customer bought this product">
+            ${ICONS.check || ""}Verified purchase</span>
+          <span class="rev-date">${EbFormat.fmtDate(r.date)}${r.edited ? " · edited" : ""}</span>
+        </div>
+        ${r.comment ? `<p class="rev-body">${esc(r.comment)}</p>` : ""}
+      </li>`).join("");
+
+    host.innerHTML = head + `<ul class="rev-list">${list}</ul>` +
+      (data.review_count > data.reviews.length
+        ? `<p class="pd-rev-more">Showing ${data.reviews.length} of ${data.review_count}.</p>`
+        : "");
+
+    /* The customer's OWN review, at whatever status. Somebody whose review
+       is held needs to be told that rather than left to conclude it
+       vanished, and a rejection is shown with the reason a moderator was
+       required to give — a refusal with no stated cause is
+       indistinguishable from censorship. */
+    if(data.mine && data.mine.status !== "published"){
+      const held = data.mine.status === "pending";
+      host.insertAdjacentHTML("beforeend", `
+        <div class="rev-mine rev-mine-${data.mine.status}">
+          <b>Your review is ${held ? "waiting to be checked" : "not published"}.</b>
+          ${held
+            ? "Someone will look at it shortly. Ratings are never held for being low — only the wording is checked."
+            : (data.mine.reason ? esc(data.mine.reason) : "Contact us if you would like to know more.")}
+        </div>`);
+    }
+  }catch(err){
+    /* The product detail is still useful without the reviews, so this
+       reports and stops rather than taking the modal down with it. */
+    host.innerHTML = `<h4 class="pd-rev-title">Reviews</h4>
+      <p class="pd-rev-empty">Reviews could not be loaded just now.</p>`;
+    console.warn("[reviews]", err);
+  }
+}
+
+/* =================================================================
    PRODUCT DETAIL modal
    ================================================================= */
 function openProductDetail(id){
@@ -1010,7 +1355,7 @@ function openProductDetail(id){
       <div class="pd-media">${jarSVG(p.tint, p.name, 'jar', imageUrl(p))} ${p.best?`<span class="ribbon">${icon("star")} Best Seller</span>`:""}</div>
       <div class="pd-info">
         <span class="pc-cat">${esc(p.cat)}</span>
-        <div class="pc-meta" style="margin:8px 0">${starRating(p.rating)} <span>· ${p.sold.toLocaleString()} sold</span></div>
+        <div class="pc-meta" style="margin:8px 0">${starRating(p.rating, p.reviewCount)} <span>· ${p.sold.toLocaleString()} sold</span></div>
         <p class="pd-desc">${p.long}</p>
         <div class="pd-nutri"><b>Nutrition:</b> ${p.nutri}</div>
         <span class="stock-pill ${s.cls}">${s.label}</span>
@@ -1018,19 +1363,31 @@ function openProductDetail(id){
         <div class="pd-actions">
           ${out?"":`<div class="stepper" data-stepper>
             <button type="button" data-step="-1" aria-label="Decrease quantity">${ICONS.minus}</button>
-            <input type="number" value="1" min="1" max="${CART_MAX_QTY}" aria-label="Quantity" />
+            <input type="number" value="1" min="1" max="${productMax(p)}" ${qtyCapAttrs(p)} />
             <button type="button" data-step="1" aria-label="Increase quantity">${ICONS.plus}</button>
           </div>`}
           <button class="btn btn-primary" data-add-detail="${escAttr(p.id)}" ${out?"disabled":""}>${out?"Sold Out":icon("cart")+" Add to Cart"}</button>
         </div>
+        ${out ? "" : qtyCapHint(p)}
       </div>
-    </div>`;
+    </div>
+    <!-- Filled by loadProductReviews() after the modal opens. Rendered as a
+         placeholder rather than left out entirely so the section has a stable
+         position: injecting a whole block later would shift the buttons under
+         somebody's cursor mid-click. -->
+    <section class="pd-reviews" id="pd-reviews" aria-live="polite">
+      <h4 class="pd-rev-title">Reviews</h4>
+      <p class="pd-rev-empty">Loading reviews…</p>
+    </section>`;
   openModal(p.name, body, {wide:true, onOpen:(root)=>{
     root.querySelector("[data-add-detail]")?.addEventListener("click", e=>{
       const qty = parseInt(root.querySelector(".stepper input")?.value || "1", 10);
       addToCart(e.currentTarget.dataset.addDetail, qty);
       closeModal(); openCart();
     });
+    /* Not awaited: the detail is complete and usable without it, and blocking
+       the modal on a second request would make every product feel slow. */
+    loadProductReviews(p.id, root);
   }});
 }
 
@@ -1702,6 +2059,12 @@ function openAuth(tab='login', hint=null){
           <p>Sign in to track orders and check out faster.</p>
         </div>
         <form id="login-form" novalidate>
+          <!-- The lockout notice. Empty and hidden until a 429 arrives; see
+               startLockCountdown(). role="alert" so the refusal is announced
+               rather than only drawn, and aria-live keeps the ticking number
+               from being re-announced every second (polite + atomic would
+               interrupt constantly, so only the initial message speaks). -->
+          <div class="auth-lock" id="lg-lock" role="alert" hidden></div>
           <div class="auth-field">
             <label for="lg-email">Email Address</label>
             <div class="auth-input-group">
@@ -1854,6 +2217,9 @@ function openAuth(tab='login', hint=null){
       let ok=true;
       root.querySelectorAll('#login-form [data-err]').forEach(x=>x.textContent='');
       const fail=(sel,msg)=>{ root.querySelector(sel).closest('.auth-field').querySelector('[data-err]').textContent=msg; ok=false; };
+      /* A new submission supersedes any notice from the last one, and clears
+         its timer — two intervals ticking over one element would race. */
+      stopLockCountdown(root);
       const email = root.querySelector('#lg-email').value.trim();
       const pass  = root.querySelector('#lg-pass').value;
       if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail('#lg-email','Enter a valid email.');
@@ -1892,13 +2258,33 @@ function openAuth(tab='login', hint=null){
           fail('#lg-email', err.message);
           return;
         }
-        if(err.code === 'RATE_LIMITED' || err.code === 'NETWORK' || err.code === 'TIMEOUT'){
+        if(err.isRateLimited){
+          /* FALL THROUGH, do not stop here.
+
+             This probe is speculative: the storefront tries the staff endpoint
+             on every sign-in so a staff member can enter from the public site.
+             For a customer's address it therefore fails every single time, and
+             those failures fill the STAFF bucket for that email. Returning here
+             would mean four storefront attempts lock a shopper out of the shop
+             on a portal counter, for an account they do not have.
+
+             The staff lock is still real and still enforced — the portal's own
+             sign-in page calls auth/login.php directly and treats 429 as final.
+             Here it only means "this is not a staff route", so the customer
+             path runs and reports its own state. */
+        }
+        if(err.code === 'NETWORK' || err.code === 'TIMEOUT'){
           showToast(err.message, "info");
           return;
         }
         /* 401 falls through to the customer path below. */
       } finally {
-        if(btn){ btn.disabled = false; btn.textContent = label; }
+        /* NOT while a lockout is counting down. This `finally` runs after the
+           catch, so an unconditional re-enable undoes the disable
+           startLockCountdown just applied and hands back a button whose next
+           press is guaranteed to be refused. The countdown re-enables it
+           itself when the wait reaches zero. */
+        if(btn){ btn.textContent = label; if(!lockTimer) btn.disabled = false; }
       }
 
       /* Customer login — checked against the customers table.
@@ -1926,16 +2312,31 @@ function openAuth(tab='login', hint=null){
         if(err.isValidation){
           Object.entries(err.fields).forEach(([f,msg]) =>
             fail('#lg-' + (f === 'password' ? 'pass' : 'email'), msg));
-        } else if(err.code === 'RATE_LIMITED'){
-          showToast(err.message, "info");
+        } else if(err.isRateLimited){
+          startLockCountdown(root, err.retryAfter, err.message);
         } else {
-          /* One message for a wrong password and for an email with no account.
-             Distinguishing them tells a stranger which addresses are
-             registered here. */
-          fail('#lg-email', 'Email or password is incorrect.');
+          /* THE SERVER'S OWN WORDS, not a copy of them.
+
+             This used to hardcode "Email or password is incorrect." and throw
+             away err.message. That is how the advice added in
+             Auth::attemptCustomer — "if you have not set a password for this
+             email yet, use Sign Up" — would have been written on the server
+             and never shown to anyone. It is also how the two could drift
+             apart without either looking wrong on its own.
+
+             Still one message for a wrong password, an unknown email and a
+             record with no password: distinguishing them would tell a stranger
+             which addresses are registered here. The server decides the
+             wording; this renders it. */
+          fail('#lg-email', err.message);
         }
       } finally {
-        if(btn){ btn.disabled = false; btn.textContent = label; }
+        /* NOT while a lockout is counting down. This `finally` runs after the
+           catch, so an unconditional re-enable undoes the disable
+           startLockCountdown just applied and hands back a button whose next
+           press is guaranteed to be refused. The countdown re-enables it
+           itself when the wait reaches zero. */
+        if(btn){ btn.textContent = label; if(!lockTimer) btn.disabled = false; }
       }
     });
 

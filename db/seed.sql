@@ -27,21 +27,21 @@ INSERT INTO categories (id, name, description, archived) VALUES
 
 /* ---------- PRODUCTS ---------- */
 INSERT INTO products (id, category_id, name, description, price, stock, rating, sold, is_best, tint, image_url, archived) VALUES
-  ('db-pesto', 'cat-db', 'Pesto Bangus', 'Deboned milkfish in fragrant basil pesto — herby, rich and ready to pan-sear.', 285, 142, 4.8, 1240, 1, '#3f8f4f', NULL, 0),
-  ('db-garlic', 'cat-db', 'Garlic Bangus in Sukang Iloko', 'Classic garlicky bangus cured in tangy Ilocos sukang.', 265, 88, 4.7, 980, 0, '#caa24a', NULL, 0),
-  ('db-hainan', 'cat-db', 'Hainanese Bangus', 'Ginger-scallion deboned bangus inspired by Hainanese chicken.', 295, 54, 4.6, 610, 0, '#d9b35b', NULL, 0),
-  ('db-steak', 'cat-db', 'Asian Steak Bangus', 'Umami soy-glazed bangus with a steakhouse depth.', 299, 9, 4.9, 1410, 1, '#7a4b2b', NULL, 0),
-  ('db-chili', 'cat-db', 'Chili Garlic Bangus', 'Bold chili-garlic kick for spice lovers.', 275, 120, 4.7, 870, 0, '#c43d2a', NULL, 0),
-  ('db-masala', 'cat-db', 'Spicy Masala Bangus', 'Warm Indian-spiced masala marinade.', 289, 0, 4.5, 430, 0, '#b5621f', NULL, 0),
-  ('bg-pesto', 'cat-bg', 'Bangus in Pesto Sauce', 'Flaked bangus bottled in olive-oil basil pesto.', 245, 160, 4.9, 2100, 1, '#3f8f4f', NULL, 0),
-  ('bg-portu', 'cat-bg', 'Portuguese Style Bangus', 'Smoky paprika & tomato in Portuguese tradition.', 255, 74, 4.7, 760, 0, '#c43d2a', NULL, 0),
-  ('bg-adobo', 'cat-bg', 'Pinoy Adobo Bangus', 'The Filipino classic — soy, vinegar, garlic, bay.', 235, 138, 4.8, 1680, 1, '#5a3a22', NULL, 0),
-  ('bg-hawaii', 'cat-bg', 'Hawaiian Style Bangus', 'Sweet pineapple-glazed island flavor.', 249, 42, 4.5, 520, 0, '#e0a531', NULL, 0),
-  ('bg-sundri', 'cat-bg', 'Bangus in Sun-dried Tomatoes', 'Mediterranean sun-dried tomato & herb oil.', 265, 6, 4.8, 690, 0, '#a8331f', NULL, 0),
-  ('bg-tuyod', 'cat-bg', 'Tuyo Delizioso', 'Gourmet Spanish-style dried herring in oil.', 215, 155, 4.9, 1990, 1, '#c98a2e', NULL, 0),
-  ('bg-tuyopes', 'cat-bg', 'Tuyo in Pesto Sauce', 'Smoky tuyo meets fresh basil pesto.', 225, 96, 4.6, 840, 0, '#4a9457', NULL, 0),
-  ('bg-tomato', 'cat-bg', 'Bangus in Tomato Sauce', 'Comforting rich tomato sauce classic.', 209, 112, 4.4, 560, 0, '#cf3b22', NULL, 0),
-  ('bg-bayo', 'cat-bg', 'Ba-yo (Bangus & Tuyo)', 'Two icons — bangus & tuyo — in one bottle.', 299, 33, 5, 1320, 1, '#b6702a', NULL, 0);
+  ('db-pesto', 'cat-db', 'Pesto Bangus', 'Deboned milkfish in fragrant basil pesto — herby, rich and ready to pan-sear.', 285, 142, 0.00, 1240, 1, '#3f8f4f', NULL, 0),
+  ('db-garlic', 'cat-db', 'Garlic Bangus in Sukang Iloko', 'Classic garlicky bangus cured in tangy Ilocos sukang.', 265, 88, 0.00, 980, 0, '#caa24a', NULL, 0),
+  ('db-hainan', 'cat-db', 'Hainanese Bangus', 'Ginger-scallion deboned bangus inspired by Hainanese chicken.', 295, 54, 0.00, 610, 0, '#d9b35b', NULL, 0),
+  ('db-steak', 'cat-db', 'Asian Steak Bangus', 'Umami soy-glazed bangus with a steakhouse depth.', 299, 9, 0.00, 1410, 1, '#7a4b2b', NULL, 0),
+  ('db-chili', 'cat-db', 'Chili Garlic Bangus', 'Bold chili-garlic kick for spice lovers.', 275, 120, 0.00, 870, 0, '#c43d2a', NULL, 0),
+  ('db-masala', 'cat-db', 'Spicy Masala Bangus', 'Warm Indian-spiced masala marinade.', 289, 0, 0.00, 430, 0, '#b5621f', NULL, 0),
+  ('bg-pesto', 'cat-bg', 'Bangus in Pesto Sauce', 'Flaked bangus bottled in olive-oil basil pesto.', 245, 160, 0.00, 2100, 1, '#3f8f4f', NULL, 0),
+  ('bg-portu', 'cat-bg', 'Portuguese Style Bangus', 'Smoky paprika & tomato in Portuguese tradition.', 255, 74, 0.00, 760, 0, '#c43d2a', NULL, 0),
+  ('bg-adobo', 'cat-bg', 'Pinoy Adobo Bangus', 'The Filipino classic — soy, vinegar, garlic, bay.', 235, 138, 0.00, 1680, 1, '#5a3a22', NULL, 0),
+  ('bg-hawaii', 'cat-bg', 'Hawaiian Style Bangus', 'Sweet pineapple-glazed island flavor.', 249, 42, 0.00, 520, 0, '#e0a531', NULL, 0),
+  ('bg-sundri', 'cat-bg', 'Bangus in Sun-dried Tomatoes', 'Mediterranean sun-dried tomato & herb oil.', 265, 6, 0.00, 690, 0, '#a8331f', NULL, 0),
+  ('bg-tuyod', 'cat-bg', 'Tuyo Delizioso', 'Gourmet Spanish-style dried herring in oil.', 215, 155, 0.00, 1990, 1, '#c98a2e', NULL, 0),
+  ('bg-tuyopes', 'cat-bg', 'Tuyo in Pesto Sauce', 'Smoky tuyo meets fresh basil pesto.', 225, 96, 0.00, 840, 0, '#4a9457', NULL, 0),
+  ('bg-tomato', 'cat-bg', 'Bangus in Tomato Sauce', 'Comforting rich tomato sauce classic.', 209, 112, 0.00, 560, 0, '#cf3b22', NULL, 0),
+  ('bg-bayo', 'cat-bg', 'Ba-yo (Bangus & Tuyo)', 'Two icons — bangus & tuyo — in one bottle.', 299, 33, 0.00, 1320, 1, '#b6702a', NULL, 0);
 
 /* ---------- ROLES ---------- */
 /* Super Admin is is_system=1: code grants it every permission unconditionally
@@ -71,7 +71,10 @@ INSERT INTO permissions (id, permission_key, area, label) VALUES
   (14, 'orders.view', 'Online Orders', 'View online orders'),
   (15, 'orders.accept', 'Online Orders', 'Accept/hold/reject orders, verify payments'),
   (16, 'orders.status', 'Online Orders', 'Update order status'),
-  (17, 'orders.returns', 'Online Orders', 'Process returns & refunds');
+  (17, 'orders.returns', 'Online Orders', 'Process returns & refunds'),
+  /* Gates the Reviews module and both staff review endpoints. A maintenance
+     duty, not an operational one — see migration 011. */
+  (18, 'reviews.moderate', 'Maintenance', 'Moderate customer product reviews');
 
 /* ---------- ROLE → PERMISSION GRANTS ---------- */
 INSERT INTO role_permissions (role_id, permission_id) VALUES
@@ -92,6 +95,8 @@ INSERT INTO role_permissions (role_id, permission_id) VALUES
   (2, 15),
   (2, 16),
   (2, 17),
+  /* reviews.moderate — Admin only among the non-system roles. */
+  (2, 18),
   /* Cashier (role_id 3) — pos.use, transactions.view, sales.report, payments.manage */
   (3, 13),
   (3, 11),
@@ -350,18 +355,21 @@ INSERT INTO product_returns (id, order_id, customer_id, customer_name, email, ph
   ('RET-20260613-001', 'ORD-20260614-002', NULL, 'Marco Dela Cruz', 'mdelacruz@email.ph', '09276543210', 'db-pesto', 1, 'BT-20260405-F', '2026-06-14', 'Foreign object found inside jar — small plastic fragment', 'processed', '2026-06-12 09:00:00', 1, 290, 'gcash', 'Refund ₱290 sent via GCash 09276543210', NULL);
 
 /* ---------- NOTIFICATIONS ---------- */
-INSERT INTO notifications (id, type, order_id, return_id, product_id, message, created_at, is_read) VALUES
-  ('n01', 'new-order', 'ORD-20260617-004', NULL, NULL, 'New online order from Patrick Villanueva — ₱1,410', '2026-06-17 11:45:00', 0),
-  ('n02', 'new-order', 'ORD-20260617-003', NULL, NULL, 'New online order from Cecilia Ramos — awaiting payment proof', '2026-06-17 10:00:00', 0),
-  ('n03', 'payment', 'ORD-20260617-002', NULL, NULL, 'Payment proof uploaded — Roberto Lim (BT-EBI-20260617-002)', '2026-06-17 09:15:00', 0),
-  ('n04', 'new-order', 'ORD-20260617-001', NULL, NULL, 'New online order from Maria Gonzales — ₱1,205', '2026-06-17 08:30:00', 0),
-  ('n05', 'return', NULL, 'RET-20260617-001', NULL, 'Return request received from Evangeline Reyes — Pesto Bangus', '2026-06-17 08:00:00', 0),
-  ('n06', 'hold', 'ORD-20260617-005', NULL, NULL, 'Order ORD-20260617-005 placed on hold — payment mismatch', '2026-06-17 07:45:00', 1),
-  ('n07', 'return', NULL, 'RET-20260617-002', NULL, 'Return request from Marco Dela Cruz requires validation', '2026-06-16 15:30:00', 1),
-  ('n08', 'completed', 'ORD-20260614-001', NULL, NULL, 'Order ORD-20260614-001 marked Completed — Evangeline Reyes', '2026-06-14 18:00:00', 1),
-  ('n09', 'inventory', NULL, NULL, 'db-masala', 'Spicy Masala Bangus is out of stock — 0 units remaining', '2026-06-17 06:30:00', 0),
-  ('n10', 'inventory', NULL, NULL, 'db-steak', 'Asian Steak Bangus critically low — only 9 units left', '2026-06-16 09:00:00', 1),
-  ('n11', 'audit', NULL, NULL, NULL, 'New employee account created: Rosa Dela Torre (Super Admin)', '2026-06-13 10:15:00', 1);
+/* `priority` is spelled out per row rather than left to the column default,
+   so a freshly seeded database and one migrated by 010 sort identically. The
+   mapping and the reasoning behind it live in that migration. */
+INSERT INTO notifications (id, type, priority, order_id, return_id, product_id, message, created_at, is_read) VALUES
+  ('n01', 'new-order', 'warning', 'ORD-20260617-004', NULL, NULL, 'New online order from Patrick Villanueva — ₱1,410', '2026-06-17 11:45:00', 0),
+  ('n02', 'new-order', 'warning', 'ORD-20260617-003', NULL, NULL, 'New online order from Cecilia Ramos — awaiting payment proof', '2026-06-17 10:00:00', 0),
+  ('n03', 'payment', 'warning', 'ORD-20260617-002', NULL, NULL, 'Payment proof uploaded — Roberto Lim (BT-EBI-20260617-002)', '2026-06-17 09:15:00', 0),
+  ('n04', 'new-order', 'warning', 'ORD-20260617-001', NULL, NULL, 'New online order from Maria Gonzales — ₱1,205', '2026-06-17 08:30:00', 0),
+  ('n05', 'return', 'warning', NULL, 'RET-20260617-001', NULL, 'Return request received from Evangeline Reyes — Pesto Bangus', '2026-06-17 08:00:00', 0),
+  ('n06', 'hold', 'warning', 'ORD-20260617-005', NULL, NULL, 'Order ORD-20260617-005 placed on hold — payment mismatch', '2026-06-17 07:45:00', 1),
+  ('n07', 'return', 'warning', NULL, 'RET-20260617-002', NULL, 'Return request from Marco Dela Cruz requires validation', '2026-06-16 15:30:00', 1),
+  ('n08', 'completed', 'info', 'ORD-20260614-001', NULL, NULL, 'Order ORD-20260614-001 marked Completed — Evangeline Reyes', '2026-06-14 18:00:00', 1),
+  ('n09', 'inventory', 'critical', NULL, NULL, 'db-masala', 'Spicy Masala Bangus is out of stock — 0 units remaining', '2026-06-17 06:30:00', 0),
+  ('n10', 'inventory', 'critical', NULL, NULL, 'db-steak', 'Asian Steak Bangus critically low — only 9 units left', '2026-06-16 09:00:00', 1),
+  ('n11', 'audit', 'info', NULL, NULL, NULL, 'New employee account created: Rosa Dela Torre (Super Admin)', '2026-06-13 10:15:00', 1);
 
 /* ---------- PAYMENT SCHEMES (retailer credit accounts) ---------- */
 INSERT INTO payment_accounts (id, customer_id, name, email, scheme, balance, due_date, paid) VALUES
@@ -435,6 +443,12 @@ INSERT INTO hero_slides (title, image_path, display_order) VALUES
 /* ---------- SYSTEM SETTINGS ---------- */
 INSERT INTO settings (key_name, value_text) VALUES
   ('penalty_rate', '2'),
+  /* The review keyword filter. Here rather than in PHP for the same reason
+     penalty_rate is: the people who need to change it are not the people who
+     deploy. Matched case-insensitively on WORD BOUNDARIES by
+     Reviews::flagged(), so a short flagged word cannot trip on a longer
+     innocent one. It is a keyword list, not content classification. */
+  ('review_flag_words', 'scam,fraud,fake,poison,disgusting,idiot,stupid,damn,hell,crap,shit,fuck,bastard,bitch'),
   ('currency', '₱'),
   ('brand', 'Elisha Bay'),
   ('company', 'Juris Bay Foods, Inc.');
@@ -462,3 +476,56 @@ INSERT INTO customers (id, name, email, password, contact, status, joined) VALUE
   ('cus-t02', 'Test Claimant', 'test.claimant@elishabay.ph', NULL, '+63 900 000 0002', 'active', '2026-01-01')
 ON DUPLICATE KEY UPDATE
   password = VALUES(password), status = VALUES(status);
+
+
+-- ---------------------------------------------------------------------------
+-- Customer product reviews.
+--
+-- EVERY ROW POINTS AT A REAL SEEDED ORDER that belongs to that customer, is
+-- `completed`, and contains that product — the same three facts
+-- api/shop/review-save.php re-derives from the database before it will write
+-- one. Seed data that could not have been produced through the endpoint would
+-- make the demo prove nothing.
+--
+-- Deliberately sparse: most products have NO reviews, so "No ratings yet" is
+-- visible on the cards, the detail, the carousel and the portal tables rather
+-- than being a state nobody ever sees.
+--
+-- The three statuses are all represented, because the staff queue is unusable
+-- to look at when it is empty:
+--   published  the ordinary case, including a 2-star one — a low rating
+--              publishes immediately and raises a Warning notification. It is
+--              never held, and never a reason to reject.
+--   pending    held by the KEYWORD filter on its TEXT. hold_reason names the
+--              word, so the moderator can see why it is in front of them.
+--   rejected   with a stated reason, by a real moderator.
+-- ---------------------------------------------------------------------------
+INSERT INTO product_reviews
+  (product_id, customer_id, order_id, rating, comment, status, hold_reason, reject_reason, moderated_by, moderated_at) VALUES
+  ('bg-pesto',  'cus-01', 'EB-1A2B3C-101', 5, 'Pan-seared straight from the pouch and it held together perfectly. Ordering again.', 'published', NULL, NULL, NULL, NULL),
+  ('db-pesto',  'cus-03', 'EB-0D1E2F-130', 4, 'Good flavour, a little heavy on the basil for us. Arrived still frozen.',            'published', NULL, NULL, NULL, NULL),
+  ('bg-tuyod',  'cus-02', 'EB-3C4D5E-103', 5, NULL,                                                                                  'published', NULL, NULL, NULL, NULL),
+  ('bg-sundri', 'cus-09', 'EB-2L3M4N-112', 3, 'Fine. Nothing wrong with it, nothing special either.',                                'published', NULL, NULL, NULL, NULL),
+  -- Two stars, published immediately, staff notified. Suppressing this would
+  -- delay the business learning about a real problem with a real order.
+  ('db-garlic', 'cus-07', 'EB-1U2V3W-121', 2, 'Two of the four pouches had leaked by the time they reached us. The fish itself was fine.',
+                                                                                                                                     'published', NULL, NULL, NULL, NULL),
+  -- Held on the WORD, not on the score.
+  ('bg-adobo',  'cus-10', 'EB-3M4N5O-113', 1, 'This is a scam, the pouch was half empty.', 'pending', 'keyword: scam', NULL, NULL, NULL),
+  ('bg-bayo',   'cus-08', 'EB-0J1K2L-110', 1, 'Contact details and a link to a competitor were posted here.',
+                                                                                           'rejected', NULL, 'Advertising and off-site contact details. The rating itself was not the issue.', 'emp-01', '2026-02-18 09:40:00')
+ON DUPLICATE KEY UPDATE
+  rating = VALUES(rating), comment = VALUES(comment), status = VALUES(status),
+  hold_reason = VALUES(hold_reason), reject_reason = VALUES(reject_reason),
+  /* Held level with created_at, for the same reason moderate.php pins it: the
+     two columns differing is what the storefront reads as "edited by the
+     customer", and a re-seed did not edit anything. */
+  updated_at = created_at;
+
+-- The same formula Reviews::recompute() owns from here on: PUBLISHED rows only,
+-- and a product with none is left at 0.00/0 rather than keeping a seeded score.
+UPDATE products p
+   SET p.review_count = (SELECT COUNT(*) FROM product_reviews r
+                          WHERE r.product_id = p.id AND r.status = 'published'),
+       p.rating = COALESCE((SELECT ROUND(AVG(r.rating), 2) FROM product_reviews r
+                             WHERE r.product_id = p.id AND r.status = 'published'), 0.00);

@@ -11,17 +11,26 @@ declare(strict_types=1);
 require_once __DIR__ . '/Response.php';
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/Validate.php';
+/* Before Auth.php — Auth's four password paths all refuse through
+   Lockout::enforce(), which owns the progressive throttle policy. */
+require_once __DIR__ . '/Lockout.php';
 require_once __DIR__ . '/Auth.php';
 require_once __DIR__ . '/Rbac.php';
 require_once __DIR__ . '/Csrf.php';
 require_once __DIR__ . '/Revenue.php';
 require_once __DIR__ . '/Payments.php';
+/* Before Stock.php — Stock::sell() raises a Notify when a sale takes a product
+   across into the critical or out-of-stock band. */
+require_once __DIR__ . '/Notify.php';
 require_once __DIR__ . '/Stock.php';
 require_once __DIR__ . '/Mailer.php';
 require_once __DIR__ . '/Orders.php';
 require_once __DIR__ . '/Dates.php';
 /* After Dates.php — Inventory::describe() resolves expiry against Dates::today(). */
 require_once __DIR__ . '/Inventory.php';
+/* After Notify.php — review-save.php raises a Warning when a customer leaves a
+   low rating, and Reviews owns the constant that decides what "low" means. */
+require_once __DIR__ . '/Reviews.php';
 
 $__cfg = Database::config();
 

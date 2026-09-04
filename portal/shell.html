@@ -224,19 +224,62 @@
             </svg>
           </button>
           <div class="topbar-user" id="topbar-user">
+            <!-- ONE CHIP, ONE CONTROL.
+
+                 Who is using the system, stated in the header rather than only
+                 inside a dropdown nobody opens. Name first because the role
+                 alone ("Super Admin") identifies a permission set, not a
+                 person. Same two values as #ud-name / #ud-role below, written
+                 by one function so the header and the menu cannot disagree.
+
+                 The BUTTON is now the whole chip rather than the avatar alone.
+                 The outline has to enclose name, role and avatar together and
+                 the whole enclosure has to be the trigger — an outlined group
+                 where only the circle inside it responds to a click reads as
+                 two controls, and puts the focus ring on the wrong thing.
+
+                 Both children are aria-hidden and the button carries its name
+                 from aria-label, written alongside the text in
+                 applySignedInUser(). Without that a screen reader would read
+                 the name, then the role, then the avatar initials ("MS") as
+                 three separate strings with no indication any of it opens a
+                 menu. -->
             <button
-              class="topbar-avatar"
-              id="topbar-avatar"
+              class="topbar-user-chip"
+              id="topbar-user-btn"
               aria-label="User menu"
-              aria-haspopup="true"
+              aria-haspopup="menu"
+              aria-expanded="false"
+              aria-controls="user-dropdown"
             >
-              AD
+              <span class="topbar-identity" id="topbar-identity" aria-hidden="true">
+                <span class="topbar-identity-name" id="topbar-user-name"></span>
+                <span class="topbar-identity-role" id="topbar-role-label"></span>
+              </span>
+              <span class="topbar-avatar" id="topbar-avatar" aria-hidden="true">AD</span>
             </button>
             <div class="user-dropdown" id="user-dropdown" role="menu">
               <div class="ud-header">
                 <div class="ud-name" id="ud-name">Super Admin</div>
                 <div class="ud-role" id="ud-role">Super Admin</div>
               </div>
+              <div class="ud-sep"></div>
+              <!-- The sidebar carries the same entry; this is here because the
+                   user menu is where people look for their own account first. -->
+              <button class="ud-item" id="ud-profile">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+                My Profile
+              </button>
               <div class="ud-sep"></div>
               <button class="ud-item danger" id="ud-logout">
                 <svg
@@ -290,7 +333,7 @@
               stroke-linejoin="round"
             />
           </svg>
-          <div class="name">Elisha Bay<small id="topbar-role-label">Admin Panel</small></div>
+          <div class="name">Elisha Bay<small>Admin Panel</small></div>
         </div>
 
         <nav class="sidebar-nav" aria-label="Modules">
@@ -829,6 +872,30 @@
             </div>
           </div>
 
+          <!-- Maintenance, beside the catalogue it moderates. data-perm hides
+               it from roles without reviews.moderate; api/reviews/list.php and
+               moderate.php refuse them regardless, because hiding a control is
+               presentation, not security. -->
+          <button
+            class="nav-item"
+            data-mod="reviews"
+            data-perm="reviews.moderate"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
+              />
+            </svg>
+            Product Reviews
+          </button>
+
           <div class="nav-group">
             <span class="nav-group-label"
               >Reports
@@ -974,6 +1041,48 @@
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
               Roles &amp; Permissions
+            </button>
+          </div>
+
+          <!-- ITS OWN GROUP, AT THE BOTTOM, AND CARRYING NO data-perm.
+
+               Every group above is about the business — what is sold, ordered,
+               stocked, reported on. This one is about the person signed in, so
+               it does not belong inside any of them.
+
+               No data-perm on the group or the item, deliberately: every staff
+               member owns their own account, so there is no permission to
+               check. applyRBAC() only touches elements that HAVE a data-perm,
+               which is what makes this visible to everyone; and engine.js's
+               MOD_PERM has no "profile" entry, so navigate()'s guard lets
+               everyone through. Both omissions are load-bearing. -->
+          <div class="nav-group">
+            <span class="nav-group-label"
+              >Account
+              <svg
+                class="nav-chevron"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="6 9 12 15 18 9" /></svg
+            ></span>
+            <button class="nav-item" data-mod="profile">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+              My Profile
             </button>
           </div>
         </nav>

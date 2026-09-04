@@ -285,10 +285,25 @@ db/schema-additions.sql
 db/seed.sql
 db/migrations/001-unify-batch-codes.sql
 db/migrations/002-batch-code-foreign-keys.sql
+db/migrations/003-image-paths.sql
+db/migrations/004-credit-sales.sql
+db/migrations/005-customer-profile.sql
+db/migrations/006-scope-completion.sql
+db/migrations/007-persistent-cart.sql
+db/migrations/008-customer-archive-restore.sql
+db/migrations/009-backfill-product-lots.sql
+db/migrations/010-notification-priority.sql
+db/migrations/011-product-reviews.sql
 ```
 
-Run them in that order. `002` adds foreign keys on the batch-code columns and
-will fail unless `001` has repaired the data first.
+Run them in that order — numeric order is the required order. `002` adds foreign
+keys on the batch-code columns and will fail unless `001` has repaired the data
+first; the rest are independent but assume everything before them has run.
+
+Every migration from `003` on is re-runnable: each wraps its work in a stored
+procedure guarded by `information_schema`, so running one twice does nothing the
+second time. Run them all after any `schema.sql` reload — `schema.sql` builds the
+ORIGINAL tables, not the current ones.
 
 ### The trap: every file hardcodes `USE elisha_bay_db;`
 

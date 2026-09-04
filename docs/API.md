@@ -145,6 +145,110 @@ show a sign-in prompt to somebody trying to leave.
 
 ---
 
+## Sign-in lockout
+
+One policy, in `api/core/Lockout.php`, used by every path that checks a
+password: `auth/login.php`, `shop/login.php`, `shop/password.php` and
+`users/me-password.php`. The last two share sign-in's counter deliberately — a
+stolen session must not become an unlimited password oracle.
+
+**It replaced a flat 15 minutes after 5 failures.** Two problems with that: a
+real customer who mistyped was locked out of their own account for a quarter of
+an hour, and the counter was keyed on the **email alone**, so anyone who knew a
+customer's address could lock them out of it on purpose by failing five times.
+
+### The policy
+
+| Consecutive failures | Result |
+|---|---|
+| 1–3 | free — typos happen, and three attempts deter nobody |
+| 4 | locked 2 minutes |
+| 5, 6, 7 … | +2 minutes each: 4, 6, 8, 10 |
+| cap | **10 minutes** customer · **30 minutes** staff |
+
+A successful sign-in clears the streak. So does 30 minutes with no attempt at
+all, so somebody who failed twice this morning does not arrive this evening one
+attempt from a lock.
+
+The lock is **derived, not stored**: the streak length gives a penalty and the
+penalty runs from the moment of the last failure. Nothing is scheduled and
+nothing needs cleaning up.
+
+### Keyed on email **and** IP, plus context
+
+Keying on the email alone makes the throttle aimable at a victim. Keyed on
+(email, IP) an attacker locks out only themselves.
+
+The cost is that a distributed attacker gets a fresh budget per address, so
+there is a second, looser limit on the IP alone: too many **distinct** emails
+failing from one address inside the window and that address is refused outright
+(`lockout_ip_distinct_emails`, default 12). One machine failing against many
+accounts is the pattern per-key limits cannot see.
+
+`login_attempts.context` (migration 012) separates the customer and staff
+buckets. It is not cosmetic: the storefront sign-in form probes the **staff**
+endpoint before the customer one, so a single wrong password recorded two
+failures and a shopper hit a lockout on their second press. It also stopped a
+customer's typos filling the staff counter for the same address.
+
+A staff-bucket lock does **not** block storefront sign-in — the staff attempt
+there is speculative, so `site.js` falls through to the customer path on a 429.
+The portal's own sign-in page calls `auth/login.php` directly, where a 429 is
+final.
+
+### Why the staff cap is higher
+
+This is a **weakening** of a security control: ten minutes is less than fifteen
+and the first three attempts now cost nothing. For a storefront that is a good
+trade — the realistic victim is a customer locked out of their own order
+history. It is a worse trade for the portal, where an account carries stock
+adjustments, refunds, price changes and, for Super Admin, the permission table.
+Staff keep the same free attempts and escalate to a 30-minute ceiling.
+
+### The 429 envelope
+
+A rate-limited refusal carries the wait **beside** `fields`, never inside it —
+`fields` is rendered straight onto form inputs, and a `retryAfter` key there
+would have the sign-in modal hunting for an input by that name. It also goes out
+as a real `Retry-After` header.
+
+```json
+{ "ok": false,
+  "error": { "retryAfter": 120, "code": "RATE_LIMITED",
+             "message": "Too many failed sign-in attempts. Try again in 2 minutes.",
+             "fields": {} } }
+```
+
+`EbApi` exposes it as `err.retryAfter` with an `err.isRateLimited` getter. The
+sign-in modal counts it down and disables the submit button until it reaches
+zero — a form that accepts a submission it knows will be refused teaches people
+that the message is advisory.
+
+### Three failures, three messages
+
+The old form answered `Email or password is incorrect.` for a wrong password, a
+locked-out account **and** an account with no password set. That is why a
+sign-in bug took a fortnight to find.
+
+| Situation | Answer |
+|---|---|
+| Wrong password · unknown email · **no password set** | 401, one shared message (see below) |
+| Locked out | 429, names the wait, counts down |
+| Archived account | 403, "no longer active" |
+
+**The first row is deliberately not split three ways.** Saying "that email has
+no password set" tells a stranger the address is registered here, which is
+exactly the enumeration the dummy-hash timing guard in `Auth::attemptCustomer`
+spends effort preventing. What was fixed instead is the advice: the message now
+ends "If you have not set a password for this email yet, use Sign Up to create
+one" — true in all three cases, and actionable in the one that needs it, without
+revealing which case applies.
+
+The state itself is shown where it is safe to show it: to staff, in Customer
+Accounts.
+
+---
+
 ## CSRF
 
 Authentication rides in a cookie, and browsers attach cookies to requests made
@@ -805,6 +909,93 @@ printed figures and the stored figures cannot disagree.
 
 ---
 
+### GET `users/me.php`
+
+**Any signed-in staff member.** The caller's own record: `id`, `name`, `email`,
+`avatar`, `role`, `roleId`, `status`.
+
+**No permission check and no `id` parameter, both deliberate.** Every staff
+member owns an account, so there is nothing to gate on beyond being signed in;
+and the session decides whose row is read, so there is no parameter a caller
+could point at a colleague. An `?id=` would make this `users/list.php` with a
+weaker guard.
+
+`role` and `status` are returned so the Profile screen can *show* them. They are
+not editable here — see below.
+
+The password hash is never selected, let alone returned.
+
+---
+
+### POST `users/me-save.php`
+
+**Any signed-in staff member.** Updates the caller's own `name`, `email` and
+`avatar`.
+
+**Body:** `name`, `email`, `avatar` (two letters; derived from the name when
+blank).
+
+**`role_id`, `role`, `status`, `password` and `id` are REFUSED with 403** — not
+ignored. Leaving them out of the `UPDATE` and relying on the form not to offer
+them is not enough: the form is not the caller. A hand-written POST carrying
+`role_id: 1` would then be silently accepted and silently discarded, which looks
+exactly like being applied. Presence of the key is the error, whatever its
+value. The `UPDATE` also names only the three permitted columns, so a bug in
+that check still cannot write the other two.
+
+A staff member editing their own role is privilege escalation; one archiving
+themselves is a support call. Both belong to an administrator, and the refusal
+message says so.
+
+`users.email` is UNIQUE and is re-checked with `id <> ?`, so saving without
+changing your own address is not a clash with yourself.
+
+**Audit:** one row naming what actually changed (`name → …`, `email → …`), or
+none when nothing did.
+
+---
+
+### POST `users/me-password.php`
+
+**Any signed-in staff member.** Changes the caller's own password.
+
+**Body:** `current_password`, `new_password`, `confirm_password`
+
+**Why it is separate from `me-save.php`** — the same reason `shop/password.php`
+is separate from `shop/profile.php`, and that file's header carries the full
+argument: a profile save changes a display name, this changes a credential.
+Folded together, the endpoint that edits a name could also take over the
+account, and the name save would inherit re-authentication and rate limiting it
+does not need — or, far more likely, this would inherit their absence.
+
+**Why it exists at all:** only `users/save.php` could set a staff password, and
+that requires `users.manage`. A staff member wanting to change their own
+password had to ask an administrator, who then knew it.
+
+The three rules, matching the customer endpoint:
+
+| Rule | |
+|---|---|
+| Re-verify the current password | A session cookie proves the browser was signed in at some point, not that the person at the keyboard is the account holder. Without it an unattended signed-in terminal — which is what a POS station is — is a permanent account takeover. |
+| Rate limit it | On the same `login_attempts` counter sign-in uses, so a stolen session cannot become an unlimited password oracle. |
+| Regenerate the session id | Any other session riding the old id dies. Changing a password because you fear someone else has access must actually remove that access. |
+
+Both the throttle and the re-verification live in **`Auth::reauthenticateStaff()`**,
+added beside `Auth::reauthenticateCustomer()` so the two are read together and
+cannot drift. Same failure shape: 401 from `require()`, 429 from the throttle,
+422 from the password check.
+
+A mismatched confirmation is rejected **before** re-authentication, so a typo
+does not burn a rate-limit attempt. `new === current` is rejected **after** it,
+so the message cannot be used to probe whether a guessed password was right.
+
+**Audit:** records *that* the password changed and never what it was set to —
+not the old value, not the new one, not its length. Unlike the customer
+endpoint this one can write to `audit_logs`, because `actor_user_id` is a
+`users.id` foreign key and a staff member is exactly what that column means.
+
+---
+
 ### POST `users/save.php`
 
 **Requires `users.manage`.** Create when `id` absent, update when present.
@@ -846,6 +1037,19 @@ SQL, not by loading every order and summing in PHP. Cancelled orders are
 excluded from spend. Walk-in orders (`customer_id NULL`) correctly count toward
 nobody.
 
+
+**`canSignIn`** (added) — false when `customers.password` is NULL, i.e. the
+record cannot be signed into. `customers/save.php` deliberately never sets a
+password (an admin form that could set someone else's is an account-takeover
+vector), so **every customer staff create through Add Customer starts this
+way** — and nothing said so, while the storefront answered "Email or password
+is incorrect" indefinitely. The Customer Accounts table now shows a **No
+sign-in** marker.
+
+The hash itself is never sent; only the yes/no leaves the server. Showing the
+state is safe inside the portal behind `users.manage` and would be account
+enumeration on the public sign-in form, which is why `shop/login.php` still
+refuses all three failure cases identically.
 ---
 
 ## Audit log
@@ -895,11 +1099,49 @@ returns 401.
 
 **Public.** The storefront catalogue.
 
-Being public changes what may be returned. `products/list.php` is the staff
-endpoint and includes stock counts and archived rows; none of that belongs on a
-page anyone can open. This returns a coarse availability band (`inStock`,
-`stockLevel`, `stockLabel`) instead of an exact count — "Low stock" is useful to
-a shopper, "7 units left" is operational detail a competitor can poll.
+**Query:** `category`, `search`, `sort`.
+
+`sort` accepts `featured` (default), `best-selling`, `price-asc`, `price-desc`,
+`rating`, `name` / `name-asc`.
+
+`featured` and `best-selling` are **not** the same ranking. `featured` is
+`is_best DESC, sold DESC` — the products an administrator flagged first, units
+sold only as a tie-break. `best-selling` is `sold DESC, rating DESC`, the
+unedited ranking, and it is what the shop's Best Selling / Top 5 / Top 10
+options mean. `name-asc` is an alias of `name`; the storefront's select has
+always sent that spelling and the map did not have it, so "Name (A–Z)" silently
+fell through to the default.
+
+**The shop grid does not page through this endpoint.** `loadShopCatalog()` in
+`assets/js/public/site.js` fetches the whole catalogue once with no `page` or
+`limit`, and every filter, sort and Top-N limit is applied to that array in the
+browser. `sort` is therefore offered here for correctness and for any future
+server-paged consumer, not because the grid uses it.
+
+#### Response
+
+| Field | |
+|---|---|
+| `inStock` | boolean |
+| `stock` | **the exact available quantity** |
+| `stockLevel` | `out` / `crit` / `warn` / `ok` — drives the pill colour |
+| `stockLabel` | the shopper-facing sentence, from `Inventory::shopLabel()` — "In Stock · 160 available", "Only 6 left", "Out of Stock" |
+
+**`stock` is a reversal, and it is deliberate.** This endpoint used to send the
+band alone, on the reasoning that "Low stock" is useful to a shopper while "7
+units left in Dagupan" is operational detail a competitor can poll on a timer
+and read the sales rate off. That reasoning has not stopped being true; the
+adviser asked for the available quantity to be shown, and a storefront cannot
+display a number it was never sent.
+
+**If the group later decides to narrow it,** the change is one line: return
+`stock` only when `$inv['level']` is `crit` or `out`. `Inventory::shopLabel()`
+already words exactly those bands with the count in them, so nothing else moves.
+
+Velocity is still not sent. Archived products are still never returned.
+
+`shop/cart.php` sends the same four fields per line, from the same helper, so
+the drawer cannot describe a product differently from the grid.
 
 ### POST `shop/verify-code.php`
 
@@ -1116,6 +1358,173 @@ left. Inserts a `notifications` row of type `completed` so staff see it.
 
 Races with the auto-complete sweep are expected and handled — the conditional
 UPDATE means whichever gets there first wins and the other is told to reload.
+
+---
+
+## Product reviews
+
+Four endpoints, two audiences. They are documented together because their rules
+interlock: what the customer may write is what the staff queue may act on, and
+both read the same `products.rating` / `products.review_count` pair.
+
+**The three rules that decide everything else:**
+
+1. **Only a verified purchase produces a review.** `product_reviews.order_id` is
+   `NOT NULL` and a real foreign key. The order is found by the server, never
+   supplied by the client.
+2. **Moderation triggers on the TEXT, never on the score.** A 1-star review
+   publishes immediately, exactly like a 5-star one, and raises a Warning
+   notification. Nothing in `reviews/moderate.php` reads `rating`.
+3. **The filter is a keyword list**, not content classification — case
+   insensitive, on word boundaries, read from `settings.review_flag_words`. It
+   will miss abuse and it will flag innocent text, which is why its output is a
+   queue for a person rather than a decision.
+
+`products.rating` and `products.review_count` are a cache maintained by
+`Reviews::recompute()` from **published rows only**, rewritten inside the same
+transaction as every save and every moderation decision. Render "No ratings yet"
+whenever `review_count` is 0 — the rating is 0.00 there, and a surface that shows
+it as a score is claiming something nobody said.
+
+---
+
+### Fields the reviews feature added to existing endpoints
+
+| Endpoint | Field | Why |
+|---|---|---|
+| `shop/products.php` | `reviewCount` | Travels with `rating` so no caller has to decide whether a score is real. `starRating()` in `site.js` takes it as a **required** argument — a call site that forgets it throws in development rather than quietly reprinting the old lie. |
+| `products/list.php` (staff) | `reviewCount` | Same rule for the portal. `ratingText()` in `engine.js` is the single renderer; it prints "No ratings yet" at zero. |
+| `shop/my-orders.php` | per item: `productId`, `myRating`, `myComment`, `myStatus` | So My Orders can render and pre-fill the rating control without one request per line. The review join is scoped by the **session's customer**, not by the order — `uq_review_customer_product` is per customer per product, so the same review attaches to every order of that product. |
+
+`products.rating` also changed default, from `5.00` to `0.00` (migration 011). Nothing
+inserts a product without an explicit rating today, so this changes no behaviour —
+it removes the trap that produced the invented scores in the first place.
+
+---
+
+### POST `shop/review-save.php`
+
+**Requires a customer session.** Creates the customer's review of a product, or
+edits the one they already left.
+
+**Body:** `product_id`, `rating` (1–5), `comment` (optional, ≤ 1000 chars)
+
+**`order_id` is not a parameter.** The endpoint finds the earliest `completed`
+order belonging to *the session's customer* that contains *that product*. Taking
+an order id from the body and validating it would look equivalent and is not: it
+invites the check to be relaxed later, and it is one edit away from reviewing a
+product on the strength of somebody else's order. Same rule as the delivery
+address in `shop/checkout.php` — "Always the session's address. Never read from
+the request."
+
+`completed`, not `delivered`: completion is the customer's own confirmation that
+the goods arrived, not staff marking a parcel as sent.
+
+**One vote per customer per product** — `uq_review_customer_product`. A second
+submission edits the first; buying the same product five times does not buy five
+votes. `order_id` is written once and never updated on an edit, because it is
+provenance rather than a pointer at the latest order.
+
+**Entitlement is re-derived on every write, edits included:**
+
+| Situation | What happens |
+|---|---|
+| Order refunded | Review stands, stays editable. A refund is a `product_returns` row; it does not touch `orders.status`, so the order still qualifies. The refunded customer is the one person who knows what went wrong. |
+| Product archived | Review stands, stays editable and stays reviewable. Withdrawing a product from sale does not un-eat it. (Orders are never archived — there is no such column.) |
+| Every qualifying order cancelled | Edit refused with `409`. The existing review is **left exactly as it is, not deleted** — it was written while entitled, and destroying it because staff changed a status afterwards is the worse failure. Staff can unpublish it, with a reason, on the record. |
+
+A review a moderator already rejected re-enters the queue when its author edits
+it, rather than quietly reappearing.
+
+**Returns:** `status`, `held`, `edited`, `avg_rating`, `review_count`. `held` is
+reported plainly — a customer told "posted" who then cannot find their review
+learns that the shop lies to them. The matched keyword is **not** returned;
+naming it turns the filter into a list to be probed.
+
+A rating of 2 or lower that publishes raises a `notifications` row of type
+`review` (Warning). Early warning, not a gate — the review is already live.
+
+---
+
+### GET `shop/reviews.php?product_id=…&page=&limit=`
+
+**Public.** The reviews shown on a product.
+
+Published rows only, with one exception: a signed-in customer gets their own
+review back in `mine` **whatever its status**, including the moderator's
+`reason` if it was taken down. Somebody who cannot see what they wrote cannot
+edit it, and a rejection with no reason given to the person rejected is
+indistinguishable from censorship.
+
+**Returns:** `avg_rating`, `review_count`, `spread` (the 1–5 histogram — twenty
+fives and four ones is a different product from twenty-four fours, and both
+average 4.2), `reviews`, `mine`, `can_review`.
+
+Reviewers are named "Maria S." — first name, last initial. The full name is a
+real person's identity attached to a public opinion and a purchase, on a page a
+crawler can index. Emails and order ids are never sent.
+
+"Verified purchase" is not a field and is not sent as one: it is true of every
+row by construction, so the badge is rendered unconditionally rather than
+trusted from a flag.
+
+The average is computed here rather than read from `products.rating`, so a page
+listing five reviews can never show an average from a drifted cache.
+
+---
+
+### GET `reviews/list.php?status=&search=&page=&limit=`
+
+**Requires `reviews.moderate`.** The staff moderation queue.
+
+Separate from `shop/reviews.php` on purpose: this returns held and rejected
+text, full customer names, emails, order ids and moderator reasons. One endpoint
+trimmed by a flag would, the day the flag is wrong, serve all of that publicly.
+
+`status` is `pending` · `published` · `rejected` · `all`. **Pending sorts oldest
+first** — a moderation queue is a queue, and the longest-waiting review is the
+one a customer is currently wondering about. The other lists are records, so
+they sort newest first.
+
+Each row carries `hold_reason` (the keyword that held it — a queue saying only
+"held for review" asks the moderator to guess what the machine objected to),
+`order_status` as it stands *today*, and `product_archived`.
+
+`meta.counts` is over all rows, not the filtered page, so the tab badges do not
+change with the current filter.
+
+---
+
+### POST `reviews/moderate.php`
+
+**Requires `reviews.moderate`.** One staff decision about one review.
+
+**Body:** `id`, `action` (`publish` · `reject` · `unpublish`), `reason`
+
+| Action | From | To | Reason |
+|---|---|---|---|
+| `publish` | `pending`, `rejected` | `published` | not required |
+| `reject` | `pending` | `rejected` | **required** |
+| `unpublish` | `published` | `rejected` | **required** |
+
+**Three named actions rather than a `status` parameter.** The rules differ per
+action, and an endpoint taking a target state has to rediscover which apply by
+branching on it anyway. Naming the action also lets the audit log say
+"Unpublished" instead of "set status to rejected" for two quite different
+decisions.
+
+**A reason is required to take something down.** The customer is shown it on
+their own review. Publishing needs none — it is the outcome they asked for.
+
+**Nothing here reads `rating`.** Moderation is for abuse and policy. If a rating
+could be moderated away, the average would measure which reviews staff were
+willing to keep.
+
+Every decision writes an `audit_logs` row — including `publish`, because a
+moderation log that records only refusals cannot answer "who cleared this".
+`Reviews::recompute()` runs in the same transaction, so the shop page and the
+queue cannot disagree. Concurrent moderation is caught by a conditional UPDATE
+and answered with `409`.
 
 ---
 
@@ -1469,6 +1878,26 @@ endpoint offers.
 changing someone's commercial terms after they have been notified is not an
 operation this exposes; issue a new application instead.
 
+**An approval that would produce an account nobody can enter is refused (409).**
+The promotion fills the customer's credentials from the application with
+`COALESCE`, which keeps whatever is already there — so when the customer row has
+`password` NULL *and* the application carries none, both branches do nothing and
+a retailer is promoted with no way in. Nothing said so. That became reachable
+when applications from signed-in customers were allowed to omit username and
+password, because a signed-in customer was assumed to already have one; a
+staff-created record has not (see `canSignIn` under `customers/list.php`).
+
+Checked **before** the transaction, so the application stays pending. The
+message names the fix: the applicant registers at the storefront with that
+email, which sets a password and **claims the existing row** (the claim path in
+`shop/register.php`), after which approval works unchanged.
+
+A set-password link was the alternative and was not built: it needs a token
+table, an expiry, a public claim page and mail that is allowed to fail, none of
+which exists here, and inventing all four inside an approval endpoint would be
+the largest untested surface in the change. The claim path already does the job
+and the applicant controls it.
+
 **Errors:** 404 unknown application · 409 already decided · 422 unknown
 `decision`, missing `tier` on approval, or missing `reason` on rejection.
 
@@ -1618,10 +2047,83 @@ requested state.
 Any signed-in staff member.
 
 **Query:** `page`, `limit` (default 50), `type` (`new-order`/`payment`/`hold`/
-`completed`/`return`/`inventory`/`audit`), `unreadOnly`.
+`completed`/`return`/`inventory`/`audit`), `priority`
+(`critical`/`warning`/`info`), `unread_only`.
 
-`meta.unread` is the whole-set unread count, which is what the bell badge shows —
-counting the current page would make the badge shrink as you paged forward.
+An unknown `priority` is a 400, not an empty list: "nothing is critical" and
+"you spelled the level wrong" must not look the same.
+
+#### Order
+
+`is_read ASC, FIELD(priority,'critical','warning','info') ASC, created_at DESC,
+id DESC` — unread first, then urgency, then newest. It comes from
+`Notify::orderBy()` and is the order the bell, the dashboard's System
+Notifications panel and the Notifications module all render in.
+
+**Unread outranks urgency deliberately.** Read state is shared across the team
+(see `notifications/read.php`), so "read" means somebody handled it. A critical
+alert already dealt with should not sit above the thing that just happened.
+
+It was `created_at DESC` alone, which made every notification equal: a batch
+that had already expired sorted underneath an order somebody completed an hour
+later.
+
+#### Response
+
+Each row carries `priority`. It is a **stored column**, written by
+`api/core/Notify.php` at the moment the event happens — not derived in the
+browser. Three screens read these rows and a rule living in one screen's script
+is a rule the other two do not have; it also has to survive paging, and a client
+cannot order rows it has not been sent. Migration `010-notification-priority.sql`
+carries the reasoning and the type→level mapping.
+
+#### Meta
+
+| Field | |
+|---|---|
+| `unread` | whole-set unread count — what the bell badge shows. Counting the current page would make the badge shrink as you paged forward |
+| `unreadByPriority` | `{critical, warning, info}`, every key always present. The bell shows the total count and marks itself separately when `critical > 0`, so a glance at the topbar separates "three things happened" from "something is on fire" |
+| `levels` | the three levels in display order |
+| `priorityMap` | the whole type→level table. The portal derives some notifications in the browser from live records (expiring batches, failed QA lots, retailer payment schemes); those have no row here but appear in the same lists and must sort on the same scale. Serving the map means the browser keeps no second copy to drift from |
+
+#### This endpoint writes
+
+It calls `Notify::syncExpiredBatches()` before reading. A batch expiring is the
+one Critical event with no user action to hang a producer off, and this project
+has no scheduler — XAMPP ships no cron and the MySQL event scheduler is off by
+default. The rows are materialised lazily instead, keyed on `CONCAT('nx-', b.id)`
+with a `NOT EXISTS` guard, so a batch gets one row however many times this runs
+and marking it read does not resurrect it. `shop/cart.php` already establishes
+the pattern of a GET reconciling what it is about to return.
+
+`created_at` is the **expiry date**, not the moment it was noticed — stamping it
+with now would make an old problem look new and reshuffle the feed on every page
+load.
+
+The 30-day "expiring soon" Warning is deliberately **not** stored. It is a
+countdown that has to be recomputed against today, nothing is wrong yet, and it
+stays derived in the browser.
+
+#### Producers
+
+Every `INSERT INTO notifications` goes through `Notify::create()`, which reads
+the level from one table. There is deliberately no way to pass a level in: a
+caller able to override it is a caller able to disagree.
+
+| Site | Type | Level |
+|---|---|---|
+| `shop/checkout.php` | `new-order` | Warning |
+| `shop/confirm-received.php` | `completed` | Info |
+| `b2b/apply.php` | `audit` | Info |
+| `Stock::sell()` (`api/core/Stock.php`) | `inventory` | Critical |
+| `Notify::syncExpiredBatches()` | `inventory` | Critical |
+
+`Stock::sell()` is new and closes a gap: nothing created a notification when
+stock crossed into critical or out-of-stock, so the whole Critical level was
+empty of the events it exists for. It fires on the **transition** into a band,
+not on every sale of an already-critical product — comparing
+`Inventory::levelForProduct()` on either side of the movement — because a bell
+that rings for every jar sold is a bell nobody reads.
 
 ---
 
@@ -1812,9 +2314,12 @@ endpoint answered.
 
 **Returns:** `{ items: [...], count, changes: [...] }`. Each item carries the
 quantity *and* the product fields the drawer draws with — `name`, `price`,
-`image`, `tint`, `cat`, plus the same coarse `stockLevel` / `stockLabel` band
-`shop/products.php` sends. The storefront can therefore render the cart from
-this response alone, without waiting on the catalogue request to resolve first.
+`image`, `tint`, `cat`, plus the same `stock` / `stockLevel` / `stockLabel`
+trio `shop/products.php` sends, worded by the same `Inventory::shopLabel()`.
+The storefront can therefore render the cart from this response alone, without
+waiting on the catalogue request to resolve first — and the drawer's quantity
+stepper caps at the same number the product card capped at, rather than falling
+back to the flat 99.
 
 **The cart lives on the account, not in the browser.** `state.cart` in
 `assets/js/public/site.js` was a plain in-memory array: a reload emptied it, a

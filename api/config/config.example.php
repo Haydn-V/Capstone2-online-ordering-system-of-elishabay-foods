@@ -127,10 +127,32 @@ return [
         /* Idle timeout in seconds before a session is treated as expired. */
         'session_lifetime' => 7200,
 
-        /* Failed logins allowed from one email/IP inside the window before
-           the account is temporarily refused. Requires the login_attempts
-           table from db/schema-additions.sql. */
-        'max_login_attempts' => 5,
-        'lockout_seconds'    => 900,
+        /* Failed sign-ins: a PROGRESSIVE lockout, not a flat one.
+           Policy and reasoning live in api/core/Lockout.php; these are its
+           knobs. Requires the login_attempts table from
+           db/schema-additions.sql — without it the control does not engage.
+
+           Replaced max_login_attempts / lockout_seconds (5 failures, then a
+           flat 900s). That was keyed on the EMAIL ALONE, which meant anyone
+           who knew a customer's address could lock them out of their own
+           account on purpose. It is now keyed on email AND source IP. */
+
+        /* Free attempts before anything is charged. Typos happen. */
+        'lockout_free_attempts'      => 3,
+        /* Each failure past the free ones adds this much: 2, 4, 6, 8, 10 min. */
+        'lockout_step_seconds'       => 120,
+        /* Ceiling for the storefront — a locked-out shopper is the likely
+           victim here, not an attacker. */
+        'lockout_max_seconds'        => 600,
+        /* Ceiling for the portal. Higher on purpose: these accounts adjust
+           stock, issue refunds and edit permissions. */
+        'lockout_max_seconds_staff'  => 1800,
+        /* No attempts for this long and the streak resets on its own. */
+        'lockout_decay_seconds'      => 1800,
+        /* Distinct addresses one IP may fail against inside the decay window
+           before that IP is refused outright. Far above anything an office
+           behind one NAT reaches by forgetting passwords — this catches
+           spraying, which per-key limits cannot see. 0 disables it. */
+        'lockout_ip_distinct_emails' => 12,
     ],
 ];

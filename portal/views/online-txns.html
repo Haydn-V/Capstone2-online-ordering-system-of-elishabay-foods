@@ -38,7 +38,13 @@
       <h2>Online Transactions</h2>
     </div>
   </div>
-  <div class="table-toolbar" style="margin-bottom: 14px">
+  <!-- Tabs left, filters right, one band — see .view-toolbar in portal.css.
+       The tab strip moved ahead of the search box: it was already sharing this
+       row but sat after it, so the row read filters-then-tabs while every other
+       screen reads tabs-then-filters. -->
+  <div class="view-toolbar">
+    <div class="tabs" id="txn-status-tabs" style="gap: 6px" role="tablist" aria-label="Online transaction status"></div>
+    <div class="view-toolbar-filters">
     <div class="search-box">
       <svg
         viewBox="0 0 24 24"
@@ -59,7 +65,7 @@
         data-refilters="onlineTxns"
       />
     </div>
-    <div class="tabs" id="txn-status-tabs" style="gap: 6px"></div>
+    </div>
   </div>
   <div id="txn-content"></div>
 </section>

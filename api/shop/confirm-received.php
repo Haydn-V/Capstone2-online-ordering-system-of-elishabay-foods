@@ -101,13 +101,14 @@ try {
     }
 
     /* Staff should see the confirmation without watching the order list. Same
-       mechanism, and the same id format, as the new-order notification in
-       api/shop/checkout.php. */
-    Database::run(
-        'INSERT INTO notifications (id, type, order_id, message, created_at, is_read)
-         VALUES (?, ?, ?, ?, NOW(), 0)',
-        ['n-' . strtolower(bin2hex(random_bytes(5))), 'completed', $order['id'],
-         sprintf('%s confirmed receipt of order %s.', $customer['name'], $order['id'])]
+       mechanism as the new-order notification in api/shop/checkout.php.
+
+       Info, not Warning: this is the good outcome arriving, and there is
+       nothing left for anybody to do about it. */
+    Notify::create(
+        'completed',
+        sprintf('%s confirmed receipt of order %s.', $customer['name'], $order['id']),
+        ['order' => $order['id']]
     );
 
     Database::run(

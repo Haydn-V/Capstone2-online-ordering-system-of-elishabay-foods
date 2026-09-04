@@ -110,7 +110,7 @@ $order = $sortMap[$q['sort'] ?? 'name'] ?? $sortMap['name'];
    Inventory.php alone and this file never has to restate one. */
 $baseWhere = $where ? ' WHERE ' . implode(' AND ', $where) : '';
 
-$base = 'SELECT p.id, p.name, p.description, p.price, p.stock, p.rating, p.sold,
+$base = 'SELECT p.id, p.name, p.description, p.price, p.stock, p.rating, p.review_count, p.sold,
                 p.is_best, p.tint, p.image_url, p.archived, p.created_at,
                 c.id AS category_id, c.name AS category,
                 COALESCE(vel.units, 0) AS window_units,
@@ -154,6 +154,11 @@ $products = array_map(static function (array $r): array {
         'price'       => (float) $r['price'],
         'stock'       => (int) $r['stock'],
         'rating'      => (float) $r['rating'],
+        /* Always beside the average. `rating` is 0.00 for a product nobody has
+           reviewed, and a screen that prints it without checking this shows
+           "0.0 stars" — which reads as a bad product rather than an unrated
+           one. Every renderer of `rating` in the portal checks this first. */
+        'reviewCount' => (int) $r['review_count'],
         'sold'        => (int) $r['sold'],
         'best'        => (bool) $r['is_best'],
         'tint'        => $r['tint'],

@@ -43,8 +43,13 @@
   </div>
   <div class="panel notif-panel">
     <div class="notif-toolbar">
-      <div class="return-tabs" id="notif-tabs"></div>
+      <div class="return-tabs" id="notif-tabs" role="tablist" aria-label="Notification category"></div>
+      <!-- Urgency is first and is the default, because it is the order the
+           bell and the dashboard panel are fixed at; the others stay because
+           this is the one screen where reading the whole history in date
+           order is a reasonable thing to want. -->
       <select class="filter-select" id="notif-sort" aria-label="Sort notifications">
+        <option value="urgency">Most Urgent First</option>
         <option value="newest">Newest First</option>
         <option value="oldest">Oldest First</option>
         <option value="unread">Unread First</option>

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>reviews module</title>
+    <!-- ============================================================
+         MODULE PARTIAL — section id="mod-reviews".
+
+         Wrapped as a complete HTML document ON PURPOSE — see the note
+         at the top of returns.html for why (dev-server live-reload
+         injection lands inside the logo mark otherwise).
+         ============================================================ -->
+  </head>
+  <body>
+<!-- ============================================================
+     MAINTENANCE: PRODUCT REVIEWS
+
+     WHAT THIS SCREEN IS FOR, AND WHAT IT IS NOT FOR.
+
+     It is for abuse and policy: advertising, contact details, someone
+     else's dispute pasted into a review, language that would not be
+     acceptable on the shop page.
+
+     It is NOT for low scores. A one- or two-star review publishes the
+     moment it is written and never appears in the Pending queue; it
+     raises a Warning notification instead, so the team hears about a
+     real problem with a real order quickly. Nothing in
+     api/reviews/moderate.php reads `rating`, and if it did, the
+     average on every product page would quietly become a measure of
+     which reviews staff were willing to keep.
+
+     The Pending queue is filled by ONE thing: a keyword list, held in
+     settings.review_flag_words, matched case-insensitively on word
+     boundaries. It is not content classification. It misses abuse and
+     it flags ordinary sentences, which is exactly why each row shows
+     the word that caught it — a moderator who cannot see what the
+     machine objected to is left guessing, and guessing safely means
+     rejecting innocent text.
+     ============================================================ -->
+<section id="mod-reviews" class="mod-panel" aria-label="Product Reviews">
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Maintenance</div>
+      <h2>Product Reviews</h2>
+      <p class="field-hint" style="margin-top: 6px">
+        Reviews from customers who bought the product. Moderation is for abuse
+        and policy — a low rating is never a reason to take one down.
+      </p>
+    </div>
+  </div>
+
+  <!-- Tabs left, search right, one band — the same .view-toolbar the other
+       queues use, so this screen does not invent a fourth toolbar shape. -->
+  <div class="view-toolbar">
+    <div class="rev-tabs" id="rev-tabs" role="tablist" aria-label="Review status"></div>
+    <div class="view-toolbar-filters">
+      <div class="search-box">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="11" cy="11" r="8" />
+          <path d="M21 21l-4.35-4.35" />
+        </svg>
+        <input
+          id="rev-search"
+          type="search"
+          placeholder="Search product, customer, order or text…"
+          aria-label="Search reviews"
+        />
+      </div>
+    </div>
+  </div>
+
+  <div id="rev-content" aria-live="polite"></div>
+</section>
+  </body>
+</html>

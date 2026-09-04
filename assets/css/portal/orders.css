@@ -115,8 +115,51 @@
   width: 7px; height: 7px; border-radius: 50%; background: var(--gold);
   flex-shrink: 0; margin-top: 6px;
 }
-.notif-row-meta { display: flex; align-items: center; gap: 16px; margin-top: 5px; }
+.notif-row-meta { display: flex; align-items: center; gap: 12px; margin-top: 5px; flex-wrap: wrap; }
 .notif-row-time { font-size: .74rem; color: var(--text-muted); }
+
+/* ── URGENCY LEVEL — the same pill in all three places ─────────────────
+   The bell dropdown, the dashboard's System Notifications panel and this
+   module each render it from notifLevelChip() in orders.js, so a row that
+   is Critical looks Critical wherever it is seen.
+
+   NEVER COLOUR ALONE. Each pill carries a glyph AND the word — a triangle
+   for Critical, a filled circle for Warning, an i for Info. Colour is the
+   third channel, not the only one: these appear at .66rem against two
+   theme backgrounds, which is exactly where a hue-only signal fails first.
+
+   The text-safe *-ink steps are used for the foreground, since this is
+   text and has to clear 4.5:1; the tinted background is decorative and is
+   held at the low alpha the existing chips use. */
+.notif-level {
+  display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
+  padding: 2px 9px; border-radius: var(--r-pill);
+  font-size: .66rem; font-weight: 800; letter-spacing: .04em;
+  text-transform: uppercase; white-space: nowrap;
+  /* THE WORD IS --text, NOT THE LEVEL COLOUR, AND THAT IS THE POINT.
+
+     The obvious build — colour the whole pill with --out-ink / --warn-ink —
+     was written first and measured at 3.65:1 in the dark theme, against the
+     composited backdrop of the pill's own red tint over the row over the
+     glass panel. That is under the 4.5:1 floor, and this text is 10.5px, so
+     the large-text exemption does not apply. --out-ink does not reach 4.5:1
+     on ANY of the dark surface tokens: 4.20 on --surface, 4.39 at best on
+     --surface-2. There is no value of this shape that would have passed.
+
+     So the LABEL takes --text, which is maximum contrast in both themes, and
+     the level colour moves to the icon and the border — non-text graphics,
+     which need 3:1 and clear it comfortably. Nothing is lost: the level was
+     never carried by colour alone, and the word was always the primary
+     channel. The tints are the same three already used by .stat-delta and
+     the type chips above, not new values. */
+  color: var(--text);
+  border: 1px solid var(--level-ink, var(--border-lift));
+  background: var(--level-bg, var(--bg-tint));
+}
+.notif-level svg { width: 11px; height: 11px; flex-shrink: 0; color: var(--level-ink, var(--text-muted)); }
+.notif-level-critical { --level-ink: var(--out-ink);    --level-bg: rgba(220,38,38,.10); }
+.notif-level-warning  { --level-ink: var(--warn-ink);   --level-bg: rgba(232,163,23,.14); }
+.notif-level-info     { --level-ink: var(--border-lift); --level-bg: var(--bg-tint); }
 .notif-row-action { font-size: .76rem; font-weight: 700; color: var(--gold-ink); cursor: pointer; }
 .notif-row-action:hover { text-decoration: underline; }
 
@@ -294,19 +337,7 @@
   display: flex; gap: 6px; flex-wrap: wrap;
   margin-bottom: 18px;
 }
-.return-tab-btn {
-  padding: 7px 16px;
-  border-radius: var(--r-pill);
-  font-family: var(--font-ui);
-  font-size: .72rem; font-weight: 700;
-  letter-spacing: .06em; text-transform: uppercase;
-  border: 1.5px solid var(--border-lift);
-  background: transparent; color: var(--text-muted);
-  cursor: pointer; transition: all var(--t);
-  display: flex; align-items: center; gap: 6px;
-}
-.return-tab-btn:hover  { border-color: var(--gold); color: var(--text); }
-.return-tab-btn.active { background: var(--gold); color: #1E1A0E; border-color: var(--gold); }
+/* Shape, hover and active come from THE ONE TAB PILL block in portal.css. */
 
 .return-step-indicator {
   display: flex; align-items: center; gap: 0;

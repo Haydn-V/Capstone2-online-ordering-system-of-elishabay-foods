@@ -395,6 +395,16 @@ body::before {
   flex-wrap: wrap;
   gap: 8px;
 }
+/* The glass skin gives every pill its frosted body. Shape, hover and active
+   are NOT set here — they come from THE ONE TAB PILL block in portal.css.
+
+   THIS IS WHERE THEY CAME APART. Three of the five had a hover here
+   (a white wash plus a 1px lift) and two did not, so those two fell through
+   to their own gold-edge rule instead. Since this file loads last, the wash
+   won wherever it was listed — which is why Order Queue's tabs lifted and
+   glowed white while Inventory Management's, one screen away, drew a gold
+   edge and stayed put. Naming three of five in a hover rule is the bug; the
+   fix is to name none of them and let the shared block hover everything. */
 .tab-btn,
 .return-tab-btn,
 .alert-tab,
@@ -403,30 +413,17 @@ body::before {
   background: var(--glass-bg-soft);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--r-pill);
-  border-bottom: 1px solid var(--glass-border);
+  border-color: var(--glass-border);
   margin-bottom: 0;
-  transition: background var(--t), border-color var(--t), color var(--t), transform var(--t);
 }
+/* Hover keeps the frosted body and takes the gold edge the shared block
+   defines; only the fill is restated, because `background` above would
+   otherwise hold it flat. */
 .tab-btn:hover,
 .return-tab-btn:hover,
-.alert-tab:hover {
-  background: rgba(255,255,255,.30);
-  border-bottom-color: var(--glass-border);
-  transform: translateY(-1px);
-}
-[data-theme="dark"] .tab-btn:hover,
-[data-theme="dark"] .return-tab-btn:hover,
-[data-theme="dark"] .alert-tab:hover { background: rgba(255,255,255,.07); }
-.tab-btn.active,
-.return-tab-btn.active,
-.alert-tab.active,
-.inv-action-btn.active,
-.range-btn.active {
-  background: var(--gold); color: #1E1A0E; border-color: var(--gold);
-  border-bottom-color: var(--gold);
-}
+.alert-tab:hover,
+.inv-action-btn:hover,
+.range-btn:hover { background: var(--glass-bg); }
 
 /* ── Overlays: near-opaque, not translucent — see the --glass-bg-overlay
    comment above. Blur stays (still reads as "glass"), but the fill is

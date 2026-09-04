@@ -56,6 +56,52 @@ if ($data['decision'] === 'approved') {
     }
 }
 
+/* AN APPROVAL MUST PRODUCE AN ACCOUNT SOMEBODY CAN ENTER.
+   -------------------------------------------------------
+   Checked BEFORE the transaction, so the application stays pending and staff
+   see why rather than finding an approved partner who cannot sign in.
+
+   The hole this closes: the approval below fills the customer's credentials
+   from the application with COALESCE, which keeps whatever is already there.
+   If the customer row has password NULL *and* the application carries none,
+   both branches do nothing and the retailer is promoted with no way in — and
+   nothing said so. That became reachable when applications from signed-in
+   customers were allowed to omit username and password, because a signed-in
+   customer was assumed to already have one. A staff-created customer record
+   (api/customers/save.php never sets a password) has not.
+
+   WHY REFUSE RATHER THAN ISSUE A SET-PASSWORD LINK. A reset flow needs a
+   token table, an expiry, a public claim page and mail that is allowed to
+   fail — none of which exists here, and inventing it inside an approval
+   endpoint would be the largest untested surface in this change. The route
+   back already exists and is one the applicant controls: registering with
+   that email CLAIMS the existing row (see the claim path in
+   shop/register.php), after which approval works unchanged. The message says
+   exactly that, so the refusal is actionable rather than a dead end. */
+if ($data['decision'] === 'approved') {
+    $linkedId = $app['customer_id']
+        ?: Database::scalar('SELECT id FROM customers WHERE email = ?', [$app['email']]);
+
+    /* Read once. scalar() returns false for "no such row" and null for "the
+       column is NULL" — both mean no usable credential, and both must be
+       treated the same. */
+    $stored = $linkedId
+        ? Database::scalar('SELECT password FROM customers WHERE id = ?', [$linkedId])
+        : false;
+    $customerHasPassword = is_string($stored) && $stored !== '';
+
+    if ($app['password'] === null && !$customerHasPassword) {
+        Response::conflict(sprintf(
+            'This application carries no password, and %s has no sign-in set up, '
+            . 'so approving it would create a wholesale account nobody can enter. '
+            . 'Ask the applicant to register at the storefront with %s first — that '
+            . 'sets their password and links to this record — then approve.',
+            $linkedId ? 'the linked customer record' : 'that email address',
+            $app['email']
+        ));
+    }
+}
+
 $pdo = Database::pdo();
 try {
     $pdo->beginTransaction();

@@ -327,12 +327,15 @@ try {
     }
 
     /* Notify the staff. The Order Queue reads the orders table directly, but a
-       notification row is what makes the bell light up without a refresh. */
-    Database::run(
-        'INSERT INTO notifications (id, type, order_id, message, created_at, is_read)
-         VALUES (?, ?, ?, ?, NOW(), 0)',
-        ['n-' . strtolower(bin2hex(random_bytes(5))), 'new-order', $orderId,
-         sprintf('New online order from %s — ₱%s', $data['name'], number_format($total, 2))]
+       notification row is what makes the bell light up without a refresh.
+
+       Through Notify so the urgency level comes from the one type→level table
+       rather than from this file's opinion of it. A new order is a Warning:
+       it needs accepting today, but nothing is at risk until it ages. */
+    Notify::create(
+        'new-order',
+        sprintf('New online order from %s — ₱%s', $data['name'], number_format($total, 2)),
+        ['order' => $orderId]
     );
 
     /* Actor is the customer, not a staff member, so actor_user_id stays NULL. */

@@ -61,27 +61,8 @@
       </button>
     </div>
   </div>
-  <div class="table-toolbar">
-    <select
-      class="filter-select"
-      id="b2b-page-size"
-      aria-label="Rows per page"
-    >
-      <option value="10">10 per page</option>
-      <option value="25">25 per page</option>
-      <option value="50">50 per page</option>
-    </select>
-    <select
-      class="filter-select"
-      id="filter-b2b-status"
-      aria-label="Filter by status"
-    >
-      <option value="all">All Status</option>
-      <option value="pending">Pending Review</option>
-      <option value="approved">Approved</option>
-      <option value="rejected">Rejected</option>
-    </select>
-    <div class="search-box" style="margin-left: auto">
+  <div class="view-toolbar view-toolbar-filters">
+    <div class="search-box">
       <svg
         viewBox="0 0 24 24"
         fill="none"
@@ -100,6 +81,27 @@
         aria-label="Search applications"
       />
     </div>
+    <!-- Everything before this sits left, everything after it right. -->
+    <span class="vt-spacer" aria-hidden="true"></span>
+    <select
+      class="filter-select"
+      id="filter-b2b-status"
+      aria-label="Filter by status"
+    >
+      <option value="all">All Status</option>
+      <option value="pending">Pending Review</option>
+      <option value="approved">Approved</option>
+      <option value="rejected">Rejected</option>
+    </select>
+    <select
+      class="filter-select"
+      id="b2b-page-size"
+      aria-label="Rows per page"
+    >
+      <option value="10">10 per page</option>
+      <option value="25">25 per page</option>
+      <option value="50">50 per page</option>
+    </select>
   </div>
   <div class="table-wrap viewport-bound">
     <table class="data-table sortable-table" id="b2b-table">

@@ -38,7 +38,11 @@
       <h2>Order Queue</h2>
     </div>
   </div>
-  <div class="tabs" id="queue-status-tabs" style="gap:6px;margin-bottom:16px"></div>
+  <!-- Wrapped so a tabs-only screen sits in the same band as one with
+       filters, and its pills take the shared control height. -->
+  <div class="view-toolbar">
+    <div class="tabs" id="queue-status-tabs" style="gap:6px" role="tablist" aria-label="Order queue status"></div>
+  </div>
   <div id="queue-content"></div>
 </section>
   </body>

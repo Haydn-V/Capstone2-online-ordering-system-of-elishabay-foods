@@ -39,23 +39,28 @@
     </div>
     <div class="actions" id="products-header-actions"></div>
   </div>
-  <div class="tabs" id="products-tabs" role="tablist">
-    <button
-      class="tab-btn active"
-      role="tab"
-      aria-selected="true"
-      data-products-tab="catalog"
-    >
-      Catalog
-    </button>
-    <button
-      class="tab-btn"
-      role="tab"
-      aria-selected="false"
-      data-products-tab="varieties"
-    >
-      Varieties
-    </button>
+  <!-- Wrapped so a tabs-only screen sits in the same band as one with
+       filters, and its pills take the shared control height. No filter
+       group here, so the tabs simply stay left. -->
+  <div class="view-toolbar">
+    <div class="tabs" id="products-tabs" role="tablist">
+      <button
+        class="tab-btn active"
+        role="tab"
+        aria-selected="true"
+        data-products-tab="catalog"
+      >
+        Catalog
+      </button>
+      <button
+        class="tab-btn"
+        role="tab"
+        aria-selected="false"
+        data-products-tab="varieties"
+      >
+        Varieties
+      </button>
+    </div>
   </div>
   <div id="tab-catalog" class="tab-panel active">
     <div class="product-admin-grid" id="product-admin-grid"></div>

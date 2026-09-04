@@ -38,7 +38,11 @@
       <h2>Payment Verification</h2>
     </div>
   </div>
-  <div class="tabs" id="pv-status-tabs" style="gap:6px;margin-bottom:16px"></div>
+  <!-- Wrapped so a tabs-only screen sits in the same band as one with
+       filters, and its pills take the shared control height. -->
+  <div class="view-toolbar">
+    <div class="tabs" id="pv-status-tabs" style="gap:6px" role="tablist" aria-label="Payment verification status"></div>
+  </div>
   <div id="pv-content"></div>
 </section>
   </body>

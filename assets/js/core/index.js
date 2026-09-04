@@ -56,6 +56,8 @@ import { EbFormat }   from "./format.js";
 import { EbUI }       from "./ui.js";
 import { EbRbac }     from "./rbac.js";
 import { EbPaginate } from "./pagination.js";
+import { EbSelect }   from "./select.js";
+import { EbDate }     from "./datepicker.js";
 
 /* The bridge. Everything above is importable as a module; these globals
    exist only for the classic scripts that have not been converted. */
@@ -65,6 +67,8 @@ window.EbFormat   = EbFormat;
 window.EbUI       = EbUI;
 window.EbRbac     = EbRbac;
 window.EbPaginate = EbPaginate;
+window.EbSelect   = EbSelect;
+window.EbDate     = EbDate;
 
 /* One delegated listener that swaps any image which fails to load for the
    defined placeholder. Installed here rather than per page so no screen can
@@ -75,4 +79,4 @@ EbFormat.installImageFallback(document);
 /* Re-exported so a converted module can import everything from one place:
        import { EbApi, EbUI } from "../core/index.js";
 */
-export { EbApi, EbSession, EbFormat, EbUI, EbRbac, EbPaginate };
+export { EbApi, EbSession, EbFormat, EbUI, EbRbac, EbPaginate, EbSelect, EbDate };

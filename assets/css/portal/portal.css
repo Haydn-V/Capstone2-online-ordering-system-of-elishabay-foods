@@ -723,6 +723,35 @@ textarea.control { resize: vertical; min-height: 90px; }
   display: flex; align-items: center; justify-content: center;
   font-size: .62rem; font-weight: 800; color: #fff;
   font-variant-numeric: tabular-nums;
+  /* Unread but nothing critical: the count still shows, in the muted
+     neutral, so a badge that is merely a tally does not read as an alarm.
+     The count NEVER goes away while anything is unread — it is the "how
+     many" half, and the state below is the "how bad" half. */
+  background: var(--text-muted);
+}
+/* Something critical is unread. Brand red plus a ring, and the bell behind
+   it picks up the same colour — so the difference is a shape and a size
+   change as well as a hue, legible to someone who cannot separate red from
+   grey. The exact split is spelled out in the bell's title and aria-label
+   by initNotifBadge(), because no badge should be the only place a fact
+   lives. */
+.notif-badge-count.has-critical {
+  background: var(--out);
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px rgba(220,38,38,.28);
+}
+.notif-btn.has-critical { color: var(--out-ink); }
+/* A slow, single pulse rather than a loop: it draws the eye once on
+   arrival and then stops, which is the difference between a signal and a
+   distraction. Suppressed entirely under reduced-motion — the colour, the
+   ring and the label all still carry the state. */
+@keyframes notifCriticalIn {
+  from { transform: scale(.72); }
+  60%  { transform: scale(1.12); }
+  to   { transform: scale(1); }
+}
+.notif-badge-count.has-critical { animation: notifCriticalIn 420ms var(--ease) 1; }
+@media (prefers-reduced-motion: reduce) {
+  .notif-badge-count.has-critical { animation: none; }
 }
 
 /* Sidebar nav-item badge — sits inline after the label, not floated
@@ -751,16 +780,41 @@ textarea.control { resize: vertical; min-height: 90px; }
 
 /* Topbar notifications dropdown (mirrors .user-dropdown) */
 .topbar-notif { position: relative; }
+/* Anchored to the bell it belongs to.
+
+   transform-origin at the top RIGHT, under the trigger, so the panel appears
+   to grow out of the control rather than fading in from the middle of
+   nowhere — the same anchoring EbSelect gives every filter dropdown, so the
+   two read as one family. */
 .notif-dropdown {
   position: absolute; top: calc(100% + 12px); right: -8px;
   width: 380px; max-width: calc(100vw - 32px);
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
-  z-index: var(--z-modal); overflow: hidden;
-  opacity: 0; pointer-events: none; transform: translateY(-6px) scale(.98);
-  transition: opacity var(--t) var(--ease), transform var(--t) var(--ease);
+  z-index: var(--z-modal);
+  opacity: 0; pointer-events: none;
+  transform: translateY(-6px) scale(.98);
+  transform-origin: top right;
+  transition: opacity .14s var(--ease), transform .14s var(--ease);
 }
 .topbar-notif.open .notif-dropdown { opacity: 1; pointer-events: auto; transform: none; }
+/* The pointer that ties the panel to the bell. Drawn as a rotated square
+   behind the panel's own top edge, so it inherits the border and the surface
+   and cannot disagree with them. */
+.notif-dropdown::before,
+.user-dropdown::before {
+  content: ""; position: absolute; top: -6px; width: 11px; height: 11px;
+  background: var(--surface);
+  border-left: 1px solid var(--border); border-top: 1px solid var(--border);
+  transform: rotate(45deg); border-radius: 2px 0 0 0;
+}
+.notif-dropdown::before { right: 22px; }
+.user-dropdown::before  { right: 18px; }
+/* overflow:hidden would clip the pointer off, so the corners are rounded on
+   the scrolling list instead of on the panel. */
+.nd-list { border-radius: 0; }
+.nd-header { border-radius: var(--r-lg) var(--r-lg) 0 0; }
+.nd-footer { border-radius: 0 0 var(--r-lg) var(--r-lg); }
 .nd-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 18px; border-bottom: 1px solid var(--border);
@@ -775,7 +829,18 @@ textarea.control { resize: vertical; min-height: 90px; }
   color: var(--gold-ink); padding: 5px 12px; transition: all var(--t);
 }
 .nd-mark-all:hover { background: var(--gold-dim); border-color: var(--gold); }
-.nd-list { max-height: 380px; overflow-y: auto; background: var(--surface); }
+.nd-list {
+  max-height: 380px; overflow-y: auto; background: var(--surface);
+  /* The app-wide auto-hiding scrollbar is defined on `*` at the top of this
+     file; naming it here as well makes the gold thumb show on hover of the
+     LIST rather than only on hover of the thumb itself, which on a 380px
+     panel is the difference between discoverable and not. */
+  scrollbar-width: thin; scrollbar-color: transparent transparent;
+}
+.nd-list:hover { scrollbar-color: var(--gold-line) transparent; }
+.nd-list::-webkit-scrollbar { width: 7px; }
+.nd-list::-webkit-scrollbar-thumb { background: transparent; border-radius: 99px; }
+.nd-list:hover::-webkit-scrollbar-thumb { background: var(--gold-line); }
 .nd-item {
   display: flex; align-items: flex-start; gap: 12px;
   padding: 14px 18px; border-bottom: 1px solid var(--border);
@@ -784,6 +849,15 @@ textarea.control { resize: vertical; min-height: 90px; }
 }
 .nd-item:last-child { border-bottom: none; }
 .nd-item:hover { background: var(--bg-soft); }
+/* Every row is clickable, so every row needs a focus state as well as a
+   hover one — the panel was reachable by mouse only. */
+.nd-item:focus-visible,
+.nd-mark-all:focus-visible,
+.nd-footer:focus-visible,
+.ud-item:focus-visible {
+  outline: none; background: var(--bg-tint);
+  box-shadow: inset 0 0 0 2px var(--gold);
+}
 .nd-item-icon {
   width: 34px; height: 34px; border-radius: var(--r-pill);
   display: flex; align-items: center; justify-content: center;
@@ -804,8 +878,19 @@ textarea.control { resize: vertical; min-height: 90px; }
   width: 7px; height: 7px; border-radius: 50%; background: var(--gold);
   flex-shrink: 0; margin-top: 5px;
 }
-.nd-item-time { font-size: .7rem; color: var(--text-muted); margin-top: 4px; }
-.nd-empty { padding: 40px 18px; text-align: center; color: var(--text-muted); font-size: .84rem; background: var(--surface); }
+.nd-item-time {
+  font-size: .7rem; color: var(--text-muted); margin-top: 5px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+/* A real empty state rather than one grey sentence: an icon, a heading and
+   the reassurance underneath, matching .alert-empty on the dashboard panel so
+   the same condition looks the same in both places. */
+.nd-empty {
+  padding: 40px 18px; text-align: center; color: var(--text-muted);
+  font-size: .8rem; background: var(--surface);
+}
+.nd-empty svg { width: 30px; height: 30px; opacity: .35; margin-bottom: 10px; }
+.nd-empty strong { display: block; color: var(--text); font-size: .92rem; font-weight: 700; margin-bottom: 3px; }
 .nd-footer {
   padding: 13px 18px; text-align: center; font-size: .78rem; font-weight: 700;
   color: var(--gold-ink); cursor: pointer; border-top: 1px solid var(--border);
@@ -826,17 +911,63 @@ textarea.control { resize: vertical; min-height: 90px; }
   gap: 12px; flex-wrap: wrap; margin-bottom: 6px;
 }
 .alert-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
-.alert-tab {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 16px; border-radius: var(--r-pill);
-  font-family: var(--font-ui); font-size: .72rem; font-weight: 700;
-  letter-spacing: .06em; text-transform: uppercase;
-  border: 1.5px solid var(--border-lift); background: transparent;
-  color: var(--text-muted); cursor: pointer; transition: all var(--t);
+/* Shape, hover and active now come from THE ONE TAB PILL block above. */
+
+/* =================================================================
+   THE WORK BADGE
+   -----------------------------------------------------------------
+   A number on a tab means ONE thing across the portal: this many items
+   are waiting for you. It is never a row count — All, Completed and
+   Cancelled carry no badge at all, because "how many records exist" is
+   not something a staff member can act on, and a figure that sometimes
+   means work and sometimes means history means nothing.
+
+   Zero renders no badge rather than a grey 0. An empty queue should
+   look empty; a 0 still draws the eye to a tab with nothing behind it.
+
+   TABULAR NUMERALS, and a min-width, so the badge keeps its box as the
+   count changes. Without both, "Pending 9" dropping to "Pending 8"
+   re-measures the pill and nudges every tab to its right — the row
+   twitches each time somebody clears an order. Same reasoning as
+   .alert-tab-count, which already did this.
+
+   Subordinate to the label: smaller, lighter weight than the tab text,
+   and tinted rather than filled. It reports; the label names. */
+.tab-count,
+.alert-tab-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 19px; height: 18px; padding: 0 6px;
+  border-radius: var(--r-pill);
+  /* A FILLED GOLD CHIP, NOT A TINT.
+
+     This was --gold-dim — brand gold at .14 alpha — which over the idle pill's
+     frosted body composited to a barely-there wash: the digit was legible but
+     the badge itself was not, so a queue with work in it looked much like one
+     without. The number is the thing on this row a staff member is scanning
+     for, and it was the quietest mark on it.
+
+     Solid --gold with --ink-card on top instead. Same pairing the .active pill
+     already uses, so the badge reads as part of the same family rather than a
+     new colour, and it clears contrast comfortably in both themes because the
+     fill is opaque — nothing underneath can wash it out the way the .14 tint
+     was being washed out.
+
+     --gold is a FILL here, never text. The token block's warning that brand
+     gold cannot carry type still holds; it is the background, and the dark ink
+     sits on it. */
+  background: var(--gold); color: var(--ink-card);
+  font-size: .68rem; font-weight: 800; letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
 }
-.alert-tab:hover  { border-color: var(--gold); color: var(--text); }
-.alert-tab.active { background: var(--gold); color: #1E1A0E; border-color: var(--gold); }
-.alert-tab-count  { font-variant-numeric: tabular-nums; }
+/* On the SELECTED pill the body is already gold, so a gold badge would vanish
+   into it. The chip inverts outright — solid dark fill, gold digit — which
+   keeps it just as visible as on an idle pill and makes the two states legible
+   as a pair: gold-on-dark inside a gold pill, dark-on-gold outside one. */
+.active > .tab-count,
+.active > .alert-tab-count {
+  background: var(--ink-card);
+  color: var(--gold);
+}
 
 .alert-row {
   display: flex; align-items: flex-start; gap: 14px;
@@ -890,13 +1021,89 @@ textarea.control { resize: vertical; min-height: 90px; }
   background: linear-gradient(135deg, var(--gold-soft), var(--gold)); color: #1E1A0E;
   font-size: .72rem; font-weight: 700;
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; flex-shrink: 0;
+  flex-shrink: 0;
   border: none;
 }
 
+/* THE OUTLINED IDENTITY CHIP.
+
+   Name, role and avatar inside one bordered container so they read as a single
+   unit rather than three things that happen to sit near each other — and the
+   container IS the button, so clicking anywhere in it opens the user menu.
+
+   QUIET, NOT A CALL TO ACTION. --surface-2 and --border, the same pair the
+   panels and inputs use; no gold fill and no shadow. It sits two controls away
+   from the gold primary buttons and must not read as one of them — its job is
+   to state a fact, and it opens a menu only incidentally.
+
+   The border HUGS the group: 3px of padding with a 999px radius, so the arc of
+   the enclosure runs parallel to the avatar circle instead of cutting across
+   it. Left padding is larger than right because the text needs breathing room
+   from the border while the circle already carries its own edge. */
+.topbar-user-chip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 3px 3px 3px 12px;
+  background: var(--surface-2);
+  /* NOT var(--border). glass.css re-points --border and --border-lift to a
+     translucent WHITE in BOTH themes — they are the highlight edge of a frosted
+     pane, not an outline, and this chip drawn with one measured 1.05:1 against
+     its own fill. An invisible outline is the one result this task cannot have.
+
+     Mixed down from --text-muted instead: an ink that is already defined
+     opposite the surface in each theme, so the edge is dark on cream and light
+     on charcoal without a second rule or a new colour.
+
+     70%, measured, not guessed: at 38% the edge came out 1.82:1 on cream and
+     2.27:1 on charcoal — under the 3:1 a UI boundary needs, and on the light
+     theme genuinely hard to see, which defeats the point of the task. 70%
+     gives 3.39:1 and 4.62:1 while still reading as a hairline rather than a
+     drawn box. */
+  border: 1px solid color-mix(in srgb, var(--text-muted) 70%, transparent);
+  border-radius: var(--r-pill);
+  cursor: pointer; font: inherit; color: inherit;
+  transition: background var(--t) var(--ease), border-color var(--t) var(--ease);
+}
+.topbar-user-chip:hover {
+  background: var(--bg-tint);
+  border-color: var(--text-muted);
+}
+/* The ring goes round the whole chip, not the avatar — the chip is the control.
+   Offset outward so it clears the border rather than sitting on top of it. */
+.topbar-user-chip:focus-visible {
+  outline: 3px solid var(--gold); outline-offset: 2px;
+}
+.topbar-user.open .topbar-user-chip {
+  background: var(--bg-tint); border-color: var(--gold-line);
+}
+
+/* Signed-in identity, sitting to the left of the avatar.
+
+   Deliberately quieter than any page heading: .78rem/700 for the name against
+   a 1.5rem+ h1, and the role smaller and muted below it. It answers "who is
+   using the system", which is a caption, not a title — if it competed with the
+   heading it would be telling the operator something they already know at the
+   expense of something they don't.
+
+   min-width:0 + ellipsis because a long name must shorten rather than push the
+   avatar and the theme toggle off the bar; the topbar is a fixed-height strip
+   with no room to wrap. */
+.topbar-identity {
+  display: flex; flex-direction: column; align-items: flex-end;
+  line-height: 1.2; min-width: 0; max-width: 190px;
+}
+.topbar-identity-name {
+  font-size: .78rem; font-weight: 700; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.topbar-identity-role {
+  font-size: .68rem; font-weight: 500; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+
 /* User dropdown (app-shell-3 pattern) */
-.topbar-user { position: relative; }
+.topbar-user { position: relative; display: flex; align-items: center; }
 .user-dropdown {
+  transform-origin: top right;
   position: absolute; top: calc(100% + 10px); right: 0;
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
@@ -978,6 +1185,57 @@ textarea.control { resize: vertical; min-height: 90px; }
 .stat-label { font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
 .stat-value { font-family: var(--font-number); font-size: 1.9rem; font-weight: 800; color: var(--text); line-height: 1; animation: countUp .4s var(--ease) both; font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.01em; }
 .stat-sub   { font-size: .76rem; color: var(--text-muted); margin-top: 4px; }
+
+/* Critical Stock is a shortcut into a filtered inventory list, so it is built
+   from real buttons rather than a div with a click handler — see
+   criticalStockCard() in engine.js for why there are two of them.
+
+   The card keeps every .stat-card rule; these only strip the button chrome and
+   restore the block layout the divs had, then add the affordances a control
+   owes the operator: a pointer, a hover state, and a focus ring that is visible
+   without a mouse. z-index because .stat-card::after paints a decorative blob
+   over the card corner and a focus ring underneath it is a focus ring nobody
+   can see. */
+/* A linked card zeroes its own padding so the face BUTTON can span the full
+   width — a control that stops 24px short of the card edge is a control with a
+   dead margin around it.
+
+   THE CONSEQUENCE, WHICH BIT ONCE: every child then has to carry the inset
+   itself. That held while a linked card only ever contained the two padded
+   buttons. It stopped holding the moment Total Revenue and Today's Sales
+   became shortcuts, because those two have an UNLINKED `.stat-sub` div and a
+   `.stat-delta` badge as siblings — neither of which pads itself, so both ran
+   flush to the card's left edge and the cards lost their bottom inset too.
+
+   So the rule is stated for the children that are not full-bleed buttons,
+   rather than assumed. The last-child exclusion keeps a `.stat-sub-link` from
+   getting a second bottom inset on top of the one its own padding provides. */
+.stat-card-linked { padding: 0; }
+.stat-card-linked > .stat-sub:not(.stat-sub-link),
+.stat-card-linked > .stat-delta { margin-inline: 24px; }
+.stat-card-linked > :last-child:not(.stat-sub-link) { margin-bottom: 22px; }
+.stat-card-face {
+  display: block; width: 100%; text-align: left;
+  padding: 22px 24px 0; background: none; border: none; color: inherit;
+  font: inherit; cursor: pointer;
+}
+.stat-sub-link {
+  display: block; width: 100%; text-align: left;
+  padding: 4px 24px 22px; background: none; border: none;
+  font: inherit; font-size: .76rem; color: var(--text-muted);
+  cursor: pointer; margin-top: 0;
+  transition: color var(--t) var(--ease);
+}
+.stat-card-face:hover .stat-value,
+.stat-sub-link:hover { color: var(--accent-color, var(--gold-ink)); }
+/* Underline as well as colour: the sub-line is small muted text and a hue shift
+   alone is not a state change everyone can perceive. */
+.stat-sub-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.stat-card-face:focus-visible,
+.stat-sub-link:focus-visible {
+  outline: 3px solid var(--gold); outline-offset: -3px;
+  border-radius: var(--r-md); position: relative; z-index: 1;
+}
 .stat-delta { font-size: .73rem; font-weight: 700; margin-top: 6px; display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: var(--r-pill); }
 .stat-delta.up   { background: rgba(24,169,87,.12);  color: var(--ok-ink);  }
 .stat-delta.down { background: rgba(220,38,38,.10);  color: var(--out-ink); }
@@ -1057,7 +1315,32 @@ textarea.control { resize: vertical; min-height: 90px; }
 }
 
 /* Notification list */
-.notif-list { display: flex; flex-direction: column; gap: 8px; }
+/* BOUNDED, LIKE .stock-bars BELOW IT.
+
+   This panel is the only thing on the dashboard whose length is decided by
+   the data: it used to render a fixed five invented rows and now renders as
+   many real notifications as there are. At eight it measured 818px against a
+   645px left column, so it hung 173px below the Stock Levels panel beside it
+   and pushed Recent Transactions down with it.
+
+   Capped rather than made to stretch. `max-height` means a quiet day still
+   shrink-wraps — the panel ends where its content ends — while a busy one
+   scrolls inside instead of stretching the page. Same treatment .stock-bars
+   gets for the same reason, and the auto-hiding scrollbar at the top of this
+   file gives it the same affordance.
+
+   542px is the left column's height (645) less this panel's own chrome (103:
+   22 padding top and bottom, a 38.5 header, its 18 margin, 2 of border), so a
+   full list finishes level with Stock Levels. If the panel padding or the
+   header spacing changes, this changes with it.
+
+   overflow-x is hidden because .notif-item shifts 2px right on hover, which
+   is enough to earn a horizontal scrollbar it has no use for. */
+.notif-list {
+  display: flex; flex-direction: column; gap: 8px;
+  max-height: 542px;
+  overflow-y: auto; overflow-x: hidden;
+}
 .notif-item {
   display: flex; align-items: flex-start; gap: 12px;
   padding: 11px 13px; border-radius: var(--r-md);
@@ -1066,14 +1349,24 @@ textarea.control { resize: vertical; min-height: 90px; }
   transition: background var(--t), transform var(--t);
 }
 .notif-item:hover { background: var(--bg-tint); transform: translateX(2px); }
-.notif-item.red  { --notif-accent: var(--out);  }
-.notif-item.gold { --notif-accent: var(--gold); }
-.notif-item.ok   { --notif-accent: var(--ok);   }
-.notif-item.crit { --notif-accent: var(--crit); }
+/* Keyed by urgency level now. The old classes (red / gold / ok / crit) were
+   this panel's private vocabulary, invented alongside the feed it used to
+   build for itself; it reads the shared rows in the shared order, so it
+   uses the shared three levels. */
+.notif-item.level-critical { --notif-accent: var(--out);  }
+.notif-item.level-warning  { --notif-accent: var(--warn); }
+.notif-item.level-info     { --notif-accent: var(--border-lift); }
+/* Unread carries the same faint gold wash the Notifications module uses. */
+.notif-item.unread { background: var(--gold-dim); }
+.notif-item.unread:hover { background: var(--gold-line); }
 .notif-dot { display: none; }
 .notif-text { flex: 1; min-width: 0; }
 .notif-text p { font-size: .83rem; color: var(--text); line-height: 1.4; }
-.notif-text small { font-size: .7rem; color: var(--text-muted); margin-top: 2px; display: block; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.notif-text small {
+  font-size: .7rem; color: var(--text-muted); margin-top: 5px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-weight: 600; letter-spacing: .04em;
+}
 
 /* Stock level bar */
 .stock-bars { display: flex; flex-direction: column; max-height: 266px; overflow-y: auto; }
@@ -1162,6 +1455,160 @@ td.mono { white-space: nowrap; }
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   margin-bottom: 16px;
 }
+
+/* =================================================================
+   THE MERGED VIEW TOOLBAR — tabs left, filters right, one band
+   -----------------------------------------------------------------
+   Every table screen used to stack two bands of chrome above it: the tab
+   strip, then a separate .table-toolbar holding search, per-page and status.
+   Two rows of controls, two different heights, nothing aligned to anything.
+
+   ONE ROW. The tab group and the filter group are the two children;
+   space-between puts them at the ends and margin-left:auto on the filters
+   holds them right even when the tab group is absent.
+
+   THE THREE CASES, and why none of them needs its own rule:
+     tabs + filters  space-between separates them.
+     filters only    the filter group is the only child; margin-left:auto has
+                     nothing to push against, so it sits left — where a lone
+                     search box belongs. NOT right-aligned with a hole where
+                     tabs would have been.
+     tabs only       likewise left, and the row is just the tab strip.
+
+   HEIGHT IS WHAT ACTUALLY READS AS ALIGNED. A 34px pill beside a 38px search
+   box beside a 32px select is what "not aligned properly" looks like even when
+   every one of them is centred. --toolbar-h is applied to every control that
+   can appear in this row, so the band has one silhouette. */
+:root { --toolbar-h: 38px; }
+
+.view-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px 16px; flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+/* WRAPPING IS RIGHT FOR ONE SHAPE AND WRONG FOR THE OTHER.
+
+   On a filters-only screen the row's children ARE the individual controls, and
+   five of them on a medium window must be free to wrap.
+
+   On a tabs + filters screen the children are two GROUPS, and wrapping puts
+   them on separate lines — which is the two-band layout this change removes.
+   Making the tab strip shrinkable is not enough on its own: flex breaks lines
+   BEFORE it applies flex-shrink, so a 930px tab strip beside a 211px filter
+   group in a 1120px row wrapped first and then grew to fill its new line.
+
+   :has() distinguishes the two by structure rather than by adding a class to
+   every view: a row containing a .view-toolbar-filters GROUP is the two-group
+   case, and only that case stops wrapping. Below the breakpoint the column
+   rule takes over and both stack regardless. */
+.view-toolbar:has(> .view-toolbar-filters) { flex-wrap: nowrap; }
+.view-toolbar-filters {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-left: auto;
+}
+
+/* A ROW THAT IS ITSELF THE FILTER GROUP MUST NOT SPACE-BETWEEN.
+
+   On a screen with no tabs both classes land on one element, so the row's
+   children are the individual controls rather than two groups — and
+   space-between then pushed every control to a different part of the width.
+   The Inventory Report read as a search box on the far left and three
+   dropdowns scattered across the rest of the bar with a hand's width between
+   them, which is the "inconsistent gaps" this is fixing.
+
+   flex-start puts them back on a single 10px rhythm; the search box keeps its
+   own flex:1 so it still takes the slack and the controls still finish at the
+   right-hand edge. Same visual result, one consistent gap. */
+.view-toolbar.view-toolbar-filters { justify-content: flex-start; }
+
+/* THE SPLIT POINT IS DECLARED, NOT INFERRED FROM AUTO MARGINS.
+
+   The first attempt pushed with `margin-right: auto` on the search box and
+   `margin-left: auto` on the filter group. Two auto margins in one flex line
+   SHARE the free space rather than one of them winning, so Order Status ended
+   up with its status filter stranded in the middle of the bar with 247px of
+   nothing on either side, and Batch Tracking put its search there instead.
+
+   A zero-width flexible spacer says where the row divides and cannot be
+   ambiguous: everything before it sits left, everything after it sits right,
+   however many controls are on each side and whatever gets mounted into the
+   row later. */
+.view-toolbar .vt-spacer { flex: 1 1 auto; min-width: 0; align-self: stretch; }
+
+/* A filter set belonging to one tab.
+
+   Users is the only screen where the two tabs need DIFFERENT filters —
+   Customers filter by status, Employees carry an Add button instead — so both
+   sets live in the row and only the open tab's is shown. Same .active flag
+   renderUsers() already toggles on .tab-panel, so there is one mechanism to
+   keep in sync rather than two. */
+.tab-filters { display: none; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tab-filters.active { display: flex; }
+
+/* The tab strip inside the row loses the full-width underline it had as a
+   block: a rule that ran the width of the screen made the row read as two
+   bands again, one above the line and one on it. The active tab keeps its own
+   underline, which is the part that was doing the work.
+
+   IT SCROLLS RATHER THAN WRAPS, and that is what keeps the row one row.
+   Online Transactions has eight status tabs measuring 999px and Returns has
+   seven measuring 930px; beside a 211px filter group in a 1120px panel, a
+   wrapping strip pushed the filters onto a second line — the exact two-band
+   layout this whole change exists to remove, reappearing on the two screens
+   with the most tabs. `flex: 1 1 auto` with `min-width: 0` lets the strip give
+   up width instead of taking it, and overflow-x turns the overflow into a
+   scroll. `flex-shrink: 0` on the filter group means the search box and the
+   selects never get squeezed to pay for the tabs. */
+.view-toolbar > .tabs,
+.view-toolbar > .return-tabs,
+/* Inventory Management's pill row is a tab strip under another name, and has
+   to give up width to the filters the same way the others do — left as a
+   block it took the full line and pushed them underneath. */
+.view-toolbar > .inv-action-tabs,
+.view-toolbar .tabs {
+  border-bottom: none; margin-bottom: 0;
+  flex: 1 1 auto; min-width: 0;
+  flex-wrap: nowrap; overflow-x: auto;
+  /* The auto-hiding scrollbar at the top of this file would still reserve a
+     couple of pixels under the pills and knock the row's baseline out. */
+  scrollbar-width: none;
+}
+.view-toolbar > .tabs::-webkit-scrollbar,
+.view-toolbar > .return-tabs::-webkit-scrollbar,
+.view-toolbar > .inv-action-tabs::-webkit-scrollbar { height: 0; }
+.view-toolbar > .tabs > *,
+.view-toolbar > .return-tabs > *,
+.view-toolbar > .inv-action-tabs > * { flex-shrink: 0; }
+.view-toolbar-filters { flex-shrink: 0; }
+
+/* One height for everything in the band. */
+.view-toolbar .tab-btn,
+.view-toolbar .return-tab-btn,
+.view-toolbar .inv-action-btn,
+.view-toolbar .search-box,
+.view-toolbar .filter-select,
+.view-toolbar .ebs-trigger,
+.view-toolbar .btn {
+  height: var(--toolbar-h);
+}
+/* .ebs-trigger is named explicitly above rather than left to its own
+   min-height. EbSelect replaces every .filter-select in this row with a
+   trigger button, so without this line the band's alignment would depend on
+   the component's default happening to equal --toolbar-h — true today, and a
+   silent one-pixel drift the first time either number is touched. */
+.view-toolbar .search-box { padding-block: 0; }
+.view-toolbar .filter-select { padding-block: 0; }
+.view-toolbar .tab-btn { display: inline-flex; align-items: center; }
+
+/* Below this the two groups stack, tabs first, each full width and still
+   aligned within itself. The tab strip scrolls sideways rather than squashing
+   its pills — a wrapped tab row reads as two tab rows. */
+@media (max-width: 700px) {
+  .view-toolbar { flex-direction: column; align-items: stretch; }
+  .view-toolbar-filters { margin-left: 0; }
+  .view-toolbar .search-box { max-width: none; }
+}
 .search-box {
   display: flex; align-items: center; gap: 8px;
   background: var(--surface); border: 1.5px solid var(--border-lift);
@@ -1191,16 +1638,84 @@ select.filter-select:focus { outline: none; border-color: var(--gold); box-shado
 /* =================================================================
    8. TABS
    ================================================================= */
-.tabs { display: flex; gap: 2px; border-bottom: 2px solid var(--border); margin-bottom: 22px; }
-.tab-btn {
-  padding: 9px 18px; font-size: .82rem; font-weight: 700;
-  letter-spacing: .04em; text-transform: uppercase; font-family: var(--font-ui);
-  color: var(--text-muted); border: none; background: none; cursor: pointer;
-  border-bottom: 2px solid transparent; margin-bottom: -2px;
-  transition: color var(--t), border-color var(--t);
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 22px; }
+
+/* =================================================================
+   THE ONE TAB PILL
+   -----------------------------------------------------------------
+   Five classes draw a tab pill in this portal and they had drifted into
+   three different hover treatments and four different sizes:
+
+     .inv-action-btn   Inventory Management   gold edge on hover
+     .range-btn        Sales date ranges      gold edge, gold-ink text
+     .return-tab-btn   Returns, Notifications glass wash + 1px lift
+     .alert-tab        Dashboard alerts       glass wash + 1px lift
+     .tab-btn          Orders, Users, Products  an UNDERLINE tab, not a
+                       pill at all in this file — glass.css was quietly
+                       rounding it into one further down the cascade.
+
+   Four of those rule sets said nearly the same thing in four files, which
+   is precisely how they came to disagree. They are one block now, and the
+   only thing a variant may still change is its SIZE — through the three
+   custom properties below, so a smaller pill cannot accidentally bring a
+   different hover with it.
+
+   HOVER IS AN EDGE, ACTIVE IS A FILL. They have to be told apart while the
+   pointer is moving across the row: a hovered inactive tab shows a gold
+   border on a transparent body, the selected one is filled gold with dark
+   text and a heavier weight. Two different mechanisms, not two shades of
+   the same one — so the selected tab is still obvious to someone who
+   cannot separate the hues. */
+.tab-btn,
+.return-tab-btn,
+.alert-tab,
+.inv-action-btn,
+.range-btn {
+  --pill-py: 9px;
+  --pill-px: 18px;
+  --pill-fs: .78rem;
+
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: var(--pill-py) var(--pill-px);
+  border-radius: var(--r-pill);
+  font-family: var(--font-ui); font-size: var(--pill-fs);
+  font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  white-space: nowrap;
+  border: 1.5px solid var(--border-lift);
+  background: transparent; color: var(--text-muted);
+  cursor: pointer;
+  /* Named properties rather than `all`: `transition: all` also animates the
+     box-shadow, which makes the focus ring fade in rather than appear — a
+     keyboard user should see where they are immediately. */
+  transition: background var(--t) var(--ease),
+              border-color var(--t) var(--ease),
+              color var(--t) var(--ease);
 }
-.tab-btn:hover  { color: var(--text); }
-.tab-btn.active { color: var(--gold-ink); border-bottom-color: var(--gold-ink); }
+.tab-btn svg,
+.return-tab-btn svg,
+.alert-tab svg,
+.inv-action-btn svg,
+.range-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+
+.tab-btn:hover,
+.return-tab-btn:hover,
+.alert-tab:hover,
+.inv-action-btn:hover,
+.range-btn:hover { border-color: var(--gold); color: var(--text); }
+
+.tab-btn.active,
+.return-tab-btn.active,
+.alert-tab.active,
+.inv-action-btn.active,
+.range-btn.active {
+  background: var(--gold); color: var(--ink-card); border-color: var(--gold);
+  font-weight: 800;
+}
+
+/* Size is the one permitted variation. These two rows are denser than the
+   module tabs and would look overbearing at the default. */
+.return-tab-btn,
+.alert-tab { --pill-py: 7px; --pill-px: 16px; --pill-fs: .72rem; }
 
 .tab-panel { display: none; }
 .tab-panel.active { display: block; animation: fadeIn .25s ease both; }
@@ -1356,15 +1871,11 @@ select.filter-select:focus { outline: none; border-color: var(--gold); box-shado
    12. SALES MODULE
    ================================================================= */
 .date-range-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 20px; }
-.range-btn {
-  padding: 6px 14px; border-radius: var(--r-pill);
-  font-size: .76rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-  font-family: var(--font-ui);
-  border: 1.5px solid var(--border-lift); background: transparent;
-  color: var(--text-muted); cursor: pointer; transition: all var(--t);
-}
-.range-btn:hover { border-color: var(--gold); color: var(--gold-ink); }
-.range-btn.active { background: var(--gold); color: #1E1A0E; border-color: var(--gold); }
+/* Shape, hover and active come from THE ONE TAB PILL block; only the size
+   is set here. It used to hover to --gold-ink where every other pill hovers
+   to --text, which is the kind of one-word difference nobody notices in a
+   diff and everybody notices on screen. */
+.range-btn { --pill-py: 7px; --pill-px: 16px; --pill-fs: .74rem; }
 
 .sales-summary {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 14px;
@@ -1604,6 +2115,21 @@ code {
   .admin-main,
   .admin-app.sidebar-collapsed .admin-main { margin-left: var(--shell-gap); }
   .topbar-hamburger { display: flex; }
+  /* Below this width the bar is hamburger + bell + theme + avatar and there is
+     no room left for a caption. The dropdown still spells out both, so nothing
+     is only in the collapsed text.
+
+     THE OUTLINE COLLAPSES WITH IT. A bordered pill around a lone circle reads
+     as a mistake — a box someone forgot to fill — so the chip drops its border,
+     background and padding and degrades to the bare avatar it used to be. The
+     focus ring stays, now hugging the circle. */
+  .topbar-identity { display: none; }
+  .topbar-user-chip {
+    padding: 0; background: none; border-color: transparent;
+    border-radius: 50%;
+  }
+  .topbar-user-chip:hover,
+  .topbar-user.open .topbar-user-chip { background: none; border-color: transparent; }
   .content { padding: 14px 0 20px; }
 }
 
@@ -1709,30 +2235,113 @@ code {
 .lp-img-actions .btn { cursor: pointer; }
 .lp-img-clear { color: var(--out-ink); }
 
-/* ---- best sellers table ---- */
-.lp-bs-wrap { overflow-x: auto; }
-.lp-bs-table { width: 100%; border-collapse: collapse; font-size: .86rem; }
-.lp-bs-table th {
-  text-align: left; padding: 8px 10px;
-  font-size: .68rem; font-weight: 700;
-  letter-spacing: .12em; text-transform: uppercase;
-  color: var(--text-muted); border-bottom: 1px solid var(--border);
+/* ---- best sellers: a tile grid ----
+
+   Was a seven-column table, which is the right shape for comparing rows and
+   the wrong one for choosing a handful of products to put on the front page.
+   auto-fill/minmax rather than a fixed column count so the same rule gives
+   four or five tiles on a wide screen and one on a phone with no breakpoint
+   to maintain. */
+.lp-bs-grid {
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+}
+.lp-tile {
+  display: flex; flex-direction: column;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); overflow: hidden;
+  transition: border-color var(--t) var(--ease), box-shadow var(--t) var(--ease);
+}
+.lp-tile:hover { border-color: var(--border-lift); box-shadow: var(--shadow-sm); }
+
+/* SELECTED, IN THREE CHANNELS. The gold border and tint are two of them; the
+   tick that appears in .lp-feat-box is the third. Seeing which six are
+   featured is the entire purpose of this screen, so it must not rest on a
+   background wash alone — that is the first thing to disappear on a dim
+   laptop or to a red-green colour deficiency. */
+.lp-tile.is-featured {
+  border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold);
+  background: var(--gold-dim);
+}
+
+.lp-tile-media {
+  position: relative; aspect-ratio: 4 / 3;
+  background: var(--surface-2);
+  display: flex; align-items: center; justify-content: center;
+}
+.lp-tile-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* The rank, over the photo. It is what the caption promises the list is
+   ordered by, so it gets a position of its own rather than a table cell. */
+.lp-tile-rank {
+  position: absolute; top: 8px; left: 8px;
+  padding: 2px 8px; border-radius: var(--r-pill);
+  background: var(--ink); color: var(--cream);
+  font-size: .7rem; font-weight: 800; font-variant-numeric: tabular-nums;
+}
+
+.lp-tile-body { padding: 10px 12px 8px; flex: 1; min-width: 0; }
+.lp-tile-name {
+  font-weight: 700; font-size: .86rem; line-height: 1.3; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.lp-tile-cat { font-size: .72rem; color: var(--text-muted); margin-top: 2px; }
+/* Units sold, given the weight the ranking deserves. */
+.lp-tile-sold { font-size: .8rem; color: var(--text); margin-top: 7px; }
+.lp-tile-sold b { font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+/* Revenue, rating and stock on one quiet line — kept, not competing. */
+.lp-tile-meta {
+  margin-top: 5px; font-size: .72rem; color: var(--text-muted);
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+}
+
+.lp-tile-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 10px 10px; border-top: 1px solid var(--border);
+}
+
+/* The feature toggle. A real checkbox, visually replaced by the box beside it
+   — the input keeps its own focus, keyboard and checked semantics, and both
+   `$$("[data-feat]")` call sites keep working. */
+.lp-feat-toggle {
+  display: inline-flex; align-items: center; gap: 7px;
+  cursor: pointer; font-size: .78rem; font-weight: 700; color: var(--text);
+  padding: 3px 4px; border-radius: var(--r-sm);
+}
+.lp-feat-toggle input {
+  position: absolute; width: 1px; height: 1px; opacity: 0; margin: 0;
+}
+.lp-feat-box {
+  width: 18px; height: 18px; border-radius: var(--r-sm); flex-shrink: 0;
+  border: 1.5px solid var(--border-lift); background: var(--surface);
+  display: flex; align-items: center; justify-content: center;
+  color: transparent;
+  transition: background var(--t) var(--ease), border-color var(--t) var(--ease);
+}
+.lp-feat-box svg { width: 13px; height: 13px; }
+.lp-feat-toggle input:checked ~ .lp-feat-box {
+  background: var(--gold); border-color: var(--gold); color: var(--ink);
+}
+/* The ring lands on the visible box, since the input it belongs to is the
+   thing that is 1px and invisible. */
+.lp-feat-toggle input:focus-visible ~ .lp-feat-box {
+  outline: 3px solid var(--gold); outline-offset: 2px;
+}
+.lp-feat-text { white-space: nowrap; }
+
+/* Numeric columns in a data table.
+
+   Right-aligned so the digits line up on their units, and tabular-nums so a
+   column of figures keeps one column width — proportional numerals make "111"
+   narrower than "999" and the decimal points stop agreeing down the column.
+   Used by the Sales Report's Best Sellers and Payment Methods tables; the
+   header cell takes .num, the body cell .num-cell. */
+.data-table th.num,
+.data-table td.num-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.lp-bs-table td {
-  padding: 10px; border-bottom: 1px solid var(--border);
-  vertical-align: middle;
-}
-.lp-bs-table .num { text-align: right; white-space: nowrap; }
-.lp-bs-table td small { display: block; color: var(--text-muted); font-size: .74rem; }
-.lp-bs-table .lp-rank { color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.lp-bs-table tr.is-featured { background: rgba(232,163,23,.07); }
-.lp-bs-table input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
-.lp-cell-img { display: flex; align-items: center; gap: 6px; }
-.lp-cell-img img {
-  width: 40px; height: 40px; object-fit: cover;
-  border-radius: var(--r-sm); display: block;
-}
+.data-table td.num-cell.muted { color: var(--text-muted); }
 
 /* ---- storage meter ---- */
 .lp-storage { margin-top: 14px; }
@@ -1804,3 +2413,136 @@ code {
 /* Field-level validation, driven by EbUI.showFieldErrors from the API's
    422 `fields` map. */
 .has-error { border-color: var(--crit, #c43d2a) !important; }
+
+/* =================================================================
+   PRODUCT REVIEWS — the moderation queue
+   -----------------------------------------------------------------
+   CARDS, NOT A TABLE. Every other queue in this portal is tabular
+   because its rows are short, comparable fields. A review is a
+   paragraph of somebody's prose plus the evidence behind it; in a
+   table it is either truncated — which asks a moderator to decide
+   without reading — or it stretches one column and wrecks the grid.
+
+   Colour never carries a decision on its own here. Each status is
+   spelled out, each hold names its keyword, and the tinted borders
+   only reinforce words that are already there.
+   ================================================================= */
+.rev-cards { display: grid; gap: 14px; }
+
+.rev-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 15px 17px;
+}
+
+.rev-card-head {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+/* Darkened toward --text: bare --gold measures 2.17:1 on the glass card,
+   below the 3:1 a meaningful graphic needs. Still unmistakably gold. */
+.rev-row-stars { display: inline-flex; align-items: center; gap: 1px; flex-shrink: 0;
+                 color: color-mix(in srgb, var(--gold) 72%, var(--text)); }
+.rev-row-stars svg { width: 15px; height: 15px; }
+.rev-row-num { margin-left: 5px; font-size: .74rem; font-weight: 700;
+               color: var(--text); font-variant-numeric: tabular-nums; }
+.rev-card-product { font-weight: 700; font-size: .95rem; color: var(--text); }
+
+/* THE STATUS IS A WORD FIRST. --text on the label, the tint only on the
+   border, so it survives greyscale and being read aloud — the same rule
+   the notification level chip settled on after it measured 3.65:1. */
+.rev-card-status {
+  margin-left: auto;
+  font-size: .68rem; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--text);
+  padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--border-lift); background: var(--bg-soft);
+}
+.rev-card-status-pending   { border-color: color-mix(in srgb, var(--warn) 50%, var(--border-lift)); }
+.rev-card-status-published { border-color: color-mix(in srgb, var(--ok) 50%, var(--border-lift)); }
+.rev-card-status-rejected  { border-color: color-mix(in srgb, var(--out) 50%, var(--border-lift)); }
+
+.rev-card-meta {
+  font-size: .76rem; color: var(--text-muted); line-height: 1.6;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+
+.rev-chip {
+  font-size: .66rem; font-weight: 700; letter-spacing: .03em;
+  text-transform: uppercase; color: var(--text);
+  padding: 1px 7px; border-radius: 999px;
+  border: 1px solid var(--border-lift);
+}
+.rev-chip-warn { border-color: color-mix(in srgb, var(--warn) 55%, var(--border-lift)); }
+
+/* The customer's own words, set apart from the metadata around them so it
+   is unmistakable which text is theirs and which is ours. */
+.rev-card-body {
+  margin: 10px 0 0; padding: 10px 14px;
+  border-left: 3px solid var(--border-lift);
+  background: var(--bg-soft);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  font-size: .9rem; line-height: 1.6; color: var(--text);
+}
+.rev-card-nocomment { margin: 10px 0 0; font-size: .84rem; font-style: italic; color: var(--text-muted); }
+
+.rev-card-hold, .rev-card-reason {
+  margin: 10px 0 0; padding: 9px 13px;
+  border-radius: var(--r-sm); font-size: .8rem; line-height: 1.55;
+  color: var(--text); background: var(--bg-soft);
+  border: 1px solid var(--border-lift);
+}
+.rev-card-hold   { border-color: color-mix(in srgb, var(--warn) 45%, var(--border-lift)); }
+.rev-card-reason { border-color: color-mix(in srgb, var(--out) 45%, var(--border-lift)); }
+
+.rev-card-actions {
+  display: flex; gap: 9px; flex-wrap: wrap;
+  margin-top: 13px; padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.rev-card-actions:empty { display: none; }
+
+/* The tab row uses the shared .tab-btn; this only sets the gap, matching
+   .return-tabs so the two queues line up. */
+.rev-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+
+@media (max-width: 640px) {
+  .rev-card-status { margin-left: 0; }
+}
+
+/* =================================================================
+   "No sign-in" — a customer record with no password
+   -----------------------------------------------------------------
+   api/customers/save.php never sets a password (its header explains
+   why: an admin form that could set someone else's is a way to take
+   over their account). So Add Customer creates a record that cannot
+   sign in — which was true, correct, and completely invisible. The
+   storefront answered "Email or password is incorrect" forever, and
+   the only way to discover it was to read the database.
+
+   The WORD says it. The border tint only reinforces, and the title
+   attribute carries the fix, because a marker that names a problem
+   without naming the remedy just moves the confusion.
+   ================================================================= */
+.chip-nosignin {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  /* Measured: a straight --warn edge came out at 1.70:1 against the row and
+     barely read as a chip at all; raising the proportion only reached 2.03,
+     because --warn is a mid-gold that is inherently close to white. Mixing
+     toward --text darkens it in light and lightens it in dark, so one
+     declaration clears 3:1 in both. The WORD still carries the meaning — this
+     is legibility, not the thing WCAG is counting. */
+  border: 1px solid color-mix(in srgb, var(--warn) 62%, var(--text));
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--text);
+  font-size: .66rem;
+  font-weight: 700;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: help;
+}

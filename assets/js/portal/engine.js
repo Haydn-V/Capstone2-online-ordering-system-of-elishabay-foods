@@ -147,6 +147,7 @@ const MOD_PERM = {
   ordersqueue:"orders.accept", paymentverify:"orders.accept", orderstatus:"orders.status",
   "online-txns":"orders.view", orderhistory:"transactions.view", receipts:"orders.view", returns:"orders.returns",
   roles:"rbac.manage",
+  reviews:"reviews.moderate",
 };
 
 /* Hide every [data-perm] element the current user lacks, then collapse
@@ -420,7 +421,11 @@ const adminState = {
   returnTab:     "all",
   invTab:        "overview",
   notifFilter:   "all",
-  notifSort:     "newest",
+  /* Urgency, so this screen opens in the same order the bell and the
+     dashboard panel are fixed at. It was "newest", which is what made the
+     Notifications module the one place an expired batch could sit below a
+     completed order. */
+  notifSort:     "urgency",
   /* Pagers for admin-orders.js / admin-inventory.js tables. */
   onlineTxnPager:  { page: 1, pageSize: 10 },
   orderStatusPager:{ page: 1, pageSize: 10 },
@@ -460,6 +465,25 @@ function fmtDate(s)      { return EbFormat.fmtDate(s); }
 function fmtDateTime(s)  { return EbFormat.fmtDateTime(s); }
 function stockInfo(n)    { return EbFormat.stockInfo(n); }
 function movementType(n) { return EbFormat.movementType(n); }
+
+/* THE RATING, SAID HONESTLY. One function, because every portal screen that
+   prints `rating` has to make the same decision and none of them should make
+   it differently.
+
+   products.rating is derived from PUBLISHED reviews by Reviews::recompute()
+   and is 0.00 when there are none. Printing that gives "0.0★", which reads as
+   a product people rated badly rather than one nobody has rated — the exact
+   misreading this feature exists to remove, just pointing the other way from
+   the seeded 4.9s it replaced.
+
+   Takes the whole product rather than (rating, count) so a caller physically
+   cannot pass one without the other. api/products/list.php sends reviewCount
+   beside rating for the same reason. */
+function ratingText(p){
+  const n = Number(p && p.reviewCount) || 0;
+  if(n <= 0) return "No ratings yet";
+  return `${Number(p.rating).toFixed(1)}★ (${n})`;
+}
 
 /* The one image resolver (decision I6). No screen in this file builds an image
    src by hand any more — a stored path is application-root-relative, and
@@ -937,6 +961,13 @@ async function loadCatalog(){
     await loadAdminData();
     await loadOpsData();
 
+    /* The notification feed is part database rows and part alerts derived
+       from the records just loaded. Its derived half is cached on first read,
+       and the first read happens at sign-in — before any of this. Clearing it
+       here is what makes a Cashier's overdue-payment alerts and an Inventory
+       user's expiry alerts appear at all. */
+    if(typeof refreshDerivedNotifications === "function") refreshDerivedNotifications();
+
     return true;
   } catch(err){
     /* Loud, not silent. A screen showing seed data while the operator
@@ -962,6 +993,19 @@ async function loadOpsData(){
     NOTIFICATIONS.length = 0;
     r.data.forEach(n => NOTIFICATIONS.push(n));
     adminState.unreadNotifs = r.meta ? r.meta.unread : 0;
+    /* Per-level unread counts, so the bell can say "something is on fire"
+       separately from "three things happened" without recounting rows. */
+    adminState.unreadByPriority = (r.meta && r.meta.unreadByPriority) || null;
+    /* The type→level table comes FROM the server, from the same helper that
+       stamps the stored rows. The portal derives some notifications in the
+       browser (expiring batches, failed QA lots, retailer payment schemes)
+       which have no row to carry a level; taking the table rather than
+       keeping a copy is what stops those from drifting out of step with the
+       ones the database orders. orders.js holds the same table as a hard
+       fallback for the window before this resolves. */
+    if(r.meta && r.meta.priorityMap && typeof NOTIF_PRIORITY_MAP !== "undefined"){
+      NOTIF_PRIORITY_MAP = r.meta.priorityMap;
+    }
   }));
 
   if(EbRbac.can("orders.returns")){
@@ -1133,10 +1177,24 @@ function applySignedInUser(user){
   $("#admin-app").classList.remove("hide");
   $("#sidebar-name").textContent      = user.name;
   $("#sidebar-role").textContent      = user.role;
-  $("#topbar-role-label").textContent = "Signed in as " + user.role;
+  /* The header identity line. It used to read "Signed in as Super Admin" from a
+     <small> inside the SIDEBAR brand — a role with no person attached, in a
+     panel that collapses to an icon rail. Name and role now, in the topbar,
+     written from the same `user` the dropdown below is written from. */
+  $("#topbar-user-name").textContent  = user.name;
+  $("#topbar-role-label").textContent = user.role;
   $("#sidebar-avatar").textContent    = avatar;
   $("#topbar-avatar").textContent     = avatar;
-  $("#topbar-avatar").title           = user.name;
+  /* The chip's accessible name. Its three text nodes are aria-hidden — a
+     screen reader would otherwise read the name, the role and the avatar
+     initials as three loose strings with nothing saying any of it opens a
+     menu — so the whole sentence is written here, from the same `user` the
+     visible text comes from. */
+  const chip = $("#topbar-user-btn");
+  if(chip){
+    chip.setAttribute("aria-label", `User menu — ${user.name}, ${user.role}`);
+    chip.title = `${user.name} · ${user.role}`;
+  }
   $("#ud-name").textContent           = user.name;
   $("#ud-role").textContent           = user.role;
 
@@ -1308,7 +1366,7 @@ function syncNavHighlight(mod, tab){
   });
 }
 
-function navigate(mod, tab){
+function navigate(mod, tab, intent){
   /* deactivate all panels and nav items */
   /* permission guard — bounce to dashboard if this mod isn't granted
      (matters once permissions can change at runtime via Roles & Permissions) */
@@ -1330,6 +1388,11 @@ function navigate(mod, tab){
 
   syncNavHighlight(mod, activeTab);
 
+  /* Arriving resets the destination's filters, then applies whatever this
+     particular navigation asked for. Both happen BEFORE the render, because
+     the render is what reads them. */
+  enterModule(mod, intent);
+
   /* render the module */
   const renders = {
     dashboard:    renderDashboard,
@@ -1349,6 +1412,7 @@ function navigate(mod, tab){
     pos:          renderPos,
     "pos-payment":   renderPayment,
     notifications: renderNotifications,
+    profile:      renderProfile,
     "online-txns":    renderOnlineTxns,
     ordersqueue:   renderQueue,
     paymentverify: renderPaymentVerify,
@@ -1356,8 +1420,21 @@ function navigate(mod, tab){
     orderhistory:  renderHistory,
     receipts:      renderReceipts,
     returns:       renderReturns,
+    /* loadReviews(), not renderReviews(): this screen holds no seed data and
+       its rows are filtered SERVER-side by the active tab, so arriving at it
+       has to fetch. Rendering first would flash the previous tab's rows. */
+    reviews:       loadReviews,
   };
-  if(renders[mod]) renders[mod]();
+  /* THE INTENT LIVES FOR ONE RENDER. Set immediately before, cleared in the
+     finally immediately after, so a render that reads navIntent() sees it and
+     nothing later can. The finally matters: a render that throws must not
+     leave the intent standing for the next navigation to pick up. */
+  NAV_INTENT = intent || null;
+  try {
+    if(renders[mod]) renders[mod]();
+  } finally {
+    NAV_INTENT = null;
+  }
 
   /* mobile: close sidebar */
   if(window.innerWidth <= 900){
@@ -1366,6 +1443,138 @@ function navigate(mod, tab){
   }
   /* scroll to top */
   $("#main-content").scrollTo(0,0);
+}
+
+/* A SHORTCUT'S FILTER IS A ONE-SHOT INTENT, NOT STATE.
+
+   THE BUG THIS REPLACES. The first version wrote the filter into adminState —
+   `adminState.invOverviewLevel = "crit"` — and nothing ever cleared it. The
+   Critical Stock card worked, and then Stock Overview stayed filtered to
+   critical for the rest of the session: reached from the sidebar, from the tab
+   pills, from anywhere, it showed a short list with no explanation. A value in
+   adminState is durable by definition, and "open this screen showing critical
+   items THIS TIME" is not a durable fact about the screen.
+
+   HOW THE INTENT TRAVELS NOW. As a third argument to navigate(), parked in
+   NAV_INTENT for exactly the duration of one render and cleared in a `finally`
+   the moment that render returns. It cannot outlive the navigation that
+   carried it, so there is no stored value for the next feature to find and
+   reuse — which is how this bug would otherwise come back.
+
+   AND ARRIVING WITHOUT AN INTENT RESETS. Consuming the intent is only half of
+   it: a screen whose filter is still set from last time is the same bug by
+   another route. Every entry below declares a `reset` that returns its screen
+   to its default filters, and enterModule() runs it on every arrival before
+   `apply` gets a look in. Re-renders WITHIN a screen — a filter change, a save
+   — do not go through here and keep what the operator set. */
+let NAV_INTENT = null;
+
+/* Read one field of the current navigation's intent. Returns undefined when
+   the screen was reached by any route that carried none. */
+function navIntent(key){
+  return NAV_INTENT ? NAV_INTENT[key] : undefined;
+}
+
+/* Per-destination: what "default" means, and what an intent may override.
+
+   The knowledge of where each screen keeps its filter lives HERE, once, beside
+   the convention that uses it — not scattered across the click handlers. A
+   screen that grows a new filter control changes one entry. */
+const NAV_ENTRY = {
+  "inventory-manage": {
+    reset(){
+      adminState.invOverviewLevel = "all";
+      adminState.invOverviewQuery = "";
+      adminState.stockOvwPager.page = 1;
+    },
+    apply(intent){
+      if(!intent.level) return;
+      adminState.invTab = "overview";
+      adminState.invOverviewLevel = intent.level;
+    },
+  },
+  inventory: {
+    /* The Inventory Report's select is static markup that renderInventory()
+       reads at query time, so the value lives on the element and the reset has
+       to write the element too. */
+    reset(){
+      const el = $("#filter-inventory");
+      if(el && el.value !== "all"){
+        el.value = "all";
+        if(window.EbSelect) EbSelect.sync(el);
+      }
+      adminState.invReportPager.page = 1;
+    },
+    apply(intent){
+      if(!intent.level) return;
+      const el = $("#filter-inventory");
+      if(el) el.value = intent.level;
+      /* EbSelect draws the trigger label from the native select. A bare
+         `.value =` fires no change event, so without this the box would read
+         "All Levels" over a list filtered to Critical — the filter applied and
+         the control denying it, the exact confusion the shortcut exists to
+         avoid. */
+      if(window.EbSelect) EbSelect.sync(el);
+    },
+  },
+  sales: {
+    /* The report opens on its own default range unless told otherwise. */
+    reset(){ adminState.salesRange = "today"; },
+    apply(intent){ if(intent.range) adminState.salesRange = intent.range; },
+  },
+  users: {
+    reset(){
+      const el = $("#filter-customers");
+      if(el && el.value !== "all"){
+        el.value = "all";
+        if(window.EbSelect) EbSelect.sync(el);
+      }
+      if(adminState.custPager) adminState.custPager.page = 1;
+    },
+    apply(intent){
+      if(!intent.status) return;
+      const el = $("#filter-customers");
+      if(el) el.value = intent.status;
+      if(window.EbSelect) EbSelect.sync(el);
+    },
+  },
+};
+
+/* Run on every arrival at a module, from navigate() and from nowhere else. */
+function enterModule(mod, intent){
+  const entry = NAV_ENTRY[mod];
+  if(!entry) return;
+  entry.reset();
+  if(intent) entry.apply(intent);
+}
+
+/* Cross-links inside a panel — "View All" on the dashboard, "Back" on the POS
+   payment screen, the dashboard's Critical Stock card. These were
+   `onclick="navigate('sales')"` in the markup, which the brief rules out and
+   which only worked because navigate() happened to be a global; the moment
+   engine.js becomes a module they break silently, with no reference for a
+   linter or a grep to find.
+
+   Takes a root and is idempotent, because not every [data-goto] exists at
+   startup: renderDashboard() rebuilds its stat cards on every visit to the
+   dashboard, so it re-wires its own subtree and the flag stops a card that
+   survived a render from collecting a second listener. */
+function wireGoto(root = document){
+  $$("[data-goto]", root).forEach(btn=>{
+    if(btn.dataset.gotoWired) return;
+    btn.dataset.gotoWired = "1";
+    btn.addEventListener("click", ()=>{
+      /* The markup declares the intent; navigate() carries it for one render.
+         data-filter-level / -range / -status map onto the keys NAV_ENTRY reads,
+         so adding a filtered shortcut is an attribute, not a code change. */
+      const intent = {};
+      if(btn.dataset.filterLevel)  intent.level  = btn.dataset.filterLevel;
+      if(btn.dataset.filterRange)  intent.range  = btn.dataset.filterRange;
+      if(btn.dataset.filterStatus) intent.status = btn.dataset.filterStatus;
+      navigate(btn.dataset.goto, btn.dataset.tab,
+               Object.keys(intent).length ? intent : undefined);
+    });
+  });
 }
 
 function initSidebar(){
@@ -1419,15 +1628,7 @@ function initSidebar(){
     });
   });
 
-  /* Cross-links inside a panel — "View All" on the dashboard, "Back" on the POS
-     payment screen. These were `onclick="navigate('sales')"` in the markup,
-     which the brief rules out and which only worked because navigate() happened
-     to be a global; the moment engine.js becomes a module they break silently,
-     with no reference for a linter or a grep to find. Same delegation as the
-     sidebar, driven by data-goto. */
-  $$("[data-goto]").forEach(btn=>{
-    btn.addEventListener("click", ()=> navigate(btn.dataset.goto, btn.dataset.tab));
-  });
+  wireGoto();
 
   const hamburger = $("#topbar-hamburger");
   const sidebar   = $("#sidebar");
@@ -1492,11 +1693,36 @@ function initSidebar(){
 
 function initUserDropdown() {
   const userWrap = $("#topbar-user");
-  $("#topbar-avatar").addEventListener("click", e => {
+  const trigger  = $("#topbar-user-btn");
+
+  /* aria-expanded has to move with the class or the menu is open for sighted
+     users and closed for everybody else. One setter so the two cannot part. */
+  const setOpen = open => {
+    userWrap.classList.toggle("open", open);
+    trigger.setAttribute("aria-expanded", open ? "true" : "false");
+  };
+
+  trigger.addEventListener("click", e => {
     e.stopPropagation();
-    userWrap.classList.toggle("open");
+    setOpen(!userWrap.classList.contains("open"));
   });
-  document.addEventListener("click", () => userWrap.classList.remove("open"));
+
+  document.addEventListener("click", () => setOpen(false));
+
+  /* Escape closes and RETURNS FOCUS to the trigger. Neither existed: the menu
+     could only be dismissed by clicking elsewhere, and a keyboard user who
+     opened it had no way back out — focus stayed wherever it was while the
+     panel silently vanished under a click they had no reason to make. */
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape" || !userWrap.classList.contains("open")) return;
+    setOpen(false);
+    trigger.focus();
+  });
+
+  $("#ud-profile")?.addEventListener("click", () => {
+    setOpen(false);
+    navigate("profile");
+  });
   $("#ud-logout").addEventListener("click", logout);
 }
 
@@ -1521,6 +1747,79 @@ function logout(){
 /* ============================================================
    MODULE: DASHBOARD
    ============================================================ */
+
+/* THE DASHBOARD TILES ARE CONTROLS, NOT READOUTS.
+
+   An administrator who reads "3 critical" wants the three products; one who
+   reads a revenue figure wants the report behind it. Every tile now opens the
+   screen its number came from, and two of them arrive with a filter already
+   applied.
+
+   ONE BUILDER, FOUR TILES. Critical Stock was written first and the other
+   three were about to be copies of it — which is how four rules that agree
+   today stop agreeing later. The routing, the permission rule, the markup and
+   the aria labelling live here once; each tile below supplies only what
+   differs.
+
+   WHERE IT GOES DEPENDS ON WHAT THE ROLE HOLDS. navigate()'s permission guard
+   would bounce a Cashier straight back to the dashboard with an error toast,
+   so a tile whose destination they cannot open is rendered as a PLAIN DIV —
+   visible, still telling them the number, simply not clickable. Offering a
+   control that is guaranteed to fail is worse than offering none.
+
+   `data-perm` is ALSO stamped on the button, even though the conditional
+   render above already handles it. It is not redundant belt-and-braces: it
+   declares the requirement where a reader of the markup will look for it, and
+   it keeps the control correct if applyRBAC() re-runs after a live permission
+   change without a dashboard re-render.
+
+   A FILTERED TILE CARRIES A ONE-SHOT INTENT, never durable state — see
+   NAV_ENTRY. Today's Sales sets the report range for that arrival only, and
+   the retailer sub-line filters Customer Accounts the same way; open either
+   screen by any other route afterwards and it is back to its default.
+
+   TWO BUTTONS, NOT A BUTTON INSIDE A BUTTON. The face and the sub-line are
+   separate targets going to different places, and nesting one interactive
+   element inside another is invalid and unreachable by keyboard. They are
+   siblings inside the card, so both tab-stop and both announce their own
+   destination. */
+function statCard(o){
+  const style = `style="--accent-color:${o.accent};--accent-bg:${o.accentBg}"`;
+  const face  = `<div class="stat-icon">${o.icon}</div>
+      <div class="stat-label">${o.label}</div>
+      <div class="stat-value">${o.value}</div>`;
+  const delta = o.delta || "";
+
+  /* Turn an intent object into the data-filter-* attributes wireGoto reads. */
+  const attrs = link => {
+    if(!link) return "";
+    let a = `data-goto="${link.mod}"`;
+    if(link.tab)  a += ` data-tab="${link.tab}"`;
+    if(link.perm) a += ` data-perm="${link.perm}"`;
+    const it = link.intent || {};
+    if(it.level)  a += ` data-filter-level="${it.level}"`;
+    if(it.range)  a += ` data-filter-range="${it.range}"`;
+    if(it.status) a += ` data-filter-status="${it.status}"`;
+    return a;
+  };
+
+  const faceLink = o.link && hasPerm(o.link.perm) ? o.link : null;
+  const subLink  = o.subLink && hasPerm(o.subLink.perm) ? o.subLink : null;
+
+  const faceHtml = faceLink
+    ? `<button type="button" class="stat-card-face" ${attrs(faceLink)}
+              aria-label="${escHtml(faceLink.aria)}">${face}</button>`
+    : face;
+
+  const subHtml = o.sub === undefined ? "" : (subLink
+    ? `<button type="button" class="stat-sub stat-sub-link" ${attrs(subLink)}
+              aria-label="${escHtml(subLink.aria)}">${o.sub}</button>`
+    : `<div class="stat-sub">${o.sub}</div>`);
+
+  const linked = (faceLink || subLink) ? " stat-card-linked" : "";
+  return `<div class="stat-card${linked}" ${style}>${faceHtml}${subHtml}${delta}</div>`;
+}
+
 function renderDashboard(){
   /* ── welcome banner ── */
   const now = new Date();
@@ -1559,34 +1858,65 @@ function renderDashboard(){
     return `<div class="stat-delta ${cls}">${arrow} ${Math.abs(pct)}% ${label}</div>`;
   }
 
-  $("#dash-stats").innerHTML = `
-    <div class="stat-card" style="--accent-color:var(--gold-ink);--accent-bg:var(--gold-dim)">
-      <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01"/><path d="M18 12h.01"/></svg></div>
-      <div class="stat-label">Total Revenue</div>
-      <div class="stat-value">${peso(totalSales)}</div>
-      <div class="stat-sub">${ORDERS.length} total transactions</div>
-      ${deltaBadge(thisMonthRev, lastMonthRev, "vs last month")}
-    </div>
-    <div class="stat-card" style="--accent-color:var(--ok-ink);--accent-bg:rgba(24,169,87,.12)">
-      <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
-      <div class="stat-label">Today's Sales</div>
-      <div class="stat-value">${peso(todaySales)}</div>
-      <div class="stat-sub"><span class="stat-trend up">↑ ${todayTx.length} orders</span></div>
-      ${deltaBadge(todaySales, yesterdaySales, "vs yesterday")}
-    </div>
-    <div class="stat-card" style="--accent-color:var(--crit);--accent-bg:rgba(234,88,12,.1)">
-      <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
-      <div class="stat-label">Critical Stock</div>
-      <div class="stat-value">${lowStock}</div>
-      <div class="stat-sub">${outStock} product(s) out of stock</div>
-    </div>
-    <div class="stat-card" style="--accent-color:var(--info);--accent-bg:rgba(59,130,246,.1)">
-      <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-      <div class="stat-label">Customers</div>
-      <div class="stat-value">${activeCustomers}</div>
-      <div class="stat-sub">${retailers} retailer(s)</div>
-    </div>
-  `;
+  /* Critical Stock routes by permission: Stock Overview can actually restock,
+     the Inventory Report can only show. Neither held means no control at all. */
+  const stockDest = hasPerm("inventory.manage")
+    ? { mod: "inventory-manage", tab: "overview", perm: "inventory.manage" }
+    : hasPerm("inventory.report")
+      ? { mod: "inventory", tab: null, perm: "inventory.report" }
+      : null;
+
+  $("#dash-stats").innerHTML = [
+    statCard({
+      accent: "var(--gold-ink)", accentBg: "var(--gold-dim)",
+      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01"/><path d="M18 12h.01"/></svg>`,
+      label: "Total Revenue", value: peso(totalSales),
+      sub: `${ORDERS.length} total transactions`,
+      delta: deltaBadge(thisMonthRev, lastMonthRev, "vs last month"),
+      link: { mod: "sales", perm: "sales.report",
+              aria: `Total Revenue: ${peso(totalSales)}. Open the Sales Report.` },
+    }),
+
+    statCard({
+      accent: "var(--ok-ink)", accentBg: "rgba(24,169,87,.12)",
+      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>`,
+      label: "Today's Sales", value: peso(todaySales),
+      sub: `<span class="stat-trend up">\u2191 ${todayTx.length} orders</span>`,
+      delta: deltaBadge(todaySales, yesterdaySales, "vs yesterday"),
+      /* The range is a one-shot: the report opens on Today this time and
+         returns to its own default on any later visit. */
+      link: { mod: "sales", perm: "sales.report", intent: { range: "today" },
+              aria: `Today's Sales: ${peso(todaySales)}. Open the Sales Report for today.` },
+    }),
+
+    statCard({
+      accent: "var(--crit)", accentBg: "rgba(234,88,12,.1)",
+      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+      label: "Critical Stock", value: lowStock,
+      sub: `${outStock} product(s) out of stock`,
+      link: stockDest && { ...stockDest, intent: { level: "crit" },
+              aria: `Critical Stock: ${lowStock}. Show the products at critical stock level.` },
+      subLink: stockDest && { ...stockDest, intent: { level: "out" },
+              aria: `${outStock} product(s) out of stock. Show the products that are out of stock.` },
+    }),
+
+    statCard({
+      accent: "var(--info)", accentBg: "rgba(59,130,246,.1)",
+      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+      label: "Customers", value: activeCustomers,
+      sub: `${retailers} retailer(s)`,
+      link: { mod: "users", tab: "customers", perm: "users.manage",
+              aria: `Customers: ${activeCustomers}. Open Customer Accounts.` },
+      /* The sub-line names retailers specifically, so it filters to them —
+         again as a one-shot, so the tab is unfiltered by any other route. */
+      subLink: { mod: "users", tab: "customers", perm: "users.manage",
+              intent: { status: "retailer" },
+              aria: `${retailers} retailer(s). Show retailer accounts.` },
+    }),
+  ].join("");
+
+  /* The cards are rebuilt on every visit, so their listeners are too. */
+  wireGoto($("#dash-stats"));
 
   /* sparkline — daily sales for past 7 days */
   const days = [];
@@ -1654,30 +1984,55 @@ function renderDashboard(){
     </div>`;
   }).join("");
 
-  /* notifications */
-  const notifs = [];
-  PRODUCTS.filter(p=>!p.archived && p.stock===0).forEach(p=>
-    notifs.push({ dot:"red", text:`<strong>${escHtml(p.name)}</strong> is out of stock.`, time:"Stock Alert" })
-  );
-  PRODUCTS.filter(p=>!p.archived && p.stock>0 && p.stock<=10).forEach(p=>
-    notifs.push({ dot:"crit", text:`<strong>${escHtml(p.name)}</strong> has only ${p.stock} units left.`, time:"Low Stock" })
-  );
-  PAYMENT_ACCOUNTS.filter(isOverdue).forEach(a=>
-    notifs.push({ dot:"red", text:`Payment overdue: <strong>${escHtml(a.name)}</strong> owes ${peso(a.balance)}.`, time:"Finance Alert" })
-  );
-  notifs.push({ dot:"gold", text:"Monthly sales report ready for review.", time:"System" });
-  notifs.push({ dot:"ok",   text:"All employee accounts verified.", time:"System" });
+  /* ── System Notifications ──────────────────────────────────────────
+     THIS PANEL USED TO INVENT ITS OWN FEED.
 
-  $("#dash-notif-count").textContent = notifs.length;
-  $("#dash-notifs").innerHTML = notifs.map(n=>`
-    <div class="notif-item ${n.dot}">
-      <div class="notif-text"><p>${n.text}</p><small>${n.time}</small></div>
-    </div>`).join("");
+     It rebuilt a list here from PRODUCTS and PAYMENT_ACCOUNTS with its own
+     stock thresholds (`stock <= 10`, hardcoded), its own colour vocabulary
+     (dot: "red" / "crit" / "gold" / "ok"), its own ordering, and two rows
+     that were simply invented — "Monthly sales report ready for review"
+     and "All employee accounts verified" were printed unconditionally and
+     were true of nothing. It shared not one line with the bell above it or
+     the Notifications module, so the same event could appear in three
+     places with three different wordings and three different urgencies, or
+     in one and not the others. REMEDIATION.md is largely a catalogue of
+     this exact failure elsewhere in the codebase.
 
-  /* notif badge in topbar */
-  const urgentCount = notifs.filter(n=>n.dot==="red").length;
-  const badge = $("#notif-badge");
-  badge.style.display = urgentCount > 0 ? "block" : "none";
+     It now reads the same rows, through the same permission scope, in the
+     same order, with the same level labels as the bell and the module. */
+  const dashNotifs = (typeof sortByUrgency === "function" && typeof visibleNotifications === "function")
+    ? sortByUrgency(visibleNotifications()).slice(0, 8)
+    : [];
+
+  const dashUnread = (typeof visibleNotifications === "function")
+    ? visibleNotifications().filter(n=>!n.read).length
+    : 0;
+
+  /* The unread count, not the total. The badge is red; a red badge reading
+     "17" beside a list that is entirely handled history is an alarm about
+     nothing. */
+  const countEl = $("#dash-notif-count");
+  if(countEl) countEl.textContent = dashUnread;
+
+  const dashEl = $("#dash-notifs");
+  if(dashEl){
+    dashEl.innerHTML = dashNotifs.map(n=>{
+      const level = notifPriority(n);
+      return `<div class="notif-item level-${level} ${n.read ? "" : "unread"}">
+      <div class="notif-text">
+        <p>${escHtml(n.msg)}</p>
+        <small>${notifLevelChip(n)}<span>${escHtml(fmtDateTime(n.time))}</span></small>
+      </div>
+    </div>`;
+    }).join("") || `<div class="alert-empty"><strong>Nothing waiting</strong>You're all caught up.</div>`;
+  }
+
+  /* The topbar badge is NOT set here any more. initNotifBadge() in orders.js
+     owns it, counts the same rows this panel shows, and knows how many of
+     them are critical. This function used to write it too, from a different
+     list, so the badge said one thing on the dashboard and another on every
+     other screen. */
+  if(typeof initNotifBadge === "function") initNotifBadge();
 
   /* recent transactions */
   const recentTx = [...ORDERS].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
@@ -1717,6 +2072,15 @@ function renderUsers(tab){
   });
   $$(".tab-panel", $("#mod-users")).forEach(p=>{
     p.classList.toggle("active", p.id === `tab-${activeTab}`);
+  });
+  /* The filter set for this tab. It used to live INSIDE the panel, so switching
+     panels switched it for free; it now sits in the merged toolbar row beside
+     the tabs (see .view-toolbar in portal.css) and has to be told. Driven off
+     the same activeTab as the panel above, on purpose — two sources for "which
+     tab is open" is how a screen ends up showing one tab's table under the
+     other tab's filters. */
+  $$(".tab-filters", $("#mod-users")).forEach(f=>{
+    f.classList.toggle("active", f.dataset.tabFilters === activeTab);
   });
 
   /* header action button */
@@ -1778,7 +2142,11 @@ function renderCustomers(){
     c => `
     <tr class="${c.status==="archived"?"archived":""}">
       <td class="td-name">${escHtml(c.name)}</td>
-      <td class="td-email">${escHtml(c.email)}</td>
+      <td class="td-email">
+        ${escHtml(c.email)}
+        ${c.canSignIn ? "" : `<span class="chip-nosignin"
+          title="No password is set, so this person cannot sign in. They set one by registering at the storefront with this email — that claims this record.">No sign-in</span>`}
+      </td>
       <td>${escHtml(c.contact || "—")}</td>
       <td><span class="badge ${c.status==="active"?"badge-ok":c.status==="retailer"?"badge-info":"badge-muted"}">${c.status}</span></td>
       <td class="muted">${fmtDate(c.joined)}</td>
@@ -2381,7 +2749,7 @@ function renderLanding(){
       <div class="lp-section-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg> Best Sellers
         <span class="lp-hint">Ranked by units sold — tick the products to feature</span>
       </div>
-      <div class="lp-bs-wrap"><table class="lp-bs-table" id="lp-bs-table">${renderBestSellerRows()}</table></div>
+      <div class="lp-bs-grid" id="lp-bs-table">${renderBestSellerRows()}</div>
       <div class="lp-storage" id="lp-storage"></div>
     </div>
 
@@ -2447,13 +2815,7 @@ function renderHeroImageCards(){
 function renderBestSellerRows(){
   const chosen = featuredIds();
   const rows = bestSellerRows();
-  const head = `
-    <thead><tr>
-      <th style="width:44px"></th><th>#</th><th>Product</th>
-      <th class="num">Units sold</th><th class="num">Revenue</th>
-      <th class="num">Rating</th><th>Stock</th><th>Photo</th>
-    </tr></thead>`;
-  /* The Photo column is READ-ONLY.
+  /* THE PHOTO IS READ-ONLY.
 
      It used to carry its own file input, writing to
      SITE_CONTENT.productImages[p.id] — an in-memory object with no table
@@ -2467,30 +2829,66 @@ function renderBestSellerRows(){
      Two places to set one thing is how the writer and the reader came to
      disagree in the first place; this screen shows the photo and says where to
      change it. */
-  const body = rows.map(function(p, i){
+  /* A GRID OF TILES, NOT A TABLE.
+
+     Seven columns of numbers is the right shape for comparing rows and the
+     wrong shape for this screen's actual job, which is picking a handful of
+     products to put on the front page. Rank and units sold — the ranking the
+     caption promises — were two cells among seven, weighted the same as
+     rating; the photo, which is what the visitor will actually see, was a
+     40px thumbnail in the last column.
+
+     The tile inverts that. Photo, name, rank and units sold carry the weight;
+     revenue, rating and stock drop to one quiet line so nothing is lost and
+     nothing competes.
+
+     THE CHECKBOX STAYS A REAL CHECKBOX, carrying data-feat="<product id>".
+     Two places read `$$("[data-feat]")` — the change handler in
+     wireLandingImages() and the save in saveLanding() — and a real input keeps
+     both working untouched, submits normally, and comes with keyboard support
+     and a checked state a screen reader already understands. A div dressed as
+     a switch would need role="switch", aria-checked, its own key handling, and
+     edits at both call sites: more code, less accessible. */
+  return rows.map(function(p, i){
     const on   = chosen.includes(p.id);
     const src  = imageUrl(p);
     const st   = stockInfo(p);
+    const cbId = "lp-feat-" + p.id;
     return `
-      <tr class="${on ? "is-featured" : ""}">
-        <td><input type="checkbox" data-feat="${p.id}" ${on ? "checked" : ""}></td>
-        <td class="lp-rank">${i + 1}</td>
-        <td><b>${escHtml(p.name)}</b><small>${escHtml(p.cat)}</small></td>
-        <td class="num">${p.sold.toLocaleString()}</td>
-        <td class="num">${peso(p.revenue)}</td>
-        <td class="num">${p.rating.toFixed(1)}</td>
-        <td><span class="pill ${st.cls}">${st.label}</span></td>
-        <td>
-          <div class="lp-cell-img">
-            ${src
-              ? `<img src="${escHtml(src)}" alt="${escHtml(p.name)}">`
-              : `<span class="lp-img-empty sm" title="No photo — add one in Product Maintenance">—</span>`}
-            <button class="btn btn-ghost btn-sm" data-goto-product="${escHtml(p.id)}">${src ? "Change" : "Add photo"}</button>
+      <div class="lp-tile ${on ? "is-featured" : ""}" data-feat-tile="${escHtml(p.id)}">
+        <div class="lp-tile-media">
+          ${src
+            ? `<img src="${escHtml(src)}" alt="">`
+            : `<span class="lp-img-empty" title="No photo — add one in Product Maintenance">No photo</span>`}
+          <span class="lp-tile-rank" title="Rank by units sold">#${i + 1}</span>
+        </div>
+
+        <div class="lp-tile-body">
+          <div class="lp-tile-name" title="${escHtml(p.name)}">${escHtml(p.name)}</div>
+          <div class="lp-tile-cat">${escHtml(p.cat)}</div>
+          <div class="lp-tile-sold"><b>${p.sold.toLocaleString()}</b> sold</div>
+          <div class="lp-tile-meta">
+            ${peso(p.revenue)} · ${ratingText(p)} ·
+            <span class="pill ${st.cls}">${st.label}</span>
           </div>
-        </td>
-      </tr>`;
+        </div>
+
+        <div class="lp-tile-foot">
+          <!-- The label wraps the input, so the whole control is one hit target
+               and clicking the word toggles the box. The tick beside it is the
+               third channel on top of the border and the tint: a selected tile
+               must be identifiable without relying on colour. -->
+          <label class="lp-feat-toggle" for="${cbId}">
+            <input type="checkbox" id="${cbId}" data-feat="${p.id}" ${on ? "checked" : ""}>
+            <span class="lp-feat-box" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 010 1.4l-7.5 7.5a1 1 0 01-1.4 0L3.3 9.7a1 1 0 111.4-1.4l3.8 3.8 6.8-6.8a1 1 0 011.4 0z" clip-rule="evenodd"/></svg>
+            </span>
+            <span class="lp-feat-text">${on ? "Featured" : "Feature"}</span>
+          </label>
+          <button class="btn btn-ghost btn-sm" data-goto-product="${escHtml(p.id)}">${src ? "Change" : "Add photo"}</button>
+        </div>
+      </div>`;
   }).join("");
-  return head + "<tbody>" + body + "</tbody>";
 }
 
 /* ---- Wiring ---------------------------------------------------------- */
@@ -2533,7 +2931,19 @@ function wireLandingImages(){
     box.addEventListener("change", function(){
       const ids = $$("[data-feat]").filter(b => b.checked).map(b => b.dataset.feat);
       SITE_CONTENT.featured = ids;
-      box.closest("tr").classList.toggle("is-featured", box.checked);
+      /* .lp-tile, not "tr". This read `box.closest("tr")` while the rows were
+         a table; in a tile grid that returns null and the selected styling
+         silently stops happening — no error, just a screen that no longer
+         shows which products are featured. */
+      const tile = box.closest(".lp-tile");
+      if(tile){
+        tile.classList.toggle("is-featured", box.checked);
+        const label = tile.querySelector(".lp-feat-text");
+        if(label) label.textContent = box.checked ? "Featured" : "Feature";
+      }
+      /* Zero ticked is a REAL answer — see the note in saveLanding(). Said out
+         loud rather than treated as a mistake, because it is reachable now and
+         used to not be. */
       if(!ids.length) toast("No products ticked — the carousel will fall back to the default set.", "warn");
     });
   });
@@ -3573,6 +3983,205 @@ function getSalesByRange(range){
   return ORDERS.filter(tx=> tx.date >= start && tx.date <= end);
 }
 
+/* ============================================================
+   MODULE: MY PROFILE
+   ------------------------------------------------------------
+   A staff member editing their own account. Deliberately NOT in
+   MOD_PERM: everyone signed in owns one, so there is nothing to gate
+   on, and navigate()'s guard only bounces modules listed there.
+
+   Reads api/users/me.php rather than adminState.currentUser. The
+   session copy is what was true at sign-in; an administrator may have
+   changed this person's role or name since, and a profile screen
+   showing a stale value is a profile screen nobody can trust.
+   ============================================================ */
+async function renderProfile(){
+  const panel = $("#mod-profile");
+  if(!panel) return;
+
+  const setVal  = (sel, v) => { const el = $(sel); if(el) el.value = v ?? ""; };
+  const setText = (sel, v) => { const el = $(sel); if(el) el.textContent = v ?? ""; };
+
+  try {
+    const { data } = await EbApi.get("users/me.php");
+    setVal("#pf-name",   data.name);
+    setVal("#pf-email",  data.email);
+    setVal("#pf-avatar", data.avatar);
+    /* Read-only, and shown so the operator can SEE what they cannot change —
+       an absent field invites the question, a disabled one answers it. */
+    setText("#pf-role",   data.role || "—");
+    setText("#pf-status", data.status === "active" ? "Active" : data.status);
+    setText("#pf-id",     data.id);
+  } catch(err){
+    toast("Could not load your profile: " + err.message, "err");
+    return;
+  }
+
+  wireProfileForms();
+}
+
+/* Bound once. renderProfile() runs on every visit to the screen, and a second
+   listener on the same form would submit it twice. */
+function wireProfileForms(){
+  const form = $("#profile-form");
+  if(form && !form.dataset.wired){
+    form.dataset.wired = "1";
+    form.addEventListener("submit", onProfileSave);
+  }
+  const pw = $("#password-form");
+  if(pw && !pw.dataset.wired){
+    pw.dataset.wired = "1";
+    pw.addEventListener("submit", onPasswordSave);
+  }
+}
+
+/* Clear every field error on a form before a fresh submit, so a message from
+   the previous attempt cannot be mistaken for this one's. */
+function clearFieldErrors(ids){
+  ids.forEach(id => { const el = $("#" + id); if(el) el.textContent = ""; });
+}
+
+/* Paint the server's field errors. The server is the authority on what is
+   wrong — mirroring its rules in the browser is how the two come to disagree,
+   so the client only shows what it is told. */
+function showFieldErrors(fields, map){
+  Object.entries(fields || {}).forEach(([k, msg]) => {
+    const el = $("#" + (map[k] || ""));
+    if(el) el.textContent = msg;
+  });
+}
+
+async function onProfileSave(e){
+  e.preventDefault();
+  clearFieldErrors(["pf-name-err", "pf-email-err"]);
+  const btn = $("#pf-save");
+  const restore = EbUI.busy(btn, "Saving…");
+  try {
+    /* Only the three editable fields are sent. role_id and status are not
+       omitted as a courtesy — me-save.php refuses them with a 403 — but there
+       is no reason to send what will be rejected. */
+    const { data } = await EbApi.post("users/me-save.php", {
+      name:   $("#pf-name").value.trim(),
+      email:  $("#pf-email").value.trim(),
+      avatar: $("#pf-avatar").value.trim(),
+    });
+
+    /* The topbar chip, the sidebar and the user menu all show this person's
+       name; leaving them on the old one until the next reload would make the
+       save look like it had not worked. applySignedInUser() is the single
+       function that paints all of them. */
+    if(adminState.currentUser){
+      adminState.currentUser.name   = data.name;
+      adminState.currentUser.email  = data.email;
+      adminState.currentUser.avatar = data.avatar;
+      applySignedInUser(adminState.currentUser);
+    }
+    toast(data.changed.length ? "Profile updated" : "Nothing to change", "ok");
+  } catch(err){
+    showFieldErrors(err.fields, { name: "pf-name-err", email: "pf-email-err" });
+    toast(err.message || "Could not save your profile.", "err");
+  } finally { restore(); }
+}
+
+async function onPasswordSave(e){
+  e.preventDefault();
+  clearFieldErrors(["pf-current-err", "pf-new-err", "pf-confirm-err"]);
+  const btn = $("#pf-pw-save");
+  const restore = EbUI.busy(btn, "Updating…");
+  try {
+    await EbApi.post("users/me-password.php", {
+      current_password: $("#pf-current").value,
+      new_password:     $("#pf-new").value,
+      confirm_password: $("#pf-confirm").value,
+    });
+    /* Cleared on success only. A failed attempt keeps what was typed, so a
+       mistyped confirmation does not cost the other two fields as well. */
+    ["#pf-current", "#pf-new", "#pf-confirm"].forEach(sel => { $(sel).value = ""; });
+    toast("Password updated. Other devices signed in as you have been signed out.", "ok");
+  } catch(err){
+    showFieldErrors(err.fields, {
+      current_password: "pf-current-err",
+      new_password:     "pf-new-err",
+      confirm_password: "pf-confirm-err",
+    });
+    toast(err.message || "Could not change your password.", "err");
+  } finally { restore(); }
+}
+
+/* Best sellers for the selected range.
+
+   RANKED BY REVENUE, AND THE PANEL SAYS SO. api/reports/sales.php orders by
+   revenue deliberately — its comment: "ranking by units flatters cheap
+   products; a report used to decide what to make more of should rank by what
+   actually earned". The units column sits right beside the revenue one, so a
+   reader who assumes the list is ordered by units would misread every row.
+   The note under the heading is what stops that.
+
+   AND IT SAYS WHICH PERIOD. The Landing Page module ranks best sellers by
+   lifetime products.sold; this ranks by revenue within the chosen range. The
+   two disagree by design, and a heading that does not name the period turns
+   that into a bug report. */
+function renderTopProducts(rows, from, to){
+  const body = $("#top-products-body");
+  if(!body) return;
+  const note = $("#top-products-note");
+  if(note) note.textContent = `ranked by revenue · ${fmtDate(from)} – ${fmtDate(to)}`;
+
+  if(!rows || !rows.length){
+    /* An empty table with headers reads as a broken query. A period with no
+       sales is a fact, and says so. */
+    body.innerHTML = `<div class="alert-empty">
+      <strong>No sales in this period</strong>
+      Nothing was sold between ${escHtml(fmtDate(from))} and ${escHtml(fmtDate(to))}.
+    </div>`;
+    return;
+  }
+
+  body.innerHTML = `<div class="table-wrap"><table class="data-table">
+    <thead><tr>
+      <th style="width:52px">#</th><th>Product</th>
+      <th class="num">Units</th><th class="num">Revenue</th>
+    </tr></thead>
+    <tbody>${rows.map((r,i)=>`<tr>
+      <td class="num-cell muted">${i+1}</td>
+      <td><strong>${escHtml(r.name)}</strong></td>
+      <td class="num-cell">${r.units.toLocaleString()}</td>
+      <td class="num-cell"><strong>${peso(r.revenue)}</strong></td>
+    </tr>`).join("")}</tbody>
+  </table></div>`;
+}
+
+/* The payment-method split, rendered in the same pass for the same reason:
+   it was already in the response and nothing showed it. Share of revenue is
+   computed here rather than asked of the server — the total is right there in
+   the same payload, so a second query would be a second chance to disagree. */
+function renderByMethod(rows, totals){
+  const body = $("#by-method-body");
+  if(!body) return;
+
+  if(!rows || !rows.length){
+    body.innerHTML = `<div class="alert-empty">
+      <strong>No payments in this period</strong>
+      Nothing was taken between those dates.
+    </div>`;
+    return;
+  }
+
+  const total = rows.reduce((n,r)=> n + r.revenue, 0) || 1;
+  body.innerHTML = `<div class="table-wrap"><table class="data-table">
+    <thead><tr>
+      <th>Method</th><th class="num">Orders</th>
+      <th class="num">Revenue</th><th class="num">Share</th>
+    </tr></thead>
+    <tbody>${rows.map(r=>`<tr>
+      <td><span class="badge ${methodBadgeClass(r.method)}">${escHtml(payMethodLabel ? payMethodLabel(r.method) : r.method)}</span></td>
+      <td class="num-cell">${r.orders.toLocaleString()}</td>
+      <td class="num-cell"><strong>${peso(r.revenue)}</strong></td>
+      <td class="num-cell muted">${Math.round((r.revenue/total)*100)}%</td>
+    </tr>`).join("")}</tbody>
+  </table></div>`;
+}
+
 function renderSales(range){
   adminState.salesRange = range;
   $$("[data-range]").forEach(btn=> btn.classList.toggle("active", btn.dataset.range===range));
@@ -3612,6 +4221,11 @@ function renderSales(range){
         set("#sales-total-val", peso(data.totals.revenue));
         set("#sales-orders-val", data.totals.orders);
         set("#sales-avg-val", peso(data.totals.average));
+        /* Both of these arrived in every response since the endpoint was
+           written and neither was ever read. Rendered here, in the same pass,
+           so they cannot fall out of step with the totals above them. */
+        renderTopProducts(data.topProducts, start, end);
+        renderByMethod(data.byMethod, data.totals);
       })
       .catch(err => console.warn("[sales]", err.message))
       .finally(() => { adminState._salesFetching = false; });
@@ -4261,6 +4875,9 @@ function init(){
   /* Lives in admin-orders.js and reads the shell's bell markup, so it has
      to run here rather than on DOMContentLoaded. */
   if(typeof initNotifBell === "function") initNotifBell();
+  /* Same reason as the bell: it binds markup from portal/views/reviews.html.
+     Guarded so a portal built without reviews.js still boots. */
+  if(typeof initReviews === "function") initReviews();
 }
 
 /* init() must not run until Core/module-loader.js has injected the portal

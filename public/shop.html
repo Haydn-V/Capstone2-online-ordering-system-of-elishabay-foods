@@ -108,8 +108,21 @@
           <div class="sidebar-block">
             <span class="sidebar-label">Sort By</span>
             <label class="sr-only" for="sort-select">Sort products</label>
+            <!-- "Featured" was labelled "Best Seller" and is not one: it ranks
+                 the products an administrator flagged first, and only breaks
+                 ties by units sold, so a starred slow seller outranked the
+                 actual top seller under a label promising the opposite. Both
+                 rankings are now offered under their own names.
+
+                 Top 5 / Top 10 are Best Selling with a cap. They are sort
+                 options rather than a separate control because they answer the
+                 same question — "what sells best" — and a shopper who picks one
+                 is not also picking a different order. -->
             <select class="sort-select" id="sort-select">
-              <option value="featured">Best Seller</option>
+              <option value="featured">Featured</option>
+              <option value="best-selling">Best Selling</option>
+              <option value="top-5">Top 5 Best Sellers</option>
+              <option value="top-10">Top 10 Best Sellers</option>
               <option value="name-asc">Name (A–Z)</option>
               <option value="price-asc">Price (Low → High)</option>
               <option value="price-desc">Price (High → Low)</option>
@@ -213,6 +226,7 @@
 <div class="toast-wrap" id="toast-wrap" aria-live="polite" aria-atomic="true"></div>
 
     <script type="module" src="../assets/js/core/index.js"></script>
+    <script defer src="../assets/js/public/modal-shell.js"></script>
     <script defer src="../assets/js/public/site.js"></script>
 <script>
 (function () {
@@ -220,6 +234,12 @@
     const grid = document.getElementById('product-grid');
     const label = document.getElementById('product-count');
     if (!grid || !label) return;
+    /* renderProducts() writes this line itself whenever a Top 5 / Top 10 limit
+       is in force, because only it knows how many products MATCHED before the
+       cap was applied. Counting the cards left in the grid would report "5
+       products" for a category holding nine and quietly drop the fact that a
+       limit is what made the list short. */
+    if (label.dataset.owned === '1') return;
     const n = grid.querySelectorAll('.product-card:not([style*="display: none"])').length;
     label.innerHTML = `Showing <strong>${n}</strong> product${n !== 1 ? 's' : ''}`;
   }

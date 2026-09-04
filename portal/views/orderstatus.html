@@ -38,7 +38,7 @@
       <h2>Order Status</h2>
     </div>
   </div>
-  <div class="table-toolbar" style="margin-bottom: 14px">
+  <div class="view-toolbar view-toolbar-filters">
     <div class="search-box">
       <svg
         viewBox="0 0 24 24"
@@ -59,6 +59,8 @@
         data-refilters="orderStatus"
       />
     </div>
+    <!-- Everything before this sits left, everything after it right. -->
+    <span class="vt-spacer" aria-hidden="true"></span>
     <select
       class="filter-select"
       id="status-filter"

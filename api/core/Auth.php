@@ -60,7 +60,11 @@ final class Auth
      */
     public static function attempt(string $email, string $password): array
     {
-        self::throttle($email);
+        /* CTX_STAFF: the same free attempts as a customer, but escalating to a
+           30-minute ceiling rather than 10. These accounts adjust stock, issue
+           refunds and, for Super Admin, edit the permission table — see the
+           note on Lockout::CTX_STAFF. */
+        Lockout::enforce($email, Lockout::CTX_STAFF);
 
         $user = Database::one(
             'SELECT u.id, u.name, u.email, u.password, u.avatar, u.status,
@@ -81,7 +85,9 @@ final class Auth
         }
 
         if (!$ok) {
-            self::record($email, false);
+            /* Refuses with the lockout message instead if this failure is the
+               one that crossed the threshold — see Lockout::recordFailure. */
+            Lockout::recordFailure($email, Lockout::CTX_STAFF);
             Response::error('UNAUTHENTICATED', 'Email or password is incorrect.', 401);
         }
 
@@ -89,16 +95,16 @@ final class Auth
            able to sign in. The old client-side check did this too; it is
            repeated here because that check no longer counts for anything. */
         if ($user['status'] === 'archived') {
-            self::record($email, false);
+            Lockout::record($email, false, Lockout::CTX_STAFF);
             Response::forbidden('This account has been archived. Contact an administrator.');
         }
 
         if ($user['role'] === null) {
-            self::record($email, false);
+            Lockout::record($email, false, Lockout::CTX_STAFF);
             Response::forbidden('This account has no role assigned. Contact an administrator.');
         }
 
-        self::record($email, true);
+        Lockout::record($email, true, Lockout::CTX_STAFF);
 
         /* New session id on privilege change — stops session fixation, where
            an attacker plants a known session id before the victim logs in. */
@@ -123,6 +129,19 @@ final class Auth
 
     public static function attemptCustomer(string $email, string $password): array
     {
+        /* THIS PATH WAS NOT THROTTLED AT ALL, and that was the real gap.
+
+           attempt(), reauthenticateStaff() and reauthenticateCustomer() all
+           called throttle(); customer SIGN-IN never did. So the storefront —
+           the one login form on the public internet — accepted unlimited
+           password guesses, while the password-change form behind a session was
+           rate limited. The rows in login_attempts for customer addresses came
+           from those other paths, which is why the counter looked alive.
+
+           It also means a lockout could not have been the cause of a customer
+           being told "incorrect": there was no lockout here to misreport. */
+        Lockout::enforce($email, Lockout::CTX_CUSTOMER);
+
         $c = Database::one(
             'SELECT id, name, email, password, contact, status FROM customers WHERE email = ?',
             [$email]
@@ -138,11 +157,39 @@ final class Auth
         }
 
         if (!$ok) {
-            Response::error('UNAUTHENTICATED', 'Email or password is incorrect.', 401);
+            Lockout::recordFailure($email, Lockout::CTX_CUSTOMER);
+            /* ONE MESSAGE FOR THREE CASES, AND IT SAYS WHAT TO DO NEXT.
+
+               Wrong password, unknown email, and a record with password NULL
+               all land here with identical wording. Splitting them was
+               requested and is the thing this comment exists to argue against:
+               "that email has no password set" tells an attacker the address is
+               registered, which is precisely the enumeration the dummy-hash
+               above spends time preventing. A staff-created customer record and
+               a stranger's address must be indistinguishable from outside.
+
+               What CAN be fixed without leaking anything is the advice. The old
+               text sent a passwordless customer — every account an
+               administrator has ever created through Add Customer — back to
+               retype a password that was already correct, forever. The second
+               sentence is true for all three cases and actionable in the one
+               that needs it. The state itself is now visible where it is safe
+               to show it: to staff, in Customer Accounts. */
+            Response::error(
+                'UNAUTHENTICATED',
+                'Email or password is incorrect. If you have not set a password for '
+                . 'this email yet, use Sign Up to create one.',
+                401
+            );
         }
         if ($c['status'] === 'archived') {
+            Lockout::record($email, false, Lockout::CTX_CUSTOMER);
             Response::forbidden('This account is no longer active. Please contact us.');
         }
+
+        /* Clears the streak. Without this the customer path would count
+           failures and never forgive them. */
+        Lockout::record($email, true, Lockout::CTX_CUSTOMER);
 
         session_regenerate_id(true);
         $_SESSION[self::SESSION_CUSTOMER] = $c['id'];
@@ -282,13 +329,6 @@ final class Auth
        reduction in protection, so it is worth applying that file.
        ------------------------------------------------------------------ */
 
-    private static ?bool $attemptsTable = null;
-
-    private static function attemptsAvailable(): bool
-    {
-        return self::$attemptsTable ??= Database::hasTable('login_attempts');
-    }
-
     /* ------------------------------------------------------------------
        Passwords — one rule, one hash, one place.
 
@@ -333,67 +373,64 @@ final class Auth
      * being the one that matters.
      *
      * Throttled on the same counter as sign-in, so this cannot be used as an
-     * unlimited password oracle against a stolen session. `throttle()` and
-     * `record()` stay private; this is the door they are reached through.
+     * unlimited password oracle against a stolen session. The policy itself
+     * lives in Lockout — one implementation for all four password paths.
      */
     public static function reauthenticateCustomer(string $password): array
     {
         $customer = self::requireCustomer('Sign in to continue.');
 
         $email = (string) $customer['email'];
-        self::throttle($email);
+        Lockout::enforce($email, Lockout::CTX_CUSTOMER);
 
         $hash = Database::scalar('SELECT password FROM customers WHERE id = ?', [$customer['id']]);
 
         if (!is_string($hash) || $hash === '' || !password_verify($password, $hash)) {
-            self::record($email, false);
+            Lockout::record($email, false, Lockout::CTX_CUSTOMER);
             Response::validation('That is not your current password.', [
                 'current_password' => 'Incorrect password.',
             ]);
         }
 
-        self::record($email, true);
+        Lockout::record($email, true, Lockout::CTX_CUSTOMER);
         return $customer;
     }
 
-    private static function throttle(string $email): void
+    /**
+     * Re-verify the CURRENT password of the already-signed-in STAFF member.
+     *
+     * The twin of reauthenticateCustomer() above, and deliberately beside it so
+     * the two are read together — they answer the same question about two
+     * different tables and must not drift apart.
+     *
+     * Same three properties: it proves the person at the keyboard is the
+     * account holder rather than merely someone holding a session cookie; it is
+     * throttled on the same login_attempts counter, so a stolen staff session
+     * cannot be used as an unlimited password oracle; and it fails with the
+     * same shape (401 from requireStaff, 429 from throttle, 400 from here) so
+     * a caller handles one contract, not two.
+     */
+    public static function reauthenticateStaff(string $password): array
     {
-        if (!self::attemptsAvailable()) {
-            return;
+        $user = self::require();
+
+        $email = (string) $user['email'];
+        /* CTX_STAFF, matching attempt(). Re-authentication guards a password
+           CHANGE on a privileged account — if anything it deserves the stricter
+           ceiling more than sign-in does, not less. */
+        Lockout::enforce($email, Lockout::CTX_STAFF);
+
+        $hash = Database::scalar('SELECT password FROM users WHERE id = ?', [$user['id']]);
+
+        if (!is_string($hash) || $hash === '' || !password_verify($password, $hash)) {
+            Lockout::record($email, false, Lockout::CTX_STAFF);
+            Response::validation('That is not your current password.', [
+                'current_password' => 'Incorrect password.',
+            ]);
         }
 
-        $sec     = Database::config()['security'];
-        $max     = (int) ($sec['max_login_attempts'] ?? 5);
-        $window  = (int) ($sec['lockout_seconds'] ?? 900);
-
-        $failures = (int) Database::scalar(
-            'SELECT COUNT(*) FROM login_attempts
-              WHERE email = ? AND successful = 0
-                AND attempted_at > (NOW() - INTERVAL ? SECOND)',
-            [$email, $window]
-        );
-
-        if ($failures >= $max) {
-            Response::rateLimited(
-                'Too many failed sign-in attempts. Try again in ' . ceil($window / 60) . ' minutes.'
-            );
-        }
+        Lockout::record($email, true, Lockout::CTX_STAFF);
+        return $user;
     }
 
-    private static function record(string $email, bool $success): void
-    {
-        if (!self::attemptsAvailable()) {
-            return;
-        }
-        Database::run(
-            'INSERT INTO login_attempts (email, ip_address, successful) VALUES (?, ?, ?)',
-            [$email, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0', $success ? 1 : 0]
-        );
-
-        /* A successful sign-in clears the counter, so one fat-fingered
-           password does not keep counting against you all afternoon. */
-        if ($success) {
-            Database::run('DELETE FROM login_attempts WHERE email = ? AND successful = 0', [$email]);
-        }
-    }
 }
