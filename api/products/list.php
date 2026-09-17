@@ -5,6 +5,7 @@ declare(strict_types=1);
  * GET /api/products/list.php
  *
  * Query: ?page=1&limit=25&search=&category=&status=active|archived|all&sort=name|price|stock|sold
+ *        &window=default|yesterday|week|month
  *
  * Readable by any signed-in staff member — the catalogue appears in POS,
  * inventory and reports, so gating it behind products.manage would break
@@ -19,6 +20,15 @@ Auth::require();
 
 $q      = $_GET;
 $paging = Validate::paging($q, 25, 200);
+
+/* The window every band on this page is measured over. Chosen by the reader
+   (Inventory Report and Stock Overview both offer it) and falling back to the
+   stored setting, which is what every other caller of this endpoint gets.
+
+   BEFORE THE FILTERS, because `level` and `movement` are predicates over
+   columns the window defines: asking for everything Critical as measured
+   yesterday has to measure yesterday first. */
+Inventory::useWindow(isset($q['window']) ? (string) $q['window'] : null);
 
 $where  = [];
 $params = [];
@@ -189,4 +199,10 @@ Response::ok($products, [
     /* Echoed so a screen can label its own thresholds without a second
        request, and so a reader can see what the bands were measured against. */
     'inventoryModel' => Inventory::tunables(),
+    /* Which window answered THIS request. The screen labels itself from the
+       response rather than from what it asked for, so a request that fell
+       back to the stored default cannot be captioned "Yesterday". */
+    'window'         => Inventory::windowKey() ?? 'default',
+    'windowDays'     => Inventory::windowDays(),
+    'windowLabel'    => Inventory::windowLabel(),
 ]);

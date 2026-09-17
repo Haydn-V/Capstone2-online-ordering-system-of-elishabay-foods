@@ -294,7 +294,7 @@ function renderPayment(){
          would have to either refuse the sale or open an account belonging to
          nobody. -->
     <div class="field hide" id="retailer-field">
-      <label>Retailer Account <span class="muted" style="font-weight:400;font-size:.78rem">(required for credit terms)</span></label>
+      <label>Retailer Account <span class="muted" style="font-weight:400;font-size:.78rem">(required for Net terms · applies their withholding tax)</span></label>
       <select class="control" id="pay-retailer"><option value="">Select a retailer…</option></select>
       <span class="field-error" id="err-retailer"></span>
       <span class="field-hint" id="retailer-standing"></span>
@@ -314,6 +314,29 @@ function renderPayment(){
         <input class="control" id="pay-address" placeholder="Street, City"/>
         <span class="field-error" id="err-address"></span>
       </div>
+    </div>
+
+    <!-- SENIOR CITIZEN / PWD. Hidden until pos/quote.php says the discount is
+         switched on in VAT Maintenance, and never offered on a retailer sale.
+         The ID number and name are required: the BIR wants both on the invoice,
+         and api/pos/checkout.php refuses the discount without them. -->
+    <div class="field hide" id="scpwd-field">
+      <label class="vat-check" style="margin:0 0 6px">
+        <input type="checkbox" id="scpwd-on"/>
+        <span>Senior citizen / PWD discount</span>
+      </label>
+      <div class="hide" id="scpwd-details">
+        <div class="order-type-toggle" id="scpwd-type" style="margin-bottom:8px">
+          <button type="button" class="order-type-btn active" data-scpwd="senior">Senior Citizen</button>
+          <button type="button" class="order-type-btn" data-scpwd="pwd">PWD</button>
+        </div>
+        <input class="control" id="scpwd-id" placeholder="ID number on the card" maxlength="40" style="margin-bottom:6px"/>
+        <span class="field-error" id="err-scpwd-id"></span>
+        <input class="control" id="scpwd-name" placeholder="Name on the ID" maxlength="100"/>
+        <span class="field-error" id="err-scpwd-name"></span>
+        <span class="field-hint" id="scpwd-hint"></span>
+      </div>
+      <span class="field-error" id="err-scpwd"></span>
     </div>
 
     <div class="field">
@@ -339,9 +362,14 @@ function renderPayment(){
       </div>
     </div>
 
-    <div class="billing-row total-row" style="margin-bottom:16px">
-      <span>Order Total</span>
-      <span class="billing-total-val">${peso(total)}</span>
+    <!-- Filled from pos/quote.php: the discount, VAT, withholding and the amount
+         DUE, which is what the cashier tenders against. Starts as the plain
+         total so the screen is never blank while the quote is on its way. -->
+    <div id="pos-tax-box" style="margin-bottom:16px">
+      <div class="billing-row total-row">
+        <span>Amount Due</span>
+        <span class="billing-total-val">${EbFormat.pesoExact(total)}</span>
+      </div>
     </div>
 
     <button class="btn btn-gold btn-block" id="place-order-btn">
@@ -385,6 +413,96 @@ function buildPayMethodGrid(ctype, orderType){
 function wirePaymentForm(total){
   let orderType="pickup", customerType="regular", payMethod="cash";
 
+  /* WHAT THE CASHIER TENDERS AGAINST. Starts as the plain total and is replaced
+     by the server's amount due as soon as the quote lands — after a senior/PWD
+     discount, or the tax a withholding retailer keeps. The arithmetic is in
+     api/core/Tax.php and nowhere in this file: a second copy in the browser is
+     how a till and a checkout come to disagree about money. */
+  let due = total;
+  let scPwdType = "senior";
+  let quoteTimer = null, quoteSeq = 0;
+  const money = n => EbFormat.pesoExact(n);
+
+  function scPwdPayload(){
+    if(customerType !== "regular" || !$("#scpwd-on")?.checked) return null;
+    return {
+      type: scPwdType,
+      id:   $("#scpwd-id")?.value.trim() || "",
+      name: $("#scpwd-name")?.value.trim() || "",
+    };
+  }
+
+  function renderTaxBox(t){
+    const box = $("#pos-tax-box");
+    if(!box) return;
+    const row = (label, value, cls="") => `<div class="billing-row ${cls}"><span>${label}</span><span>${value}</span></div>`;
+    box.innerHTML =
+      row("Subtotal", money(t.grossTotal))
+      + (t.scPwdDiscount > 0 ? row(`${scPwdType === "pwd" ? "PWD" : "Senior citizen"} discount`, "− " + money(t.scPwdDiscount)) : "")
+      + row(t.vatAmount > 0 ? `VAT (${+t.vatRate}%)` : "VAT", t.vatAmount > 0 ? money(t.vatAmount) : "VAT-exempt")
+      + (t.withholdingTax > 0 ? row(`Withholding tax (${+t.withholdingRate}%)`, "− " + money(t.withholdingTax)) : "")
+      + `<div class="billing-row total-row"><span>Amount Due</span><span class="billing-total-val">${money(t.amountDue)}</span></div>`;
+  }
+
+  function syncChange(){
+    const t=+$("#pay-tendered")?.value||0;
+    const change=t-due;
+    const cd=$("#change-display"), cv=$("#change-val");
+    if(cd){ cd.classList.toggle("hide", !t || change<0); if(cv) cv.textContent=money(Math.max(0,change)); }
+  }
+
+  /* Debounced, and sequenced: a slow response to an older request must not
+     overwrite the figures for the cart as it is now. */
+  function refreshQuote(){
+    clearTimeout(quoteTimer);
+    quoteTimer = setTimeout(async ()=>{
+      const seq = ++quoteSeq;
+      try {
+        const { data } = await EbApi.post("pos/quote.php", {
+          items: adminState.cart.map(c => ({ id: c.productId, qty: c.qty })),
+          sc_pwd: scPwdPayload(),
+          retailer_id: customerType === "retailer" ? ($("#pay-retailer")?.value || null) : null,
+        });
+        if(seq !== quoteSeq) return;
+        const t = data.tax;
+        due = t.amountDue;
+        renderTaxBox(t);
+        const field = $("#scpwd-field");
+        if(field) field.classList.toggle("hide", !data.rules.scPwdEnabled || customerType !== "regular");
+        const hint = $("#scpwd-hint");
+        if(hint){
+          const r = data.rules;
+          hint.textContent = t.scPwdCapped
+            ? `Weekly limit reached for this ID — discount capped at ${money(t.scPwdDiscount)}.`
+            : `${+r.scPwdDiscountRate}% off the amount net of VAT${r.scPwdVatExempt ? ", VAT-exempt" : ""}${r.scPwdWeeklyCap > 0 ? ` · up to ${money(r.scPwdWeeklyCap)} a week per ID` : ""}.`;
+          hint.style.color = t.scPwdCapped ? "var(--warn)" : "";
+        }
+        const tendered=$("#pay-tendered");
+        if(tendered){ tendered.placeholder=String(due); tendered.min=String(due); }
+        syncChange();
+      } catch(err){
+        /* The checkout computes everything again; a failed preview must not
+           stop a sale, but it must not pass silently either. */
+        if(seq === quoteSeq) toast("Could not work out the tax preview: " + err.message, "warn");
+      }
+    }, 200);
+  }
+
+  $("#scpwd-on")?.addEventListener("change", ()=>{
+    $("#scpwd-details")?.classList.toggle("hide", !$("#scpwd-on").checked);
+    refreshQuote();
+  });
+  $$("#scpwd-type .order-type-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      scPwdType = btn.dataset.scpwd;
+      $$("#scpwd-type .order-type-btn").forEach(b=>b.classList.toggle("active", b===btn));
+      refreshQuote();
+    });
+  });
+  /* The ID matters to the weekly cap, so it re-quotes; the name does not. */
+  $("#scpwd-id")?.addEventListener("input", refreshQuote);
+  refreshQuote();
+
   $$("#order-type-toggle .order-type-btn").forEach(btn=>{
     btn.addEventListener("click",()=>{
       orderType=btn.dataset.type;
@@ -412,6 +530,13 @@ function wirePaymentForm(total){
       syncRetailerField();
       if(customerType!=="retailer"){ const sel=$("#pay-retailer"); if(sel) sel.value=""; }
       else loadRetailers();
+      /* A retailer sale is never a senior/PWD sale; clear it rather than hide
+         a ticked box that would still be sent. */
+      if(customerType!=="regular"){
+        const on=$("#scpwd-on"); if(on) on.checked=false;
+        $("#scpwd-details")?.classList.add("hide");
+      }
+      refreshQuote();
     });
   });
 
@@ -420,7 +545,9 @@ function wirePaymentForm(total){
      and should not be made to pick an account. */
   function syncRetailerField(){
     const field=$("#retailer-field");
-    if(field) field.classList.toggle("hide", !isCreditMethod(payMethod));
+    /* Any retailer sale, not only a credit one: naming the account is what
+       applies a withholding agent's tax on a cash or transfer sale too. */
+    if(field) field.classList.toggle("hide", customerType !== "retailer");
     const err=$("#err-retailer"); if(err) err.textContent="";
     showRetailerStanding();
   }
@@ -463,6 +590,7 @@ function wirePaymentForm(total){
   $("#pay-retailer")?.addEventListener("change", ()=>{
     const err=$("#err-retailer"); if(err) err.textContent="";
     showRetailerStanding();
+    refreshQuote();
   });
 
   const wirePayCards=()=>{
@@ -475,25 +603,20 @@ function wirePaymentForm(total){
         refField?.classList.toggle("hide", payMethod!=="gcash" && payMethod!=="bank");
         const tenderedField=$("#tendered-field");
         tenderedField?.classList.toggle("hide", payMethod!=="cash");
-        if(payMethod==="cash") { const t=$("#pay-tendered"); if(t) t.placeholder=String(total); }
+        if(payMethod==="cash") { const t=$("#pay-tendered"); if(t) t.placeholder=String(due); }
         syncRetailerField();
-        if(isCreditMethod(payMethod)) loadRetailers();
+        if(customerType==="retailer") loadRetailers();
       });
     });
   };
   wirePayCards();
 
-  $("#pay-tendered")?.addEventListener("input",()=>{
-    const t=+$("#pay-tendered").value||0;
-    const change=t-total;
-    const cd=$("#change-display"), cv=$("#change-val");
-    if(cd){ cd.classList.toggle("hide", change<0); if(cv) cv.textContent=peso(Math.max(0,change)); }
-  });
+  $("#pay-tendered")?.addEventListener("input", syncChange);
 
   /* async so the button can be disabled for the duration — a double-click here
      used to be capable of ringing up two sales. */
   $("#place-order-btn")?.addEventListener("click", async ()=> {
-    await placeOrder(orderType, customerType, payMethod, total, $("#pay-retailer")?.value || null);
+    await placeOrder(orderType, customerType, payMethod, due, $("#pay-retailer")?.value || null, scPwdPayload());
   });
 }
 
@@ -527,7 +650,7 @@ function genTxnId(){
    to change, but it is used only for the pre-submit cash check; the receipt
    shows the server's figure.
 */
-async function placeOrder(orderType, customerType, payMethod, total, retailerId){
+async function placeOrder(orderType, customerType, payMethod, total, retailerId, scPwd = null){
   const name     = $("#pay-customer-name")?.value.trim()||"Walk-In Customer";
   const phone    = $("#pay-phone")?.value.trim()||"";
   const address  = $("#pay-address")?.value.trim()||"";
@@ -539,6 +662,7 @@ async function placeOrder(orderType, customerType, payMethod, total, retailerId)
   $("#err-general").textContent="";
   const errRetailer = $("#err-retailer");
   if(errRetailer) errRetailer.textContent="";
+  ["#err-scpwd", "#err-scpwd-id", "#err-scpwd-name"].forEach(s=>{ const e=$(s); if(e) e.textContent=""; });
 
   if(!adminState.cart.length){ toast("The cart is empty.","warn"); return; }
 
@@ -550,7 +674,14 @@ async function placeOrder(orderType, customerType, payMethod, total, retailerId)
     if(errRetailer) errRetailer.textContent="Choose which retailer this credit sale is for.";
     return;
   }
-  if(payMethod==="cash" && tendered < total && tendered !== 0){ toast(`Amount tendered must be at least ${peso(total)}.`,"warn"); return; }
+  if(scPwd && (!scPwd.id || !scPwd.name)){
+    if(!scPwd.id)   { const e=$("#err-scpwd-id");   if(e) e.textContent="Enter the ID number on their card."; }
+    if(!scPwd.name) { const e=$("#err-scpwd-name"); if(e) e.textContent="Enter the name on the ID."; }
+    return;
+  }
+  /* `total` here is the AMOUNT DUE from the last quote — after any discount or
+     withholding. The server checks tendered cash against its own figure too. */
+  if(payMethod==="cash" && tendered < total && tendered !== 0){ toast(`Amount tendered must be at least ${EbFormat.pesoExact(total)}.`,"warn"); return; }
 
   /* #place-order-btn is the real control (built at pos.js:323). The dead
      `$("#pay-confirm-btn") ||` branch that used to lead this line matched
@@ -572,9 +703,13 @@ async function placeOrder(orderType, customerType, payMethod, total, retailerId)
       address: address || null,
       ref_num: refNum || null,
       tendered: tendered || 0,
-      /* Only sent for a credit sale. The server re-reads the customer row and
-         checks the status itself — this is a selection, not an assertion. */
-      retailer_id: isCreditMethod(payMethod) ? retailerId : null,
+      /* Sent for any retailer sale: required for Net terms, and what applies a
+         withholding agent's tax otherwise. The server re-reads the customer row
+         and checks the status itself — this is a selection, not an assertion. */
+      retailer_id: customerType === "retailer" ? (retailerId || null) : null,
+      /* Senior citizen / PWD details, or null. api/pos/checkout.php applies the
+         discount from VAT Maintenance's rules and stores the ID for the invoice. */
+      sc_pwd: scPwd,
     });
     order = data;
   } catch(err){
@@ -601,6 +736,9 @@ async function placeOrder(orderType, customerType, payMethod, total, retailerId)
         address:     "#err-address",
         ref_num:     "#err-refnum",
         retailer_id: "#err-retailer",
+        sc_pwd:      "#err-scpwd",
+        sc_pwd_id:   "#err-scpwd-id",
+        sc_pwd_name: "#err-scpwd-name",
       };
       const leftover = [];
       Object.entries(err.fields).forEach(([field, msg])=>{
@@ -628,71 +766,44 @@ async function placeOrder(orderType, customerType, payMethod, total, retailerId)
   await loadCatalog();
   await loadOrders();
 
+  /* The Sales Invoice, built once and used for both the screen and the
+     printout, so what the cashier checks is exactly what prints. */
+  const invoice = EbInvoice.fromOrder(order);
+  EbInvoice.ensureStyles();
   openModal({
-    title:"Order Placed — Receipt",
-    body: buildReceipt({
-      ...order,
-      /* buildReceipt reads these names. */
-      method: payMethodLabel(order.payMethod),
-      contact: order.contact,
-      cashTendered: order.tendered,
-      date: order.datetime,
-      items: order.items,
-    }),
+    title:"Order Placed — Sales Invoice",
+    body: buildReceipt(order, invoice),
     confirmLabel:"Print",
     confirmClass:"btn-ghost",
     cancelLabel:"Close",
     large:true,
-    onConfirm(){ window.print(); }
+    onConfirm(){ EbInvoice.print(invoice); }
   });
   toast(`Order ${order.id} placed successfully.`,"ok");
   if(adminState.currentModule === "pos-payment") navigate("pos");
 }
 
-function buildReceipt(o){
-  const dueMap={net30:30,net60:60,net90:90};
-  const dueDays=dueMap[o.payMethod];
-  let dueDate="";
-  if(dueDays){
-    /* Counted from today's real date. dAgo(0) used to be a constant, which
-       made every NET-30 receipt say "due 17 July 2026" forever. */
-    dueDate=` — Due: ${fmtDate(addDays(dAgo(0), dueDays))}`;
+function buildReceipt(o, invoice = EbInvoice.fromOrder(o)){
+  /* TILL NOTES — ON SCREEN, NEVER PRINTED.
+     The invoice matches the client's paper form, which has nowhere for cash
+     tendered, change, a transfer reference or a due date. The cashier still
+     needs all four at the counter, so they sit above the invoice in the
+     modal and are left out of EbInvoice.print(). */
+  const notes = [];
+  if(o.payMethod === "cash" && o.tendered){
+    notes.push(`Tendered <b>${peso(o.tendered)}</b>`, `Change <b>${peso(o.change)}</b>`);
   }
-  const itemLines=o.items.map(item=>`
-    <div class="receipt-line item-line">
-      <span class="l">${escHtml(item.name)} ×${item.qty}</span>
-      <span class="r">${peso(item.price*item.qty)}</span>
-    </div>`).join("");
-
-  return `<div class="receipt">
-    <div class="receipt-header">
-      <div class="receipt-brand">Elisha Bay</div>
-      <div class="receipt-sub">Juris Bay Foods, Inc.</div>
-      <div class="receipt-sub">148 Brgy. Mangin, Dagupan City, Pangasinan</div>
-      <div class="receipt-txn">TXN: ${escHtml(o.id)}</div>
-    </div>
-    <div class="receipt-line"><span>Date</span><span>${fmtDateTime(o.date)}</span></div>
-    <div class="receipt-line"><span>Cashier</span><span>${escHtml(o.cashier)}</span></div>
-    <div class="receipt-line"><span>Customer</span><span>${escHtml(o.customer)}</span></div>
-    ${(o.contact||o.phone)?`<div class="receipt-line"><span>Phone</span><span>${escHtml(o.contact||o.phone)}</span></div>`:""}
-    ${o.address?`<div class="receipt-line"><span>Address</span><span>${escHtml(o.address)}</span></div>`:""}
-    <div class="receipt-line"><span>Order Type</span><span>${o.orderType}</span></div>
-    <div class="receipt-line"><span>Status</span><span>${o.status}</span></div>
-    <hr class="receipt-divider"/>
-    ${itemLines}
-    <hr class="receipt-divider"/>
-    <div class="receipt-total-row">
-      <span>TOTAL</span><span>${peso(o.total)}</span>
-    </div>
-    <hr class="receipt-divider"/>
-    <div class="receipt-line"><span>Payment</span><span>${payMethodLabel(o.payMethod)}${dueDate}</span></div>
-    ${o.refNum?`<div class="receipt-line"><span>Ref #</span><span>${escHtml(o.refNum)}</span></div>`:""}
-    ${o.payMethod==="cash"&&o.cashTendered?`<div class="receipt-line"><span>Tendered</span><span>${peso(o.cashTendered)}</span></div><div class="receipt-line" style="font-weight:700"><span>Change</span><span>${peso(o.change)}</span></div>`:""}
-    <div class="receipt-footer">
-      Thank you for choosing Elisha Bay!<br>
-      <em>"Every Mouthful is Delightful"</em>
-    </div>
-  </div>`;
+  if(o.refNum) notes.push(`Ref # <b>${escHtml(o.refNum)}</b>`);
+  if(isCreditMethod(o.payMethod)){
+    /* The server's due date when it sent one; counted from today otherwise.
+       dAgo(0) used to be a constant, which made every NET-30 receipt say
+       "due 17 July 2026" forever. */
+    const due = (o.creditAccount && o.creditAccount.dueDate)
+      || addDays(dAgo(0), {net30:30, net60:60, net90:90}[o.payMethod]);
+    notes.push(`${escHtml(payMethodLabel(o.payMethod))} — due <b>${fmtDate(due)}</b>`);
+  }
+  return `${notes.length ? `<div class="invoice-till-note">${notes.join('<span aria-hidden="true">·</span>')}</div>` : ""}
+    ${EbInvoice.render(invoice)}`;
 }
 
 /* ============================================================

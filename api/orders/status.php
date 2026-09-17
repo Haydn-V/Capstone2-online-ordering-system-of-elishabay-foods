@@ -70,7 +70,7 @@ const TRANSITIONS = [
 const REASON_REQUIRED = ['on-hold', 'cancelled'];
 
 $order = Database::one(
-    'SELECT id, status, type, order_type, pay_verified, total, customer_name, tracking_number
+    'SELECT id, status, type, order_type, pay_verified, total, customer_name, tracking_number, method
        FROM orders WHERE id = ?',
     [$data['id']]
 );
@@ -102,10 +102,55 @@ if (in_array($to, REASON_REQUIRED, true) && $note === null) {
 }
 
 /* Accepting an order with unverified payment is how unpaid goods ship. The
-   Payment Verification screen exists precisely to clear this first. */
-if ($to === 'accepted' && (int) $order['pay_verified'] !== 1) {
+   Payment Verification screen exists precisely to clear this first.
+
+   EXCEPT an order on Net 30/60/90 terms. Nothing is paid at the time, by
+   design, so there is nothing to verify: its payments arrive later and are
+   checked one by one in Payment Schemes. Holding it here was a dead end —
+   Payment Verification lists only orders with a proof uploaded, which a
+   credit order never has — so an online Net order could never be accepted. */
+/* ALSO EXCEPT CASH, and for the same reason turned the other way up: there is
+   nothing to verify. A cash order carries no reference number and no
+   screenshot, so `proof_uploaded` is 0 — and Payment Verification asks for
+   `proof_uploaded = 1`, so a cash order is not on that screen to be cleared.
+   The gate could therefore never be satisfied, and every cash order sat in the
+   queue refusing to be accepted. Cash is counted when it is handed over, which
+   is what completing the order records.
+
+   `method` is the order's, not the customer's claim: pos/checkout.php marks a
+   walk-in cash sale pay_verified = 1 at the till, so this path is only ever
+   the online case. */
+$onTerms = Payments::isCredit((string) $order['method']);
+$isCash  = (string) $order['method'] === 'cash';
+if ($to === 'accepted' && !$onTerms && !$isCash && (int) $order['pay_verified'] !== 1) {
     Response::conflict('Verify the payment before accepting this order.');
 }
+
+/* CASH ON PICKUP IS FINISHED BY ACCEPTING IT.
+ *
+ * The three states between accepted and completed describe a parcel:
+ * shipping, delivered, then settled. A pickup has no parcel — the customer
+ * walks in, pays at the counter and leaves with the jars — so walking one
+ * through Shipping and Delivered is three clicks spent recording a courier
+ * that does not exist, and the sale does not appear in the Sales Report until
+ * the last of them.
+ *
+ * So accepting one commits the stock and completes it in the same move, and
+ * `pay_verified` goes to 1 because the cash is taken at that counter, exactly
+ * as pos/checkout.php marks a walk-in sale paid at the till.
+ *
+ * ONLY cash, and ONLY pickup. A delivery on cash cannot reach this line —
+ * shop/checkout.php refuses the combination — and any other method has money
+ * to verify first, which the gate above still demands.
+ *
+ * WHAT THIS COSTS: `completed` is terminal, by the same design that stops an
+ * order being quietly reopened. If the customer never collects, the way back
+ * is a return/refund, not an edit — which is the honest record of a sale that
+ * was booked and then undone. */
+$autoComplete = $order['type'] === 'online'
+    && $isCash
+    && $order['order_type'] === 'pickup'
+    && $to === 'accepted';
 
 /* A delivery cannot be dispatched without the number that proves it was. */
 $needsTracking = $to === 'shipping' && $order['order_type'] === 'delivery';
@@ -190,11 +235,32 @@ try {
         }
     }
 
-    if ($isOnline && $to === 'cancelled' && in_array($from, $committedStates, true)) {
+    /* A WALK-IN order took its stock at the till (pos/checkout.php), before it
+       had any status to move through — so whatever state a walk-in delivery
+       is cancelled from, its jars are already off the shelf and must come
+       back. A walk-in pickup is completed at the till and cannot be cancelled,
+       so this only ever meets a delivery. */
+    $stockOut = $isOnline ? in_array($from, $committedStates, true) : true;
+    if ($to === 'cancelled' && $stockOut) {
         $items = Database::all('SELECT product_id, qty FROM order_items WHERE order_id = ?', [$order['id']]);
         foreach ($items as $it) {
             Stock::reverseSale($it['product_id'], (int) $it['qty']);
         }
+    }
+
+    /* Completed in the same transaction as the stock commit above, so the two
+       cannot come apart: an order that took stock but stayed accepted would be
+       a sale missing from the report, and one completed without taking stock
+       would be jars sold twice. Conditional on the status this request just
+       wrote, for the same reason as the UPDATE above — nobody else may have
+       moved it in between. */
+    $finalStatus = $to;
+    if ($autoComplete) {
+        Database::run(
+            'UPDATE orders SET status = ?, pay_verified = 1 WHERE id = ? AND status = ?',
+            ['completed', $order['id'], $to]
+        );
+        $finalStatus = 'completed';
     }
 
     if (Database::hasTable('order_status_history')) {
@@ -203,13 +269,27 @@ try {
              VALUES (?, ?, ?, ?, ?)',
             [$order['id'], $from, $to, $user['id'], $note]
         );
+        /* Its own row rather than one rewritten line. The order really did pass
+           through accepted, and a history that shows pending → completed would
+           hide the step that committed the stock. */
+        if ($autoComplete) {
+            Database::run(
+                'INSERT INTO order_status_history (order_id, from_status, to_status, changed_by, note)
+                 VALUES (?, ?, ?, ?, ?)',
+                [$order['id'], $to, 'completed', $user['id'], 'Cash on pickup — completed on acceptance.']
+            );
+        }
     }
 
     Database::run(
         'INSERT INTO audit_logs (ts, actor, actor_user_id, type, description)
          VALUES (NOW(), ?, ?, ?, ?)',
         [$user['name'], $user['id'], 'order',
-         sprintf('Order %s: %s → %s.%s%s', $order['id'], $from, $to,
+         sprintf('Order %s: %s → %s.%s%s%s', $order['id'], $from, $finalStatus,
+             /* Named in the audit line because the operator pressed "Accept"
+                and the order finished: the log has to say why it moved further
+                than the button did. */
+             $autoComplete ? ' Cash on pickup, completed on acceptance and counted in sales.' : '',
              /* The tracking number goes in the audit line because it is the
                 proof-of-dispatch the Limitation promises — a shipment recorded
                 without it is exactly the gap this field exists to close. */
@@ -226,8 +306,13 @@ try {
 Response::ok([
     'id'      => $order['id'],
     'from'    => $from,
-    'status'  => $to,
+    /* The status it ENDED on, which is not always the one that was asked for —
+       a cash pickup order accepts and completes in one move. The client toasts
+       this value rather than the one it sent, so the message cannot claim
+       "Accepted" for an order that is finished. */
+    'status'  => $finalStatus,
+    'autoCompleted' => $autoComplete,
     'note'    => $note,
     /* So the client can rebuild the action buttons without a second request. */
-    'allowedNext' => TRANSITIONS[$to] ?? [],
+    'allowedNext' => TRANSITIONS[$finalStatus] ?? [],
 ]);

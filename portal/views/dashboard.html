@@ -57,6 +57,39 @@
         RBAC
         <span class="dash-shortcut-badge">Admin</span>
       </button>
+      <!-- Payment Schemes is four clicks deep: Online Transactions, its drawer,
+           then the item. The people who chase Net 30/60/90 money go there
+           daily, so it earns a shortcut beside RBAC.
+
+           data-perm hides it from anyone without payments.manage, the same
+           permission that gates the sidebar item and the endpoints behind it —
+           applyRBAC() does the hiding, Rbac::require() in PHP does the
+           protecting. data-mod is read by initSidebar(), so this button needs
+           no JavaScript of its own.
+
+           QUIETER THAN THE RBAC BUTTON ON PURPOSE. Two solid gold buttons side
+           by side would each halve the other's pull, and the gold is already
+           spoken for: it matches .nav-item-rbac so the two routes to RBAC read
+           as one thing. -->
+      <button
+        class="dash-shortcut-btn is-quiet"
+        data-mod="payments"
+        data-perm="payments.manage"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <rect x="1" y="4" width="22" height="16" rx="2" />
+          <path d="M1 10h22" />
+        </svg>
+        Payment Schemes
+        <span class="dash-shortcut-badge" id="dash-pay-badge"></span>
+      </button>
     </div>
   </div>
   <div class="stat-grid" id="dash-stats"></div>

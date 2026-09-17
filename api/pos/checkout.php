@@ -103,9 +103,24 @@ if (in_array($data['pay_method'], ['gcash', 'bank'], true) && $refNum === null) 
    This is the reason the POS grew a retailer picker rather than the endpoint
    simply accepting net30: accepting the method without an account to bill would
    have turned a loud failure into a silent one. */
+/* SENIOR CITIZEN / PWD. Validated here, applied in Tax::compute() once the
+   lines are priced. A discount without the ID number and name is refused: the
+   BIR requires both on the invoice. */
+$scPwd = Tax::scPwdFrom($in, $fieldErrors);
+if ($scPwd !== null && ($customerType === 'retailer' || $isCredit)) {
+    /* The discount is for the senior's or PWD's own purchase. A retailer
+       buying stock to resell is not that, whoever is standing at the counter. */
+    $fieldErrors['sc_pwd'] = 'A senior citizen or PWD discount is for a personal purchase, not a retailer sale.';
+    $scPwd = null;
+}
+
 $retailer = null;
-if ($isCredit) {
-    $retailerId = trim((string) ($in['retailer_id'] ?? ''));
+/* The retailer account is REQUIRED for a credit sale and OPTIONAL for any
+   other retailer sale. Optional, because naming it is what lets a withholding
+   agent's tax be deducted on a cash, GCash or bank sale too — and what files
+   the sale under their account instead of "Walk-In Customer". */
+$retailerId = trim((string) ($in['retailer_id'] ?? ''));
+if ($isCredit || ($customerType === 'retailer' && $retailerId !== '')) {
     if ($retailerId === '') {
         $fieldErrors['retailer_id'] = 'Choose which retailer this credit sale is for.';
     } else {
@@ -138,7 +153,7 @@ try {
     $ids = array_keys($wanted);
     $ph  = implode(',', array_fill(0, count($ids), '?'));
     $products = Database::all(
-        "SELECT id, name, price, stock, archived FROM products WHERE id IN ($ph) FOR UPDATE",
+        "SELECT id, name, price, tax_type, stock, archived FROM products WHERE id IN ($ph) FOR UPDATE",
         $ids
     );
     $byId = [];
@@ -166,19 +181,33 @@ try {
         $lineTotal = round($unit * $qty, 2);
         $total += $lineTotal;
 
-        $lines[] = ['id' => $id, 'name' => $p['name'], 'qty' => $qty, 'price' => $unit, 'lineTotal' => $lineTotal];
+        /* The tax type AS IT IS NOW, copied onto the line — a product made
+           exempt next month must not change this sale's invoice. */
+        $lines[] = ['id' => $id, 'name' => $p['name'], 'qty' => $qty, 'price' => $unit,
+                    'lineTotal' => $lineTotal, 'taxType' => $p['tax_type']];
     }
-    $total = round($total, 2);
 
-    /* Now that the real total is known, the cash check can be made against it
-       rather than against whatever the browser believed. */
-    if ($data['pay_method'] === 'cash' && $tendered > 0 && $tendered < $total) {
+    /* The VAT breakdown, decided here and stored with the order (api/core/Tax.php).
+       `total` is what the sale CHARGES — after any senior/PWD discount — and
+       `amountDue` is what changes hands, after any tax a withholding retailer
+       keeps. */
+    $tax = Tax::compute(
+        array_map(static fn(array $l): array => ['gross' => $l['lineTotal'], 'tax_type' => $l['taxType']], $lines),
+        $scPwd,
+        Tax::withholdingRateFor($retailer['id'] ?? null)
+    );
+    $total = $tax['total'];
+    $due   = $tax['amountDue'];
+
+    /* Now that the real amount due is known, the cash check can be made against
+       it rather than against whatever the browser believed. */
+    if ($data['pay_method'] === 'cash' && $tendered > 0 && $tendered < $due) {
         $pdo->rollBack();
         Response::validation('Not enough cash tendered.', [
-            'tendered' => 'Tendered ₱' . number_format($tendered, 2) . ' but the total is ₱' . number_format($total, 2) . '.',
+            'tendered' => 'Tendered ₱' . number_format($tendered, 2) . ' but the amount due is ₱' . number_format($due, 2) . '.',
         ]);
     }
-    $change = ($data['pay_method'] === 'cash' && $tendered >= $total) ? round($tendered - $total, 2) : 0.0;
+    $change = ($data['pay_method'] === 'cash' && $tendered >= $due) ? round($tendered - $due, 2) : 0.0;
 
     /* A pickup is handed over and paid on the spot; a delivery still has to go
        out, so it enters the fulfilment flow instead of being closed. */
@@ -194,7 +223,7 @@ try {
        watched the transfer land, so an immediate method is verified on the
        spot. A credit method is not: Payments::orderFields returns
        pay_verified = 0 for it, because nothing has been paid. */
-    $pay = Payments::orderFields($data['pay_method'], $refNum, null, $total, true);
+    $pay = Payments::orderFields($data['pay_method'], $refNum, null, $due, true);
 
     /* A credit sale is attributed to the retailer's customer row. Every other
        walk-in keeps customer_id NULL, which is correct — a walk-in has no
@@ -205,22 +234,26 @@ try {
         'INSERT INTO orders (id, customer_id, customer_name, email, contact, address,
                              type, order_type, customer_type, method, total, date, datetime,
                              status, notes, pay_verified, proof_uploaded, proof_ref_num,
-                             proof_image_path, proof_amount, cashier, batch_code_hint)
-         VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, CURDATE(), NOW(), ?, NULL, ?, ?, ?, ?, ?, ?, NULL)',
-        [
+                             proof_image_path, proof_amount, cashier, batch_code_hint,
+                             gross_total, vat_rate, less_vat, net_of_vat, sc_pwd_discount, vatable_sales,
+                             vat_amount, vat_exempt_sales, sc_pwd_type, sc_pwd_id, sc_pwd_name,
+                             withholding_rate, withholding_tax)
+         VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, CURDATE(), NOW(), ?, NULL, ?, ?, ?, ?, ?, ?, NULL,
+                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        array_merge([
             $orderId, $customerId, $name, $contact, $address,
             'walk-in', $data['order_type'], $data['customer_type'],
             $data['pay_method'], $total, $status,
             $pay['pay_verified'], $pay['proof_uploaded'], $pay['proof_ref_num'],
             $pay['proof_image_path'], $pay['proof_amount'],
             $user['id'],
-        ]
+        ], array_values(Tax::orderColumns($tax)))
     );
 
     foreach ($lines as $l) {
         Database::run(
-            'INSERT INTO order_items (order_id, product_id, qty, price_at_purchase) VALUES (?, ?, ?, ?)',
-            [$orderId, $l['id'], $l['qty'], $l['price']]
+            'INSERT INTO order_items (order_id, product_id, qty, price_at_purchase, tax_type) VALUES (?, ?, ?, ?, ?)',
+            [$orderId, $l['id'], $l['qty'], $l['price'], $l['taxType']]
         );
         /* One shared movement (see api/core/Stock.php). The FOR UPDATE above
            already makes this safe; the guard inside sell() means a bug here can
@@ -240,6 +273,8 @@ try {
     $creditAccount = null;
     if ($isCredit) {
         $creditAccount = Payments::openCreditAccount($orderId, $retailer, $data['pay_method'], $total);
+        Payments::recordWithholding($creditAccount['id'], $retailer['id'], $tax['withholdingTax'],
+            (float) $tax['withholdingRate'], $user);
     }
 
     Database::run(
@@ -252,12 +287,22 @@ try {
              /* Say what the credit sale actually created. "POS sale, net30" does
                 not tell a later reader that the business is now owed ₱570 by a
                 named retailer, or when. */
-             $creditAccount !== null
+             ($creditAccount !== null
                 ? sprintf(' On terms: %s opened for %s — ₱%s due %s (%s).',
                     $creditAccount['id'], $retailer['name'],
                     number_format($creditAccount['balance'], 2),
                     $creditAccount['dueDate'], $creditAccount['scheme'])
-                : '')]
+                : '')
+             /* The two tax events an auditor would otherwise have to rebuild. */
+             . ($scPwd !== null
+                ? sprintf(' %s discount ₱%s for ID %s (%s).',
+                    $scPwd['type'] === 'pwd' ? 'PWD' : 'Senior citizen',
+                    number_format($tax['scPwdDiscount'], 2), $scPwd['id'], $scPwd['name'])
+                : '')
+             . ($tax['withholdingTax'] > 0
+                ? sprintf(' Withholding tax ₱%s (%s%%) kept by %s.',
+                    number_format($tax['withholdingTax'], 2), $tax['withholdingRate'], $retailer['name'])
+                : ''))]
     );
 
     $pdo->commit();
@@ -270,6 +315,11 @@ try {
    stored figures cannot disagree. */
 Response::created([
     'id'          => $orderId,
+    /* Stated rather than implied: the Sales Invoice leaves a walk-in's
+       Business Address blank unless the sale is a delivery, and it needs to
+       know which kind of order it is looking at. */
+    'type'        => 'walk-in',
+    'tin'         => Orders::buyerTin($customerId),
     'status'      => $status,
     'customer'    => $name,
     'contact'     => $contact,
@@ -280,6 +330,9 @@ Response::created([
     'refNum'      => $refNum,
     'items'       => $lines,
     'total'       => $total,
+    /* The stored breakdown — the invoice prints these figures as they are. */
+    'tax'         => $tax,
+    'amountDue'   => $due,
     'tendered'    => $tendered ?: null,
     'change'      => $change,
     'cashier'     => $user['name'],

@@ -47,7 +47,7 @@ const MODULE_ORDER = [
   "pos", "pos-payment",
   "notifications", "online-txns", "ordersqueue", "paymentverify",
   "orderstatus", "orderhistory", "receipts", "returns",
-  "users", "b2b", "landing", "products", "reviews",
+  "users", "b2b", "landing", "products", "reviews", "vat",
   "inventory", "inventory-manage", "expiry",
   "sales", "batches",
   "payments", "transactions", "audit",

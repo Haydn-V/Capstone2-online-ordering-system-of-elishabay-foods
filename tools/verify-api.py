@@ -87,7 +87,7 @@ passed, failed = 0, []
 # rather than an unnoticed gap.
 CUST_HASH = "$2y$10$Ifp09DtbhlYyOWyOzma5ReusH/8v.hsZBfAjZOKhPh2/04vCBqCxO"   # bcrypt of Test@Cust1, matches db/seed.sql
 
-EXPECTED_CHECKS = 168
+EXPECTED_CHECKS = 169
 
 
 def check(ok, label, detail=""):
@@ -797,7 +797,15 @@ def main():
               "payments/settle: settles an account")
         check(sql_get("SELECT paid FROM payment_accounts WHERE id='%s'" % pay) == "1",
               "payments/settle: persisted to MySQL")
-        sql("UPDATE payment_accounts SET paid=0 WHERE id='%s';" % pay)
+        # settle.php now RECORDS a staff payment for what was left instead of
+        # flipping the flag, and `paid` is derived from payment rows. Resetting
+        # the flag alone would leave the account settled by that payment.
+        check(sql_get("SELECT COUNT(*) FROM credit_payments WHERE account_id='%s' "
+                      "AND source='staff' AND note='Marked paid in full.'" % pay) != "0",
+              "payments/settle: records the payment that settles the account")
+        sql("DELETE FROM credit_payments WHERE account_id='%s' AND source='staff' "
+            "  AND note='Marked paid in full.' AND submitted_at >= NOW() - INTERVAL 1 HOUR; "
+            "UPDATE payment_accounts SET paid=0 WHERE id='%s';" % (pay, pay))
 
     # --- returns/advance.php ----------------------------------------------
     ret = sql_get("SELECT id FROM product_returns WHERE status='received' LIMIT 1")
@@ -860,10 +868,16 @@ def main():
     check(rep.get("revenueStatuses") == ["completed"],
           "reports/sales declares its revenue statuses",
           json.dumps(rep.get("revenueStatuses")))
-    sql_rev = sql_scalar("SELECT ROUND(COALESCE(SUM(total),0),2) FROM orders "
-                         "WHERE status='completed'")
+    # Revenue has two parts since 2026-09-11 (api/core/Revenue.php): orders
+    # paid at the time, and verified payments toward Net accounts on the day
+    # they were paid. A Net 30/60/90 order is never revenue in itself.
+    sql_rev = sql_scalar("SELECT ROUND("
+                         " (SELECT COALESCE(SUM(total),0) FROM orders WHERE status='completed'"
+                         "    AND method NOT IN ('net30','net60','net90'))"
+                         " + (SELECT COALESCE(SUM(amount),0) FROM credit_payments"
+                         "    WHERE status='verified' AND source <> 'legacy'), 2)")
     check(abs(float(rep["totals"]["revenue"]) - float(sql_rev)) < 0.01,
-          "revenue equals SUM(total) over completed orders only",
+          "revenue equals paid-at-the-time orders plus verified Net payments",
           f"api={rep['totals']['revenue']} sql={sql_rev}")
     not_counted = sql_scalar("SELECT ROUND(COALESCE(SUM(total),0),2) FROM orders "
                              "WHERE status IN ('pending','on-hold','accepted','shipping','delivered')")

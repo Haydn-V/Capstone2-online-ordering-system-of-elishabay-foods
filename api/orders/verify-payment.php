@@ -31,7 +31,7 @@ $verified = filter_var($in['verified'], FILTER_VALIDATE_BOOLEAN);
 $note     = trim((string) ($in['note'] ?? '')) ?: null;
 
 $order = Database::one(
-    'SELECT id, status, total, pay_verified, proof_uploaded, proof_amount, proof_ref_num, method
+    'SELECT id, status, total, withholding_tax, pay_verified, proof_uploaded, proof_amount, proof_ref_num, method
        FROM orders WHERE id = ?',
     [$in['id']]
 );
@@ -49,6 +49,13 @@ if ((bool) $order['pay_verified'] === $verified) {
         : 'That payment is already marked unverified.');
 }
 
+/* A Net 30/60/90 order is not verified here. Nothing was paid at the time;
+   its payments are sent later and checked one by one in Payment Schemes. */
+if (Payments::isCredit((string) $order['method'])) {
+    Response::conflict('This order is on ' . Payments::schemeLabel((string) $order['method'])
+        . ' terms. Its payments are checked in Payment Schemes, not here.');
+}
+
 /* Cash on pickup has no proof to upload, so only electronic methods are held
    to that requirement. */
 $needsProof = in_array($order['method'], ['gcash', 'bank'], true);
@@ -61,13 +68,16 @@ if ($verified && $needsProof && (int) $order['proof_uploaded'] !== 1) {
    partial deliberately. The mismatch goes into the audit trail either way. */
 $mismatch = null;
 if ($verified && $needsProof) {
-    $diff = round((float) $order['proof_amount'] - (float) $order['total'], 2);
+    /* Against the AMOUNT DUE: a withholding retailer pays the total less the tax
+       it keeps for the BIR (migration 014), and that is a correct payment. */
+    $due  = round((float) $order['total'] - (float) $order['withholding_tax'], 2);
+    $diff = round((float) $order['proof_amount'] - $due, 2);
     if (abs($diff) >= 0.01) {
         $mismatch = sprintf('Proof %s expected by ₱%s (proof ₱%s vs total ₱%s)',
             $diff < 0 ? 'short of' : 'over',
             number_format(abs($diff), 2),
             number_format((float) $order['proof_amount'], 2),
-            number_format((float) $order['total'], 2));
+            number_format($due, 2));
     }
 }
 

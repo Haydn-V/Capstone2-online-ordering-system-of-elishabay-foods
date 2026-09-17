@@ -265,21 +265,12 @@
               </div>
               </div><!-- /#pf-credentials -->
 
-              <h4 class="pf-group-label">Commercial Credit Request</h4>
+              <!-- The "Requested Credit Tier" field that stood first in this row is gone.
+                   An applicant no longer chooses Net 30/60/90 here: once approved, a
+                   retailer picks the term on each order at checkout. Asking now would
+                   collect a preference the system never uses. -->
+              <h4 class="pf-group-label">Wholesale Volume</h4>
               <div class="pf-row">
-                <div class="auth-field">
-                  <label for="pf-credit">Requested Credit Tier *</label>
-                  <div class="auth-input-group">
-                    <span class="auth-input-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><path d="M1 10h22"/></svg></span>
-                    <select class="auth-input" id="pf-credit" required>
-                      <option>Cash on Delivery (COD)</option>
-                      <option selected>Net 30 Days Credit Terms</option>
-                      <option>Net 60 Days Credit Terms</option>
-                      <option>Net 90 Days Credit Terms</option>
-                    </select>
-                  </div>
-                  <span class="field-error" data-err></span>
-                </div>
                 <div class="auth-field">
                   <label for="pf-volume">Expected Monthly Volume</label>
                   <div class="auth-input-group">
@@ -564,7 +555,6 @@ window.addEventListener('DOMContentLoaded', function () {
       applicant_name:   val('pf-contact-name'),
       phone:            val('pf-contact-phone'),
       email:            val('pf-email'),
-      requested_terms:  val('pf-credit'),
       monthly_volume:   val('pf-volume'),
       notes:            val('pf-notes')
     };
@@ -587,7 +577,7 @@ window.addEventListener('DOMContentLoaded', function () {
         business_name: 'pf-company', business_type: 'pf-type', bir_tin: 'pf-tin',
         business_address: 'pf-address', applicant_name: 'pf-contact-name',
         phone: 'pf-contact-phone', email: 'pf-email', username: 'pf-username',
-        password: 'pf-password', requested_terms: 'pf-credit'
+        password: 'pf-password'
       };
       var handled = false;
       if (err.isValidation) {

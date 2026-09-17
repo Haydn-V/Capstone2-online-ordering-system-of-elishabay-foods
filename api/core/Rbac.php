@@ -30,17 +30,54 @@ final class Rbac
         if ($isSystem) {
             return self::allPermissionKeys();
         }
-        return self::$cache[$roleId] ??= array_column(
-            Database::all(
-                'SELECT p.permission_key
-                   FROM role_permissions rp
-                   JOIN permissions p ON p.id = rp.permission_id
-                  WHERE rp.role_id = ?
-                  ORDER BY p.id',
-                [$roleId]
+        /* SYSTEM_ONLY keys are filtered out here, not only refused at save time.
+           A row inserted straight into role_permissions — by hand, by an old
+           backup, by a bug — must still grant nothing. */
+        return self::$cache[$roleId] ??= array_values(array_diff(
+            array_column(
+                Database::all(
+                    'SELECT p.permission_key
+                       FROM role_permissions rp
+                       JOIN permissions p ON p.id = rp.permission_id
+                      WHERE rp.role_id = ?
+                      ORDER BY p.id',
+                    [$roleId]
+                ),
+                'permission_key'
             ),
-            'permission_key'
-        );
+            self::SYSTEM_ONLY
+        ));
+    }
+
+    /**
+     * Permissions that belong to the system role (Super Admin) and cannot be
+     * given to any other role — not by the Roles & Permissions screen, not by
+     * a row in role_permissions.
+     *
+     * vat.manage is here because VAT Maintenance decides what goes on every
+     * Sales Invoice: the VAT rate, which products are exempt, the senior/PWD
+     * discount and who withholds tax. A wrong value there is a tax filing
+     * problem for the business, so exactly one role may change it.
+     */
+    public const SYSTEM_ONLY = ['vat.manage'];
+
+    public static function isSystemOnly(string $permission): bool
+    {
+        return in_array($permission, self::SYSTEM_ONLY, true);
+    }
+
+    /**
+     * Require a SYSTEM_ONLY permission: the permission AND the system role.
+     * Two checks where one would do today, so that neither alone — a grant
+     * slipping through, or a role flag set wrongly — opens VAT Maintenance.
+     */
+    public static function requireSystemRole(string $permission): array
+    {
+        $user = self::require($permission);
+        if ((int) ($user['is_system'] ?? 0) !== 1) {
+            Response::forbidden('Only the Super Admin can do this.');
+        }
+        return $user;
     }
 
     public static function allPermissionKeys(): array

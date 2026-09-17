@@ -238,10 +238,12 @@ function b2bApprovedEmail(array $app, ?string $tier, bool $accountCreated): stri
 {
     $e = static fn(?string $v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
-    $terms = $app['requested_terms']
-        ? '<p>Your requested payment terms of <strong>' . $e($app['requested_terms'])
-          . '</strong> have been noted and will be confirmed when your first wholesale order is placed.</p>'
-        : '';
+    /* Applicants no longer request a term (see b2b/apply.php), so this states
+       what approval actually unlocks rather than echoing a stored preference —
+       which, for every application from here on, would be empty. */
+    $terms = '<p>As a wholesale partner you can choose <strong>Net 30, Net 60 or Net 90</strong> '
+           . 'payment terms at checkout on each order, and pay those balances from the '
+           . '<strong>Payment Schemes</strong> page in your account.</p>';
 
     /* Never the password — we only hold a bcrypt hash, and emailing a
        credential would be wrong even if we could. The username is a reminder of

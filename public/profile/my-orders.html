@@ -179,6 +179,15 @@
         MY_ORDERS = data.map(o => ({
           id: o.id,
           date: EbFormat.fmtDate(o.date),
+          /* For the Sales Invoice: the order's own timestamp, the name and
+             address recorded ON the order (not today's profile), and the raw
+             method key. */
+          datetime: o.datetime,
+          customerName: o.customerName,
+          type: o.type,
+          tin: o.tin,
+          tax: o.tax,
+          address: o.address,
           status: o.status,
           total: o.total,
           payMethod: o.payMethod,
@@ -265,7 +274,13 @@
             ${order.status === "completed" ? ratingControl(item) : ""}
           </div>`).join("");
 
-        const actions = getOrderActions(order.status, order.id);
+        /* Every order that stands gets its invoice. A cancelled one does not:
+           nothing was sold, and a Sales Invoice for it would be a document
+           recording a sale that did not happen. */
+        const actions = getOrderActions(order.status, order.id)
+          + (order.status !== "cancelled"
+              ? `<button class="btn-order-action" data-action="invoice" data-id="${order.id}">View Invoice</button>`
+              : "");
 
         return `
           <div class="order-card">
@@ -317,6 +332,7 @@
           const action = btn.dataset.action;
           const id = btn.dataset.id;
 
+          if (action === "invoice")  { openInvoice(id); return; }
           if (action === "cancel")   { await cancelOrder(id, btn); return; }
           if (action === "received") { await confirmReceived(id, btn); return; }
           if (action === "reorder")  { showToast(`Items from ${id} added to cart!`, "success"); }
@@ -610,6 +626,25 @@ Tell us why — this is recorded with the cancellation.`, ""
     /* Server data goes into innerHTML on this page. EbFormat.escHtml is the same
        escaper the storefront uses — see the note on it in assets/js/core/format.js. */
     function esc(v) { return EbFormat.escHtml(v == null ? "" : v); }
+
+    /* The Sales Invoice for one of this customer's orders — the same renderer,
+       and the same printout, as the cashier's copy. */
+    function openInvoice(id) {
+      const order = MY_ORDERS.find(o => o.id === id);
+      if (!order) return;
+      const invoice = EbInvoice.fromOrder(order);
+      EbInvoice.ensureStyles();
+      openModal("Sales Invoice", `
+        <div class="receipt-invoice">${EbInvoice.render(invoice)}</div>
+        <div class="receipt-actions">
+          <button class="btn btn-ghost" id="invoice-print" type="button">Print invoice</button>
+        </div>`, {
+        wide: true,
+        onOpen: (root) => {
+          root.querySelector("#invoice-print").addEventListener("click", () => EbInvoice.print(invoice));
+        },
+      });
+    }
 
     function getOrderActions(status, id) {
       switch (status) {

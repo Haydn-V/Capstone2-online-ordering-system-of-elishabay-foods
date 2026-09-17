@@ -56,4 +56,19 @@ Response::ok([
         return ['title' => $h['title'], 'image' => $path, 'img' => $path];
     }, $hero),
     'featured' => $featured,
+    /* The accounts customers pay INTO, with their QR codes. Public, like the
+       contact details: it is exactly what a paying customer needs to see. */
+    'payment'  => [
+        'gcash' => [
+            'name'   => $content['pay_gcash_name']   ?? '',
+            'number' => $content['pay_gcash_number'] ?? '',
+            'qr'     => $content['pay_gcash_qr']     ?? '',
+        ],
+        'bank' => [
+            'bank'   => $content['pay_bank_bank']    ?? '',
+            'name'   => $content['pay_bank_name']    ?? '',
+            'number' => $content['pay_bank_number']  ?? '',
+            'qr'     => $content['pay_bank_qr']      ?? '',
+        ],
+    ],
 ]);

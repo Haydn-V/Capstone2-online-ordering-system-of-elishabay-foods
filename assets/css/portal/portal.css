@@ -1314,6 +1314,138 @@ textarea.control { resize: vertical; min-height: 90px; }
   padding: 2px 7px; border-radius: var(--r-pill);
 }
 
+/* The second shortcut onward. Gold is the dashboard's loudest colour and the
+   banner can hold more than one of these now; spending it twice would make
+   neither button first. This one carries the same shape and size — so the row
+   still reads as one set of shortcuts — in outline rather than fill. */
+.dash-shortcut-btn.is-quiet {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  box-shadow: none;
+}
+.dash-shortcut-btn.is-quiet:hover {
+  background: var(--surface-2, var(--surface));
+  border-color: var(--gold);
+  color: var(--gold-ink);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.dash-shortcut-btn.is-quiet .dash-shortcut-badge {
+  background: var(--chip, rgba(0,0,0,.06)); color: var(--text-muted);
+}
+/* Something is waiting: the count is the reason to click, so it stops being
+   quiet. Colour is not the only carrier — the text itself says "3 to review". */
+.dash-shortcut-btn.is-quiet .dash-shortcut-badge.is-alert {
+  background: var(--gold); color: #1E1A0E;
+}
+/* Nothing outstanding — the badge is a fact, not a call to act. */
+.dash-shortcut-btn.is-quiet .dash-shortcut-badge:empty { display: none; }
+
+/* ============================================================
+   RESTOCK: THE FORM AND THE EVIDENCE BESIDE IT
+   ============================================================
+   The form is capped at 560px and sat alone in a full-width panel, leaving
+   the right-hand half of the screen empty. The recent-sales panel fills it
+   with the thing the quantity field is a guess at.
+
+   The form keeps its cap and the panel takes what is left, down to a floor
+   of 300px; below ~980px total they stack, form first, because the form is
+   the task and the chart is the reference. */
+.restock-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 560px) minmax(300px, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 980px) {
+  .restock-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+.rs-insight .panel-header { gap: 10px; flex-wrap: wrap; }
+
+/* Two states, one control. Segmented rather than a <select> because there are
+   exactly two and both should be readable without opening anything. */
+.rs-basis { display: inline-flex; margin-left: auto; background: var(--surface-2); border-radius: var(--r-pill); padding: 2px; }
+.rs-basis-btn {
+  border: none; background: none; cursor: pointer;
+  font-family: var(--font-ui); font-size: .68rem; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-muted); padding: 5px 11px; border-radius: var(--r-pill);
+  transition: all var(--t-fast);
+}
+.rs-basis-btn:hover { color: var(--text); }
+.rs-basis-btn.is-on { background: var(--surface); color: var(--gold-ink); box-shadow: var(--shadow-sm); }
+
+.rs-headline { font-size: .86rem; margin-bottom: 12px; }
+.rs-headline strong { font-family: var(--font-number); font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+
+.rs-chart { margin-bottom: 14px; }
+.rs-chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.rs-chart-peak { font-size: .7rem; color: var(--text-muted); margin-bottom: 4px; }
+.rs-chart-peak span { font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+.rs-chart-axis { display: flex; justify-content: space-between; font-size: .68rem; color: var(--text-muted); margin-top: 4px; }
+
+/* Bars outside the selected basis stay visible but recede: they are context
+   for the trend, not what the suggestion counted. The distinction is carried
+   by fill AND by the figures above, never by colour alone. */
+.rs-axis { stroke: var(--border); stroke-width: 1; }
+.rs-bar { fill: var(--border); transition: fill var(--t-fast); }
+.rs-bar.is-on { fill: var(--gold); }
+.rs-bar:hover { fill: var(--gold-ink); }
+
+.rs-advice { border-top: 1px solid var(--border); padding-top: 12px; }
+.rs-advice-lead {
+  font-size: .66rem; font-weight: 800; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.rs-advice-num {
+  font-family: var(--font-number); font-size: 2.1rem; font-weight: 800;
+  line-height: 1.1; color: var(--gold-ink); font-variant-numeric: tabular-nums;
+}
+.rs-advice p { font-size: .8rem; color: var(--text-muted); margin: 6px 0 10px; line-height: 1.5; }
+.rs-advice.is-ok .rs-advice-lead { color: var(--ok); }
+.rs-advice strong { color: var(--text); }
+
+/* A payment toward a Net account, in the Sales Report's ledger. Tinted so the
+   eye can separate money arriving from goods going out at a glance; the row
+   also says "Net 60 payment" and "received" in words, because a tint is not
+   information a colourblind reader can act on. */
+.data-table tr.row-payment { background: color-mix(in srgb, var(--gold) 5%, transparent); }
+.data-table tr.row-payment td:first-child { box-shadow: inset 3px 0 0 var(--gold); }
+
+/* Facts about a sale that the client's paper Sales Invoice has no field for —
+   cash tendered, change, a transfer reference, a due date, the order status.
+   Shown above the invoice in its modal and never printed. */
+.invoice-till-note {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  font-size: .8rem; color: var(--text-muted); margin-bottom: 12px;
+}
+.invoice-till-note b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+   VAT MAINTENANCE (assets/js/portal/vat.js)
+   ============================================================ */
+.vat-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.vat-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 18px; align-items: start; margin-bottom: 14px;
+}
+.vat-grid .panel { margin: 0; }
+.vat-check { display: flex; align-items: center; gap: 9px; font-size: .86rem; margin: 6px 0 10px; cursor: pointer; }
+.vat-check input { width: 16px; height: 16px; accent-color: var(--gold); flex-shrink: 0; }
+.vat-check-inline { margin: 0; font-size: .8rem; white-space: nowrap; }
+.vat-check-hint { display: block; margin: -4px 0 12px 25px; }
+.vat-note { font-size: .84rem; color: var(--text-muted); margin: 0 0 14px; line-height: 1.55; max-width: 78ch; }
+.vat-note strong { color: var(--text); }
+.vat-summary-bar { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 16px; }
+.vat-summary-bar .field { margin: 0; min-width: 170px; }
+/* Two classes, not one: .sales-summary is defined further down this file and
+   would otherwise win on source order, squeezing six-figure pesos out of their
+   cards. Wider minimum than the Sales Report's because these carry centavos. */
+.sales-summary.vat-summary-cards { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); margin-bottom: 14px; }
+.sales-summary.vat-summary-cards .sales-sum-val { font-size: 1.3rem; white-space: nowrap; }
+
 /* Notification list */
 /* BOUNDED, LIKE .stock-bars BELOW IT.
 
@@ -2546,3 +2678,29 @@ code {
   white-space: nowrap;
   cursor: help;
 }
+
+/* Landing Page Maintenance — payment accounts */
+.lp-pay-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:14px; }
+.lp-pay-title { font-weight:700; font-size:.9rem; margin-bottom:8px; }
+/* A QR code must be seen whole, on white: never cropped by object-fit: cover. */
+.lp-pay-qr img { object-fit:contain; background:#fff; }
+.lp-pay-card .field { margin-top:10px; }
+
+/* Payment Schemes — review and record */
+.pay-summary-line { display:flex; flex-wrap:wrap; gap:18px; font-size:.84rem; margin:4px 0 12px; }
+.cp-summary { display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:12px;
+  padding:12px; border:1px solid var(--border); border-radius:var(--r-md); margin-bottom:14px; }
+.cp-summary > div { display:flex; flex-direction:column; gap:2px; font-size:.84rem; }
+.cp-summary small { font-size:.72rem; }
+.cp-list { display:flex; flex-direction:column; gap:10px; }
+.cp-row { display:flex; gap:14px; justify-content:space-between; align-items:flex-start;
+  padding:12px; border:1px solid var(--border); border-radius:var(--r-md); }
+.cp-row.cp-pending { border-color: var(--warn); }
+.cp-row.cp-rejected { opacity:.7; }
+.cp-main { flex:1; min-width:0; }
+.cp-amount { font-weight:700; font-size:1rem; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.cp-meta { font-size:.78rem; margin-top:3px; }
+.cp-reason { font-size:.8rem; margin-top:6px; color:var(--out-ink); }
+.cp-actions { display:flex; gap:8px; margin-top:10px; }
+.cp-reject { margin-top:8px; display:flex; flex-direction:column; gap:8px; }
+.cp-shot img { width:120px; max-height:160px; object-fit:cover; border-radius:8px; display:block; }

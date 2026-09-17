@@ -1043,3 +1043,27 @@
 @media (max-width: 560px) {
   .order-item-rate { justify-content: flex-start; }
 }
+
+/* ---- Net accounts: cards, progress, payment history, Pay form ---- */
+.pay-acct { border: 1px solid var(--border, #e6e1d8); border-radius: 12px; background: var(--surface, #fff);
+  padding: 16px 18px; margin-bottom: 14px; }
+.pay-acct.state-paid { opacity: .8; }
+.pay-acct-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+.pay-acct-ref { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .86rem; font-weight: 600; }
+.pay-acct-sub { font-size: .8rem; color: var(--text-muted); margin-top: 2px; }
+.pay-acct-chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.pay-progress { height: 8px; border-radius: 99px; background: var(--surface-2, #f1ede6); overflow: hidden; margin: 6px 0 12px; }
+.pay-progress span { display: block; height: 100%; background: #2f7d4f; border-radius: inherit; }
+.pay-figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 0 0 12px; }
+.pay-figs div { display: flex; flex-direction: column; gap: 2px; }
+.pay-figs dt { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
+.pay-figs dd { margin: 0; font-size: .95rem; }
+.pay-form { margin-top: 12px; padding: 14px; border: 1px dashed var(--border-lift, #d8d1c4); border-radius: 12px; }
+.pay-form-methods { margin-bottom: 12px; }
+.pay-form-actions { display: flex; gap: 10px; margin-top: 6px; }
+.pay-history { margin-top: 14px; }
+.pay-history-title { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: 6px; }
+.pay-history-table { min-width: 560px; }
+.pay-row-rejected td { opacity: .75; }
+.order-status.status-paid    { background: rgba(47, 125, 79, .12); color: #2f7d4f; }
+.order-status.status-partial { background: rgba(47, 125, 79, .08); color: #2f7d4f; }

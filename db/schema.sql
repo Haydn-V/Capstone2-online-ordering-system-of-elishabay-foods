@@ -27,6 +27,7 @@ DROP TABLE IF EXISTS site_content;
 DROP TABLE IF EXISTS product_reviews;
 DROP TABLE IF EXISTS notifications;
 DROP TABLE IF EXISTS product_returns;
+DROP TABLE IF EXISTS credit_payments;
 DROP TABLE IF EXISTS payment_accounts;
 DROP TABLE IF EXISTS audit_logs;
 DROP TABLE IF EXISTS order_items;
@@ -438,6 +439,37 @@ CREATE TABLE payment_accounts (
 
 CREATE INDEX idx_payacct_customer ON payment_accounts(customer_id);
 CREATE INDEX idx_payacct_due ON payment_accounts(due_date);
+
+/* One payment toward a Net account. See db/migrations/013-credit-payments.sql
+   for the reasoning: payment_accounts.balance stays the amount billed, and
+   "paid so far", "remaining" and the paid flag are all derived from these rows. */
+CREATE TABLE credit_payments (
+    id               INT AUTO_INCREMENT NOT NULL,
+    account_id       VARCHAR(50)  NOT NULL,
+    customer_id      VARCHAR(50)  NULL,
+    amount           DECIMAL(10,2) NOT NULL,
+    method           ENUM('gcash','bank','cash') NULL,
+    ref_num          VARCHAR(100) NULL,
+    proof_image_path VARCHAR(255) NULL,
+    status           ENUM('pending','verified','rejected') NOT NULL DEFAULT 'pending',
+    source           ENUM('customer','staff','legacy')     NOT NULL DEFAULT 'customer',
+    paid_date        DATE NOT NULL COMMENT 'the day the money was paid — the revenue date',
+    note             VARCHAR(500) NULL,
+    reject_reason    VARCHAR(500) NULL COMMENT 'required when status = rejected; shown to the retailer',
+    submitted_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    decided_by       VARCHAR(50) NULL,
+    decided_at       DATETIME NULL,
+    PRIMARY KEY (id),
+    KEY idx_cp_account_status (account_id, status),
+    KEY idx_cp_status_submitted (status, submitted_at),
+    KEY idx_cp_status_paid_date (status, paid_date),
+    CONSTRAINT fk_cp_account  FOREIGN KEY (account_id)  REFERENCES payment_accounts (id)
+        ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT fk_cp_customer FOREIGN KEY (customer_id) REFERENCES customers (id)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT fk_cp_decider  FOREIGN KEY (decided_by)  REFERENCES users (id)
+        ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 /* Returns & refunds workflow. Named product_returns because RETURNS is a
    reserved word in MySQL. Status maps to the 7-step RETURN_STEPS pipeline:

@@ -55,8 +55,22 @@ if ($statusIn !== '' && $statusIn !== 'all') {
 }
 
 if (!empty($q['type']) && in_array($q['type'], ['online', 'walk-in'], true)) {
-    $where[] = 'o.type = ?';
-    $params[] = $q['type'];
+    /* `with_deliveries` brings WALK-IN DELIVERIES onto the online order
+       screens. A delivery rung up at the POS is a parcel exactly like an online
+       one: it needs a courier tracking number and moves through shipping and
+       delivered. Those screens asked for type=online alone, so a walk-in
+       delivery was created `accepted` and then had nowhere to be moved on —
+       never shipped, never completed, never counted as revenue.
+
+       A flag rather than a changed meaning for type=online: the Sales Report,
+       the dashboard and the online-revenue split still mean the CHANNEL, and a
+       counter sale must not start counting as an online one there. */
+    if ($q['type'] === 'online' && !empty($q['with_deliveries'])) {
+        $where[] = "(o.type = 'online' OR (o.type = 'walk-in' AND o.order_type = 'delivery'))";
+    } else {
+        $where[] = 'o.type = ?';
+        $params[] = $q['type'];
+    }
 }
 
 if (!empty($q['customer_type']) && in_array($q['customer_type'], ['regular', 'retailer'], true)) {
@@ -161,6 +175,16 @@ foreach (Database::all("SELECT o.status, COUNT(*) AS n $countSql GROUP BY o.stat
 $revenueSql    = $sql . ($where ? " AND $revClause" : " WHERE $revClause");
 $revenueParams = array_merge($params, $revParams);
 $filteredRevenue = (float) Database::scalar("SELECT COALESCE(SUM(o.total),0) $revenueSql", $revenueParams);
+/* Plus money received on the Net orders in this filtered set: a credit order is
+   not revenue in itself, its verified payments are (Revenue). */
+[$crClause] = Revenue::creditClause('cp');
+$filteredRevenue += (float) Database::scalar(
+    "SELECT COALESCE(SUM(cp.amount), 0)
+       FROM credit_payments cp
+       JOIN payment_accounts pa ON pa.id = cp.account_id
+      WHERE $crClause AND pa.order_id IN (SELECT o.id $sql)",
+    $params
+);
 
 $rows = Database::all(
     "SELECT o.id, o.customer_id, o.customer_name, o.email, o.contact, o.address,
@@ -169,6 +193,8 @@ $rows = Database::all(
             o.pay_verified, o.proof_uploaded, o.proof_ref_num, o.proof_image_path,
             o.proof_amount,
             o.cashier, o.batch_code_hint, o.tracking_number, o.delivered_at,
+            " . Orders::buyerTinSql('o.customer_id') . " AS buyer_tin,
+            " . Tax::selectColumns('o') . ",
             (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id) AS item_count,
             (SELECT COALESCE(SUM(oi.qty),0) FROM order_items oi WHERE oi.order_id = o.id) AS unit_count
      $sql
@@ -201,6 +227,18 @@ if ($orderIds !== []) {
     }
 }
 
+/* Net orders carry their account's figures, so every order screen can say
+   "On Net 60 terms · ₱5,000 of ₱13,330 paid" rather than "payment pending". */
+$creditByOrder = [];
+if ($orderIds !== []) {
+    $inList = implode(',', array_fill(0, count($orderIds), '?'));
+    $rate   = Payments::penaltyRate();
+    foreach (Database::all(Payments::accountSelect() . " WHERE pa.order_id IN ($inList)", $orderIds) as $cr) {
+        $acct = Payments::describeAccount($cr, $rate);
+        $creditByOrder[$acct['orderId']] = Payments::creditSummary($acct);
+    }
+}
+
 Response::ok(array_map(static fn(array $r): array => [
     'id'            => $r['id'],
     'customerId'    => $r['customer_id'],
@@ -209,10 +247,15 @@ Response::ok(array_map(static fn(array $r): array => [
     'contact'       => $r['contact'],
     'address'       => $r['address'],
     'type'          => $r['type'],
+    /* A retailer's BIR TIN for the Sales Invoice; null for anyone else. */
+    'tin'           => $r['buyer_tin'],
     'orderType'     => $r['order_type'],
     'customerType'  => $r['customer_type'],
     'payMethod'     => $r['method'],
     'total'         => (float) $r['total'],
+    /* The VAT breakdown stored at the sale (api/core/Tax.php) — what the Sales
+       Invoice prints, never recalculated. `amountDue` nets off withholding. */
+    'tax'           => Tax::describeOrder($r),
     'date'          => $r['date'],
     'datetime'      => $r['datetime'],
     'status'        => $r['status'],
@@ -238,6 +281,7 @@ Response::ok(array_map(static fn(array $r): array => [
     'unitCount'     => (int) $r['unit_count'],
     /* Never null — every renderer maps over this without checking. */
     'items'         => $itemsByOrder[$r['id']] ?? [],
+    'credit'        => $creditByOrder[$r['id']] ?? null,
 ], $rows), [
     'page'  => $paging['page'],
     'limit' => $paging['limit'],

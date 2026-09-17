@@ -28,6 +28,9 @@ require_once __DIR__ . '/Orders.php';
 require_once __DIR__ . '/Dates.php';
 /* After Dates.php — Inventory::describe() resolves expiry against Dates::today(). */
 require_once __DIR__ . '/Inventory.php';
+/* After Payments.php — Tax::withholdingRateFor() reads retailer status, and the
+   checkouts call both inside one transaction. */
+require_once __DIR__ . '/Tax.php';
 /* After Notify.php — review-save.php raises a Warning when a customer leaves a
    low rating, and Reviews owns the constant that decides what "low" means. */
 require_once __DIR__ . '/Reviews.php';

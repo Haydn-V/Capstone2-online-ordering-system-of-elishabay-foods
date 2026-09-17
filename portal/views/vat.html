@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>vat module</title>
+  <!-- ============================================================
+       MODULE PARTIAL — section id="mod-vat".
+
+       Wrapped as a complete HTML document on purpose, like every partial in
+       this folder: a bare fragment makes Live Server inject its reload script
+       in the wrong place. Keep the html/head/body wrapper.
+
+       VAT MAINTENANCE is Super Admin only. vat.manage is a SYSTEM_ONLY
+       permission (api/core/Rbac.php) that no other role can be granted; the
+       nav item carries it, and every endpoint behind this screen checks the
+       permission and the system role. Rendered by assets/js/portal/vat.js.
+       ============================================================ -->
+  </head>
+  <body>
+<section id="mod-vat" class="mod-panel" aria-label="VAT Maintenance">
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Maintenance</div>
+      <h2>VAT Maintenance</h2>
+      <p class="field-hint" style="margin-top: 6px">
+        The tax rules every Sales Invoice follows: the VAT rate, VAT-exempt
+        products, senior citizen and PWD discounts, and retailers that withhold
+        tax. Super Admin only.
+      </p>
+    </div>
+  </div>
+
+  <div class="view-toolbar">
+    <div class="vat-tabs" id="vat-tabs" role="tablist" aria-label="VAT Maintenance sections"></div>
+  </div>
+
+  <div id="vat-content" aria-live="polite"></div>
+</section>
+  </body>
+</html>

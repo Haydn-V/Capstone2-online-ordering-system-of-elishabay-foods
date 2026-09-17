@@ -87,6 +87,10 @@ let STAFF_ACCOUNTS = [];
 const PERMISSIONS = {
   "users.manage":     { area:"Maintenance",    label:"Manage customer & employee accounts" },
   "rbac.manage":       { area:"System",         label:"Manage roles & permissions" },
+  /* SUPER ADMIN ONLY — systemOnly. Mirrors Rbac::SYSTEM_ONLY on the server: the
+     matrix shows it locked for every other role, and roles/save.php refuses it
+     if it is sent anyway. */
+  "vat.manage":        { area:"System",         label:"Manage VAT settings", systemOnly:true },
   "b2b.review":         { area:"Maintenance",    label:"Review B2B partner applications" },
   "landing.manage":      { area:"Maintenance",    label:"Manage landing page content" },
   "products.manage":      { area:"Maintenance",    label:"Manage products & varieties" },
@@ -107,7 +111,7 @@ const PERMISSIONS = {
 /* Roles editable from the Roles & Permissions screen. "Super Admin" is
    not listed here — it always has every permission, unconditionally. */
 const ROLE_PERMISSIONS = {
-  "Admin":               Object.keys(PERMISSIONS).filter(k => k !== "rbac.manage"),
+  "Admin":               Object.keys(PERMISSIONS).filter(k => k !== "rbac.manage" && !PERMISSIONS[k].systemOnly),
   "Cashier":             ["pos.use","transactions.view","sales.report","payments.manage"],
   "Inventory Staff":     ["inventory.report","inventory.manage","batches.manage","audit.view"],
   "Online Orders Staff": ["orders.view","orders.accept","orders.status","orders.returns","transactions.view","payments.manage"],
@@ -148,6 +152,7 @@ const MOD_PERM = {
   "online-txns":"orders.view", orderhistory:"transactions.view", receipts:"orders.view", returns:"orders.returns",
   roles:"rbac.manage",
   reviews:"reviews.moderate",
+  vat:"vat.manage",
 };
 
 /* Hide every [data-perm] element the current user lacks, then collapse
@@ -352,6 +357,11 @@ const SITE_CONTENT = {
     facebook: "facebook.com/ElishaBayPH",
     email: "hello@jurisbayfoods.ph",
   },
+  /* GCash / bank accounts customers pay into. Filled from content/get.php. */
+  payment: {
+    gcash: { name: "", number: "", qr: "" },
+    bank:  { bank: "", name: "", number: "", qr: "" },
+  },
 
   /* Hero slide photos. Titles match HERO_PANELS on the public page. */
   hero: [
@@ -441,6 +451,13 @@ const adminState = {
      the rebuild. */
   invOverviewQuery: "",
   invOverviewLevel: "all",
+  /* Which trailing sales window the stock bands are measured over on the
+     Inventory Report and Stock Overview: "default" | "week" | "yesterday"
+     | "month". See STOCK_WINDOWS. */
+  stockWindow:   "default",
+  /* What the restock form's suggested quantity is measured over:
+     "week" | "yesterday". See RESTOCK_BASES in inventory.js. */
+  restockBasis:  "week",
 };
 
 /* ============================================================
@@ -465,6 +482,65 @@ function fmtDate(s)      { return EbFormat.fmtDate(s); }
 function fmtDateTime(s)  { return EbFormat.fmtDateTime(s); }
 function stockInfo(n)    { return EbFormat.stockInfo(n); }
 function movementType(n) { return EbFormat.movementType(n); }
+
+/* ============================================================
+   THE SALES WINDOW THE STOCK BANDS ARE MEASURED OVER
+   ============================================================
+   Critical / Low / Safe and Fast / Slow / Non-Moving are not counts, they are
+   RATES — units sold per day over a trailing window — so the window is half of
+   what they mean. See api/core/Inventory.php.
+
+   It was a single stored setting, ninety days, for every screen at once. Ninety
+   days is the right lens on a slow mover and the wrong one the morning after a
+   bulk order empties a shelf: one big day inside ninety barely moves the rate,
+   and the band still reads Safe. A week answers "what is moving now"; yesterday
+   answers "what went out yesterday", noise and all.
+
+   SESSION-SCOPED, NOT STORED. This is a lens someone looks through, not a
+   business rule — two people can hold different ones at the same time, and
+   neither changes the other's screen or the stored default. It resets on
+   reload, which is the right default for a view nobody agreed to.
+
+   Deliberately NOT applied to PRODUCTS (loadCatalog), which every other screen
+   reads: the dashboard's Critical Stock card and the POS would silently change
+   meaning from a control on another screen. The two screens that offer the
+   toggle fetch their own rows and say in words what they measured. */
+const STOCK_WINDOWS = [
+  ["default",   "Default window"],
+  ["week",      "Last 7 days"],
+  ["yesterday", "Yesterday"],
+  ["month",     "Last 30 days"],
+];
+
+/* null for the stored default — the endpoint treats a missing param and the
+   string "default" alike, and sending nothing keeps the URL honest. */
+function stockWindowParam(){
+  return adminState.stockWindow === "default" ? null : adminState.stockWindow;
+}
+
+/* The OPTIONS only, never the <select>. The element and its id belong to the
+   screen that mounts it, spelled out there as a literal — a JS-built id is
+   invisible to the structure check that catches a querySelector aimed at an
+   element nobody renders, which is exactly the typo this project's checker
+   exists to catch. The Inventory Report's copy is static markup in
+   portal/views/inventory.html; keep the two option lists in step. */
+function stockWindowOptions(){
+  return STOCK_WINDOWS.map(([v, label]) =>
+    `<option value="${v}"${adminState.stockWindow === v ? " selected" : ""}>Measured: ${escHtml(label)}</option>`
+  ).join("");
+}
+
+/* The caption is written from the RESPONSE, not from what was asked for: an
+   unknown window is refused by the endpoint, and a request that fell back to
+   the stored default must not be captioned "Yesterday". */
+function paintStockWindowNote(sel, meta){
+  const el = $(sel);
+  if(!el) return;
+  const label = (meta && meta.windowLabel) || "";
+  el.textContent = label
+    ? `Stock levels and movement measured over ${label}, from completed orders.`
+    : "";
+}
 
 /* THE RATING, SAID HONESTLY. One function, because every portal screen that
    prints `rating` has to make the same decision and none of them should make
@@ -502,6 +578,13 @@ function methodBadgeClass(method){
     GCash:         "badge-info",
     Cash:          "badge-ok",
     "Bank Transfer":"badge-purple",
+    /* The Net schemes had no entry, so they fell through to badge-muted —
+       the SAME badge an unrecognised value gets. A sale on terms is not an
+       unknown method, and the two must not look alike: muted grey is what the
+       screen shows when it cannot name something. */
+    "Net 30":      "badge-warn",
+    "Net 60":      "badge-warn",
+    "Net 90":      "badge-warn",
   }[method] || "badge-muted";
 }
 
@@ -539,7 +622,24 @@ function orderTotal(o){
    dashboard's own arithmetic agrees with it instead of inventing a third rule.
    If one changes, change both. */
 const REVENUE_STATUSES = ["completed"];
-function isRevenue(o){ return !!o && REVENUE_STATUSES.includes(o.status); }
+/* Net 30/60/90 orders are not revenue in themselves — their verified payments
+   are, on the day each was paid (api/core/Revenue.php). Revenue in a range is
+   sumRevenue(orders in range) + receivedBetween(from, to). */
+const CREDIT_PAY_METHODS = ["net30", "net60", "net90"];
+function isCreditOrder(o){ return !!o && CREDIT_PAY_METHODS.includes(o.payMethod); }
+function isRevenue(o){ return !!o && REVENUE_STATUSES.includes(o.status) && !isCreditOrder(o); }
+/* A SALE, for counting orders: paid-at-the-time orders that completed, and Net
+   orders once they committed stock — the same rule reports/sales.php counts. */
+function isSaleOrder(o){
+  return isRevenue(o) || (isCreditOrder(o) && ["accepted","shipping","delivered","completed"].includes(o.status));
+}
+/* Verified, non-legacy payments toward Net accounts, from api/payments/received.php. */
+let CREDIT_RECEIPTS = [];
+function receivedBetween(from, to){
+  return CREDIT_RECEIPTS
+    .filter(r => (!from || r.paidDate >= from) && (!to || r.paidDate <= to))
+    .reduce((s, r) => s + r.amount, 0);
+}
 function sumRevenue(list){ return list.filter(isRevenue).reduce((s,o)=>s+orderTotal(o),0); }
 
 function txItemsSummary(items){
@@ -1015,6 +1115,12 @@ async function loadOpsData(){
     }));
   }
 
+  /* Net-account payments, for every revenue figure computed in this browser
+     (dashboard, Sales Report estimate and chart) — see receivedBetween(). */
+  if(EbRbac.canAny("sales.report", "payments.manage")){
+    jobs.push(EbApi.get("payments/received.php").then(r => { CREDIT_RECEIPTS = r.data || []; }));
+  }
+
   if(EbRbac.can("payments.manage")){
     jobs.push(EbApi.get("payments/list.php").then(r => {
       PAYMENT_ACCOUNTS.length = 0;
@@ -1022,6 +1128,11 @@ async function loadOpsData(){
       /* The penalty rate is a stored setting now, not a number typed into the
          screen and lost on reload. */
       if(r.meta && r.meta.penaltyRate != null) adminState.penaltyRate = r.meta.penaltyRate;
+      /* The rest of the meta, kept for the dashboard's Payment Schemes badge.
+         Counted over EVERY account by payments/list.php rather than the page it
+         returns, so "3 to review" means three in the whole book — a badge built
+         from PAYMENT_ACCOUNTS would only ever count the first ten. */
+      adminState.payMeta = r.meta || null;
     }));
   }
 
@@ -1038,6 +1149,7 @@ async function loadOpsData(){
       SITE_CONTENT.vision  = r.data.vision;
       SITE_CONTENT.mission = r.data.mission;
       SITE_CONTENT.contact = r.data.contact;
+      if(r.data.payment) SITE_CONTENT.payment = r.data.payment;
       SITE_CONTENT.faqs    = r.data.faqs;
       if(Array.isArray(r.data.hero) && r.data.hero.length) SITE_CONTENT.hero = r.data.hero;
       SITE_CONTENT.featured = r.data.featured || [];
@@ -1424,6 +1536,8 @@ function navigate(mod, tab, intent){
        its rows are filtered SERVER-side by the active tab, so arriving at it
        has to fetch. Rendering first would flash the previous tab's rows. */
     reviews:       loadReviews,
+    /* Fetches its own data on arrival — assets/js/portal/vat.js. */
+    vat:           renderVat,
   };
   /* THE INTENT LIVES FOR ONE RENDER. Set immediately before, cleared in the
      finally immediately after, so a render that reads navIntent() sees it and
@@ -1832,20 +1946,50 @@ function renderDashboard(){
   const dateEl = $("#dash-date");
   if(dateEl) dateEl.textContent = now.toLocaleDateString("en-PH",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
 
+  /* ── Payment Schemes shortcut ──
+     The badge says why to go, not that the button exists. Payments waiting to
+     be checked outrank overdue accounts: one is work sitting in a queue, the
+     other is already known and chased. Empty when there is neither, and the
+     CSS hides an empty badge rather than showing a reassuring blank pill. */
+  const payBadge = $("#dash-pay-badge");
+  if(payBadge){
+    const m       = adminState.payMeta;
+    const review  = m ? +m.reviewCount  || 0 : 0;
+    const overdue = m ? +m.overdueCount || 0 : 0;
+    payBadge.textContent = review  ? `${review} to review`
+                         : overdue ? `${overdue} overdue`
+                         : "";
+    payBadge.classList.toggle("is-alert", review > 0 || overdue > 0);
+  }
+
   /* ── deltas ── */
   const todayStr       = dAgo(0);
   const thisMonthStart = todayStr.slice(0,7)+"-01";
   const lmEnd          = addDays(thisMonthStart, -1);
   const lmStart        = lmEnd.slice(0,7)+"-01";
 
-  const totalSales     = sumRevenue(ORDERS);
+  const totalSales     = sumRevenue(ORDERS) + receivedBetween(null, null);
   const todayTx        = ORDERS.filter(tx=>tx.date===todayStr);
-  const todaySales     = sumRevenue(todayTx);
-  const yesterdaySales = sumRevenue(ORDERS.filter(tx=>tx.date===dAgo(1)));
-  const thisMonthRev   = sumRevenue(ORDERS.filter(tx=>tx.date>=thisMonthStart&&tx.date<=todayStr));
-  const lastMonthRev   = sumRevenue(ORDERS.filter(tx=>tx.date>=lmStart&&tx.date<=lmEnd));
-  const lowStock       = PRODUCTS.filter(p=>!p.archived&&p.stock<=10&&p.stock>0).length;
-  const outStock       = PRODUCTS.filter(p=>!p.archived&&p.stock===0).length;
+  const todaySales     = sumRevenue(todayTx) + receivedBetween(todayStr, todayStr);
+  const yesterdaySales = sumRevenue(ORDERS.filter(tx=>tx.date===dAgo(1))) + receivedBetween(dAgo(1), dAgo(1));
+  const thisMonthRev   = sumRevenue(ORDERS.filter(tx=>tx.date>=thisMonthStart&&tx.date<=todayStr)) + receivedBetween(thisMonthStart, todayStr);
+  const lastMonthRev   = sumRevenue(ORDERS.filter(tx=>tx.date>=lmStart&&tx.date<=lmEnd)) + receivedBetween(lmStart, lmEnd);
+  /* THE SERVER'S BAND, NOT A PIECE COUNT.
+
+     This card is labelled "Critical Stock" and its button opens the Inventory
+     Report filtered to Critical — but it counted `stock <= 10`, the fixed floor
+     the measured model replaced. The two answers disagreed by design: a fast
+     seller with 400 jars and nine days of cover is Critical on the report and
+     was invisible here, while a product with eight jars and three years of
+     cover was counted here and is Safe there. A card that disagrees with the
+     screen it links to is worse than no card.
+
+     PRODUCTS is loaded on the stored default window (see STOCK_WINDOWS), so
+     this matches the Inventory Report whenever its own toggle is on Default. */
+  const bandOf         = p => (p.inventory && p.inventory.level) || stockInfo(p).level;
+  const liveProducts   = PRODUCTS.filter(p=>!p.archived);
+  const lowStock       = liveProducts.filter(p=>bandOf(p)==="crit").length;
+  const outStock       = liveProducts.filter(p=>bandOf(p)==="out").length;
   const activeCustomers= CUSTOMERS.filter(c=>c.status!=="archived").length;
   const retailers      = CUSTOMERS.filter(c=>c.status==="retailer").length;
 
@@ -1923,7 +2067,7 @@ function renderDashboard(){
   const labels = [];
   for(let i=6;i>=0;i--){
     const d = dAgo(i);
-    const total = sumRevenue(ORDERS.filter(tx=>tx.date===d));
+    const total = sumRevenue(ORDERS.filter(tx=>tx.date===d)) + receivedBetween(d, d);
     days.push(total);
     labels.push(new Date(d+"T00:00:00").toLocaleDateString("en-PH",{weekday:"short"}));
   }
@@ -2483,7 +2627,7 @@ function renderB2B(){
         <div class="muted" style="font-size:.78rem">${escHtml(a.phone)}</div>
       </td>
       <td>
-        <span class="badge badge-info">${escHtml(a.requestedTerms)}</span>
+        ${a.requestedTerms ? `<span class="badge badge-info">${escHtml(a.requestedTerms)}</span>` : ""}
         ${a.tier ? `<div style="margin-top:4px">${tierBadge(a.tier)}</div>` : ""}
       </td>
       <td>${b2bStatusBadge(a.status)}</td>
@@ -2574,7 +2718,7 @@ function openViewAppModal(a){
     body: `
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
         ${b2bStatusBadge(a.status)}
-        <span class="badge badge-info">${escHtml(a.requestedTerms)} requested</span>
+        ${a.requestedTerms ? `<span class="badge badge-info">${escHtml(a.requestedTerms)} requested</span>` : ""}
         ${a.tier ? tierBadge(a.tier) : ""}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
@@ -2583,7 +2727,7 @@ function openViewAppModal(a){
         <p style="font-size:.88rem"><strong>Email:</strong><br>${escHtml(a.email)}</p>
         <p style="font-size:.88rem"><strong>Phone:</strong><br>${escHtml(a.phone)}</p>
         <p style="font-size:.88rem"><strong>Submitted:</strong><br>${fmtDate(a.submittedDate)}</p>
-        <p style="font-size:.88rem"><strong>Requested Terms:</strong><br>${escHtml(a.requestedTerms)}</p>
+        ${a.requestedTerms ? `<p style="font-size:.88rem"><strong>Requested Terms:</strong><br>${escHtml(a.requestedTerms)}</p>` : ""}
       </div>
       <div class="field"><label>Application Notes</label><p style="font-size:.88rem;color:var(--text-muted)">${escHtml(a.notes||"—")}</p></div>
       ${a.status==="rejected" ? `<div class="field"><label>Rejection Reason</label><p style="font-size:.88rem;color:var(--out-ink)">${escHtml(a.reason||"—")}</p></div>` : ""}
@@ -2595,16 +2739,15 @@ function openViewAppModal(a){
 
 function openApproveAppModal(a){
   if(!a) return;
-  const termOpts = ["Net 30","Net 60","Net 90"].map(t=>`<option ${a.requestedTerms===t?"selected":""}>${t}</option>`).join("");
-  const tierOpts = PARTNER_TIERS.map(t=>`<option ${a.requestedTerms==="Net 90"&&t==="Gold"?"selected":""}>${t}</option>`).join("");
+  /* No "Credit Terms" select. It was rendered here but never sent to
+     b2b/decide.php, so whatever was chosen was silently discarded. A retailer
+     picks Net 30/60/90 per order at checkout. */
+  const tierOpts = PARTNER_TIERS.map(t=>`<option>${t}</option>`).join("");
   openModal({
     title: `Approve ${a.businessName}`,
     body: `
-      <p style="font-size:.9rem;margin-bottom:16px">Approving grants <strong>${escHtml(a.applicantName)}</strong> a retailer account with the credit line and tier below.</p>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="field"><label>Credit Terms</label><select class="control" id="m-app-terms">${termOpts}</select></div>
-        <div class="field"><label>Partner Account Tier</label><select class="control" id="m-app-tier">${tierOpts}</select></div>
-      </div>
+      <p style="font-size:.9rem;margin-bottom:16px">Approving grants <strong>${escHtml(a.applicantName)}</strong> a retailer account at the tier below. As a retailer they choose Net 30, Net 60 or Net 90 terms at checkout on each order.</p>
+      <div class="field"><label>Partner Account Tier</label><select class="control" id="m-app-tier">${tierOpts}</select></div>
     `,
     confirmLabel: "Approve Application",
     confirmClass: "btn-ok",
@@ -2663,7 +2806,7 @@ function exportB2BCSV(){
   const header = ["App ID","Business Name","Applicant","Email","Phone","Business Type","Requested Terms","Tier","Status","Submitted Date","Notes","Rejection Reason"];
   const csvRows = rows.map(a=>[
     a.appId, a.businessName, a.applicantName, a.email, a.phone, a.businessType,
-    a.requestedTerms, a.tier||"", a.status, a.submittedDate, a.notes||"", a.reason||""
+    a.requestedTerms||"", a.tier||"", a.status, a.submittedDate, a.notes||"", a.reason||""
   ]);
   const esc = v => `"${String(v).replace(/"/g,'""')}"`;
   const csv = [header, ...csvRows].map(r=>r.map(esc).join(",")).join("\r\n");
@@ -2712,11 +2855,11 @@ function exportB2BCSV(){
    where the bytes can also be checked. A client-side downscale was never a
    security measure — a client can post whatever it likes — and doing it in two
    places would mean two answers to "what size is a hero image?". */
-async function storeImage(file){
+async function storeImage(file, purpose = "content"){
   if(!file || !/^image\//.test(file.type)){
     throw new Error("That file isn't an image.");
   }
-  const data = await EbApi.upload(file, "content");
+  const data = await EbApi.upload(file, purpose);
   return data.path;
 }
 
@@ -2770,6 +2913,12 @@ function renderLanding(){
       <div class="field"><label>Facebook URL</label><input class="control" id="lp-facebook" value="${escHtml(SITE_CONTENT.contact.facebook)}"/></div>
     </div>
     <div class="lp-section">
+      <div class="lp-section-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><rect x="1" y="4" width="22" height="16" rx="2"/><path d="M1 10h22"/></svg> Payment Accounts
+        <span class="lp-hint">Shown at checkout when a customer pays by GCash or bank transfer</span>
+      </div>
+      <div class="lp-pay-grid" id="lp-pay-grid">${renderPayAccountCards()}</div>
+    </div>
+    <div class="lp-section">
       <div class="lp-section-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> FAQ Entries
         <button class="btn btn-ghost btn-sm" id="add-faq-btn" style="margin-left:auto">+ Add FAQ</button>
       </div>
@@ -2778,6 +2927,7 @@ function renderLanding(){
   `;
   wireFAQButtons();
   wireLandingImages();
+  wirePayAccounts();
   updateStorageMeter();
   $("#save-landing-btn").onclick = saveLanding;
   $("#add-faq-btn").onclick = ()=>{
@@ -2787,6 +2937,81 @@ function renderLanding(){
   };
 }
 
+
+/* ---- Payment accounts (GCash, bank) --------------------------------
+   The accounts customers pay INTO, shown at checkout and on a retailer's Pay
+   form. The QR code is uploaded as "payment-qr", which the server stores
+   LOSSLESS — a photo's compression would blur the code until a phone could not
+   scan it. Like the hero images, an upload is not live until Save Changes. */
+const PAY_ACCOUNT_DEFS = [
+  { key: "gcash", title: "GCash",
+    fields: [["name", "Account name"], ["number", "GCash number"]] },
+  { key: "bank",  title: "Bank Transfer",
+    fields: [["bank", "Bank"], ["name", "Account name"], ["number", "Account number"]] },
+];
+
+function renderPayAccountCards(){
+  const pay = SITE_CONTENT.payment || {};
+  return PAY_ACCOUNT_DEFS.map(function(def){
+    const a = pay[def.key] || {};
+    const has = !!a.qr;
+    return `
+      <div class="lp-img-card lp-pay-card" data-pay-acct="${def.key}">
+        <div class="lp-pay-title">${def.title}</div>
+        <div class="lp-img-thumb lp-pay-qr ${has ? "has" : ""}">
+          ${has
+            ? `<img src="${escHtml(imageUrl(a.qr))}" alt="${def.title} QR code">`
+            : `<span class="lp-img-empty">No QR code</span>`}
+        </div>
+        <div class="lp-img-actions">
+          <label class="btn btn-ghost btn-sm">
+            ${has ? "Replace QR" : "Upload QR"}
+            <input type="file" accept="image/png,image/jpeg,image/webp" data-pay-qr-file="${def.key}" hidden>
+          </label>
+          ${has ? `<button class="btn btn-ghost btn-sm lp-img-clear" data-pay-qr-clear="${def.key}">Remove</button>` : ""}
+        </div>
+        ${def.fields.map(([f, label]) => `
+        <div class="field"><label>${label}</label>
+          <input class="control" data-pay-field="${def.key}.${f}" value="${escHtml(a[f] || "")}"/></div>`).join("")}
+      </div>`;
+  }).join("");
+}
+
+/* Typed values are read into SITE_CONTENT before any re-render, so replacing a
+   QR code does not wipe an account number that has not been saved yet. */
+function collectPayFields(){
+  SITE_CONTENT.payment = SITE_CONTENT.payment || {};
+  $$("[data-pay-field]").forEach(function(el){
+    const [acct, f] = el.dataset.payField.split(".");
+    SITE_CONTENT.payment[acct] = SITE_CONTENT.payment[acct] || {};
+    SITE_CONTENT.payment[acct][f] = el.value.trim();
+  });
+}
+
+function wirePayAccounts(){
+  const redraw = function(){
+    $("#lp-pay-grid").innerHTML = renderPayAccountCards();
+    wirePayAccounts();
+  };
+  $$("[data-pay-qr-file]").forEach(function(input){
+    input.addEventListener("change", function(){
+      const acct = input.dataset.payQrFile;
+      collectPayFields();
+      handleUpload(input.files[0], input, function(path){
+        SITE_CONTENT.payment[acct] = SITE_CONTENT.payment[acct] || {};
+        SITE_CONTENT.payment[acct].qr = path;
+        redraw();
+      }, "payment-qr");
+    });
+  });
+  $$("[data-pay-qr-clear]").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      collectPayFields();
+      SITE_CONTENT.payment[btn.dataset.payQrClear].qr = "";
+      redraw();
+    });
+  });
+}
 
 /* ---- Hero image cards ------------------------------------------------ */
 function renderHeroImageCards(){
@@ -2964,9 +3189,9 @@ function refreshBestSellerTable(){
    point, but hero_slides does not point at it until content/save.php runs, so
    claiming the landing page is updated would be the preview-implies-persistence
    mistake this work exists to remove (I7). */
-function handleUpload(file, input, done){
+function handleUpload(file, input, done, purpose){
   if(!file) return;
-  storeImage(file)
+  storeImage(file, purpose)
     .then(function(path){
       done(path);
       toast("Image uploaded. Save Changes to publish it to the landing page.", "ok");
@@ -3026,6 +3251,7 @@ function saveLanding(){
   SITE_CONTENT.contact.phone    = $("#lp-phone").value;
   SITE_CONTENT.contact.email    = $("#lp-email").value;
   SITE_CONTENT.contact.facebook = $("#lp-facebook").value;
+  collectPayFields();
   $$("[data-faq-q]").forEach(el=> { SITE_CONTENT.faqs[+el.dataset.faqQ].q = el.value; });
   $$("[data-faq-a]").forEach(el=> { SITE_CONTENT.faqs[+el.dataset.faqA].a = el.value; });
 
@@ -3068,11 +3294,12 @@ function saveLanding(){
     /* Paths, not images. `img` holds whatever api/uploads/image.php returned. */
     hero:     (SITE_CONTENT.hero || []).map(h => ({ title: h.title, image: h.img || "" })),
     featured: SITE_CONTENT.featured,
+    payment:  SITE_CONTENT.payment,
   }).then(({ data }) => {
     toast("Landing page saved: " + (data.updated || []).join(", ") + ".", "ok");
     updateStorageMeter();
   }).catch(err => {
-    toast("Could not save landing content: " + (err.fields.hero || err.fields.featured || err.message), "err");
+    toast("Could not save landing content: " + (err.fields.hero || err.fields.featured || err.fields.payment || err.message), "err");
   }).finally(restore);
 }
 
@@ -3875,6 +4102,10 @@ function renderInventory(){
       level: ($("#filter-inventory")?.value === "all" ? null : $("#filter-inventory")?.value) || null,
       movement: ($("#filter-movement")?.value === "all" ? null : $("#filter-movement")?.value) || null,
       expiring: ($("#filter-expiring")?.value === "all" ? null : $("#filter-expiring")?.value) || null,
+      /* Level and movement are filters over the bands, so the window has to
+         travel with them: "everything Critical as measured yesterday" is one
+         question, not two. */
+      window: stockWindowParam(),
     }),
     p => {
       const si  = stockInfo(p);
@@ -3887,7 +4118,7 @@ function renderInventory(){
          with the reason on hover rather than a number that would sort as the
          safest thing in the catalogue. */
       const cover = inv.daysCover == null
-        ? `<span class="muted" title="No sales in the last ${inv.windowDays || 90} days — no rate to measure cover against.">—</span>`
+        ? `<span class="muted" title="No sales in ${escHtml(inv.windowLabel || "the window")} — no rate to measure cover against.">—</span>`
         : `<span title="${escHtml(inv.levelReason || "")}">${inv.daysCover}d</span>`;
 
       return `<tr>
@@ -3905,7 +4136,11 @@ function renderInventory(){
       <td>${p.sold.toLocaleString("en-PH")}</td>
     </tr>`;
     },
-    { colspan: 10, empty: { title: "No products match filters", hint: "Adjust the search or filters." } }
+    {
+      colspan: 10,
+      empty: { title: "No products match filters", hint: "Adjust the search or filters." },
+      after: (rows, meta) => paintStockWindowNote("#inv-window-note", meta),
+    }
   );
 
   const reset = ()=>{ adminState.invReportPager.page = 1; renderInventory(); };
@@ -3917,6 +4152,20 @@ function renderInventory(){
         el.addEventListener(evt, deb ? debounce(reset, 300) : reset);
       }
     });
+
+  /* Its own wiring rather than a fifth entry in the list above: changing the
+     window changes what "Critical" MEANS, so the state it writes is read by
+     every other filter's fetch. */
+  const winSel = $("#filter-inv-window");
+  if(winSel && !winSel.dataset.wired){
+    winSel.dataset.wired = "1";
+    winSel.value = adminState.stockWindow;
+    if(window.EbSelect) EbSelect.sync(winSel);
+    winSel.addEventListener("change", ()=>{
+      adminState.stockWindow = winSel.value;
+      reset();
+    });
+  }
 }
 
 
@@ -4140,7 +4389,7 @@ function renderTopProducts(rows, from, to){
   body.innerHTML = `<div class="table-wrap"><table class="data-table">
     <thead><tr>
       <th style="width:52px">#</th><th>Product</th>
-      <th class="num">Units</th><th class="num">Revenue</th>
+      <th class="num" title="Counted as the money arrives. A Net 30/60/90 order contributes its units in the same proportion as its payments, so half paid is half its units — see Payment Schemes for what is still owed.">Units</th><th class="num">Revenue</th>
     </tr></thead>
     <tbody>${rows.map((r,i)=>`<tr>
       <td class="num-cell muted">${i+1}</td>
@@ -4182,6 +4431,21 @@ function renderByMethod(rows, totals){
   </table></div>`;
 }
 
+/* Where the Net figures in the Sales Report came from, stated rather than
+   asked to be trusted: what was received on Net accounts in the period, and
+   what was sold on terms but has not come in yet. */
+function renderCreditNote(c){
+  const el = $("#sales-credit-note");
+  if(!el) return;
+  if(!c || (!c.received && !c.bookedCount)){ el.innerHTML = ""; return; }
+  el.innerHTML =
+    `Includes <strong>${peso(c.received)}</strong> received on Net accounts ` +
+    `(${c.receivedCount} payment${c.receivedCount === 1 ? "" : "s"}). ` +
+    (c.bookedCount
+      ? `Sold on credit this period: ${peso(c.bookedTotal)} across ${c.bookedCount} order${c.bookedCount === 1 ? "" : "s"} — <strong>${peso(c.notYetReceived)}</strong> not yet received.`
+      : "");
+}
+
 function renderSales(range){
   adminState.salesRange = range;
   $$("[data-range]").forEach(btn=> btn.classList.toggle("active", btn.dataset.range===range));
@@ -4203,8 +4467,8 @@ function renderSales(range){
 
      api/reports/sales.php excludes cancelled orders and aggregates in SQL. */
   const txs    = ORDERS.filter(tx=> tx.date >= start && tx.date <= end);
-  let total  = sumRevenue(txs);
-  let orders = txs.filter(t=>t.status!=="cancelled").length;
+  let total  = sumRevenue(txs) + receivedBetween(start, end);
+  let orders = txs.filter(isSaleOrder).length;
   let avg    = orders ? Math.round(total/orders) : 0;
   const online = txs.filter(t=>t.type==="online").length;
 
@@ -4226,6 +4490,7 @@ function renderSales(range){
            so they cannot fall out of step with the totals above them. */
         renderTopProducts(data.topProducts, start, end);
         renderByMethod(data.byMethod, data.totals);
+        renderCreditNote(data.credit);
       })
       .catch(err => console.warn("[sales]", err.message))
       .finally(() => { adminState._salesFetching = false; });
@@ -4241,8 +4506,12 @@ function renderSales(range){
     if(cmpKey === "prev"){ const p=getPrevRange(start,end); cs=p.start; ce=p.end; }
     else { const r=getDateRange(cmpKey); cs=r.start; ce=r.end; }
     const cmpTxs = ORDERS.filter(tx=> tx.date>=cs && tx.date<=ce);
-    cmpTotal  = sumRevenue(cmpTxs);
-    cmpOrders = cmpTxs.length;
+    /* Counted by the SAME rule as the current period. This used to be every
+       order in the range, cancelled ones included, measured against a
+       current figure that excluded them — so the Orders badge understated
+       growth whenever the comparison period had a cancellation. */
+    cmpTotal  = sumRevenue(cmpTxs) + receivedBetween(cs, ce);
+    cmpOrders = cmpTxs.filter(isSaleOrder).length;
   }
 
   function deltaBadge(curr, prev){
@@ -4259,11 +4528,14 @@ function renderSales(range){
     <div class="sales-sum-card"><div class="sales-sum-label">Orders</div><div class="sales-sum-val" id="sales-orders-val">${orders}</div>${deltaBadge(orders,cmpOrders)}</div>
     <div class="sales-sum-card"><div class="sales-sum-label">Average Order</div><div class="sales-sum-val" id="sales-avg-val">${peso(avg)}</div></div>
     <div class="sales-sum-card"><div class="sales-sum-label">Online Orders</div><div class="sales-sum-val">${online}</div></div>
+    <div class="sales-credit-note muted" id="sales-credit-note" style="grid-column:1/-1;font-size:.8rem"></div>
   `;
 
   /* chart */
   const dateMap = {};
   txs.filter(isRevenue).forEach(tx=>{ dateMap[tx.date]=(dateMap[tx.date]||0)+orderTotal(tx); });
+  CREDIT_RECEIPTS.filter(r => r.paidDate >= start && r.paidDate <= end)
+    .forEach(r => { dateMap[r.paidDate] = (dateMap[r.paidDate] || 0) + r.amount; });
   const sortedDates = Object.keys(dateMap).sort();
   const chartData   = sortedDates.map(d=>dateMap[d]);
   const chartLabels = sortedDates.map(d=> new Date(d+"T00:00:00").toLocaleDateString("en-PH",{month:"short",day:"numeric"}));
@@ -4295,22 +4567,50 @@ function renderSales(range){
 
      Line totals come from orders.total, not from re-multiplying each item by
      its product's current price. That recomputation is why a price change used
-     to alter what past periods appeared to have earned. */
+     to alter what past periods appeared to have earned.
+
+     TWO KINDS OF ROW, from api/reports/transactions.php: orders placed in the
+     period, and payments received against Net accounts in it. It used to be
+     orders alone, which left the report contradicting itself — a retailer
+     settling a July invoice raised September's revenue while September's list
+     showed nothing that could account for it, so the money looked invented.
+     Read that endpoint for why the union is paged in SQL rather than stitched
+     together here. */
   EbPaginate.list(
     "sales",
     adminState.salesPager,
     () => $("#sales-tbody"),
-    (page, limit) => EbApi.get("orders/list.php", {
-      page, limit, sort: "newest", from: start, to: end,
+    (page, limit) => EbApi.get("reports/transactions.php", {
+      page, limit, from: start, to: end,
     }),
     tx => {
-      const summary = (tx.items || []).map(i => `${i.name || i.id} ×${i.qty}`).join(", ");
       const method = payMethodLabel(tx.payMethod);
+
+      /* A PAYMENT IS NOT A SALE, and the row says so rather than dressing one
+         up as the other: no items, the account it settles in their place, and
+         the scheme on the reference. Its own row class tints it, but the words
+         carry the distinction — colour alone would leave it to be guessed. */
+      if(tx.kind === "payment"){
+        const on = tx.orderId
+          ? `Payment on ${escHtml(tx.orderId)}`
+          : "Payment on a Net account";
+        return `<tr class="row-payment">
+      <td class="mono">${escHtml(tx.id)}<div class="muted" style="font-size:.7rem">${escHtml(tx.scheme || "Net")} payment</div></td>
+      <td>${escHtml(tx.customer)}</td>
+      <td style="font-size:.8rem;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${on}</td>
+      <td><strong>${peso(tx.total)}</strong><div class="muted" style="font-size:.72rem">received</div></td>
+      <td><span class="badge ${methodBadgeClass(method)}">${escHtml(method)}</span></td>
+      <td class="muted">${fmtDate(tx.date)}</td>
+    </tr>`;
+      }
+
+      const summary = (tx.items || []).map(i => `${i.name || i.id} ×${i.qty}`).join(", ");
       return `<tr>
       <td class="mono">${escHtml(tx.id)}</td>
       <td>${escHtml(tx.customer)}</td>
       <td style="font-size:.8rem;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(summary)}</td>
-      <td><strong>${peso(tx.total)}</strong></td>
+      <td><strong>${peso(tx.total)}</strong>${tx.credit
+        ? `<div class="muted" style="font-size:.72rem">${peso(tx.credit.paidAmount)} received so far</div>` : ""}</td>
       <td><span class="badge ${methodBadgeClass(method)}">${escHtml(method)}</span></td>
       <td class="muted">${fmtDate(tx.date)}</td>
     </tr>`;
@@ -4337,85 +4637,83 @@ function renderSales(range){
 /* ============================================================
    MODULE: PAYMENT SCHEMES
    ============================================================ */
+/* Payment Schemes — Net accounts, and every payment toward them.
+
+   The figures are the server's (payments/list.php → Payments::describeAccount):
+   billed, paid so far, waiting for review, penalty and what is left. The same
+   function feeds the retailer's own Payment Schemes page, so the two cannot
+   disagree.
+
+   "Mark Paid" is gone. A payment is recorded for what actually arrived (Record
+   payment), and a retailer's own payments are verified or rejected one at a
+   time (Review). The account marks itself paid once they cover it. Sorting is
+   the server's — waiting-for-review first, then overdue, then by due date —
+   because a column sort could only ever reorder the page on screen. */
+const PAY_STATE_BADGE = {
+  paid:    ["badge-ok",   "Paid"],
+  overdue: ["badge-out",  "Overdue"],
+  partial: ["badge-info", "Partly paid"],
+  pending: ["badge-warn", "Unpaid"],
+};
+const CP_METHOD_LABEL = { gcash: "GCash", bank: "Bank Transfer", cash: "Cash" };
+const CP_STATUS_BADGE = {
+  pending:  ["badge-warn", "Waiting for review"],
+  verified: ["badge-ok",   "Verified"],
+  rejected: ["badge-out",  "Rejected"],
+};
+
 function renderPayments(){
   const penaltyEl = $("#penalty-rate");
   if(penaltyEl) penaltyEl.value = adminState.penaltyRate;
 
-  const sort = adminState.paySort;
-  const sorted = [...PAYMENT_ACCOUNTS].sort((a,b)=>{
-    /* Outstanding/Due Date/Status aren't plain fields on the record —
-       balance reads 0 once paid, so sort "Outstanding" by the actual
-       amount owed and "Status" by the same rank the badge uses. */
-    let av, bv;
-    if(sort.col === "balance"){ av = a.paid?-1:a.balance; bv = b.paid?-1:b.balance; }
-    else if(sort.col === "statusRank"){
-      const rank = x => x.paid ? 0 : isOverdue(x) ? 2 : 1;
-      av = rank(a); bv = rank(b);
-    } else { av = a[sort.col]; bv = b[sort.col]; }
-    if(av<bv) return sort.dir==="asc" ? -1 : 1;
-    if(av>bv) return sort.dir==="asc" ? 1 : -1;
-    return 0;
-  });
+  const filterEl = $("#pay-filter");
+  if(filterEl && !filterEl.dataset.wired){
+    filterEl.dataset.wired = "1";
+    filterEl.addEventListener("change", ()=>{ adminState.payPager.page = 1; renderPayments(); });
+  }
+  const filter = filterEl ? filterEl.value : "all";
 
-  /* Payment schemes — server-paged.
-
-     `overdue` and the penalty are computed by the endpoint against CURDATE(),
-     not derived here, so an account cannot sit at "3 days late" because nobody
-     reopened the screen. The column sort below still orders the loaded page;
-     payments/list.php has no sort parameter, and adding one belongs with that
-     endpoint rather than being faked here. */
   EbPaginate.list(
     "pay",
     adminState.payPager,
     () => $("#payments-tbody"),
-    (page, limit) => EbApi.get("payments/list.php", { page, limit }),
+    (page, limit) => EbApi.get("payments/list.php", { page, limit, filter }),
     a => {
-      const overdue = a.overdue;
-      return `<tr class="${overdue&&!a.paid?"overdue-flag":""}">
-      <td class="td-name">${escHtml(a.name)}</td>
-      <td class="td-email">${escHtml(a.email || "—")}</td>
+      const [cls, label] = PAY_STATE_BADGE[a.state] || ["badge-warn", a.state];
+      return `<tr class="${a.overdue ? "overdue-flag" : ""}">
+      <td class="td-name">${escHtml(a.name)}<div class="muted" style="font-size:.72rem">${escHtml(a.orderId || a.id)}</div></td>
       <td><span class="badge badge-info">${escHtml(a.scheme)}</span></td>
-      <td>${a.paid ? `<span class="muted">Paid</span>` : `<strong>${peso(a.balance)}</strong>${a.penalty ? ` <span class="muted" style="font-size:.72rem">+${peso(a.penalty)} penalty</span>` : ""}</td>`}
-      <td class="${overdue&&!a.paid?"":"muted"}">${fmtDate(a.dueDate)}${overdue&&!a.paid?` <span class="muted" style="font-size:.72rem">(${a.daysPastDue}d)</span>`:""}</td>
-      <td><span class="badge ${a.paid?"badge-ok":overdue?"badge-out":"badge-warn"}">${a.paid?"Paid":overdue?"Overdue":"Pending"}</span></td>
+      <td>${peso(a.billed)}${a.penalty ? `<div class="muted" style="font-size:.72rem">+${peso(a.penalty)} penalty</div>` : ""}</td>
+      <td>${peso(a.paidAmount)}${a.pendingCount ? `<div style="font-size:.72rem;color:var(--warn)">${a.pendingCount} waiting · ${peso(a.pendingAmount)}</div>` : ""}</td>
+      <td>${a.settled ? `<span class="muted">—</span>` : `<strong>${peso(a.remaining)}</strong>`}</td>
+      <td class="${a.overdue ? "" : "muted"}">${fmtDate(a.dueDate)}${a.overdue ? ` <span class="muted" style="font-size:.72rem">(${a.daysPastDue}d late)</span>` : ""}</td>
+      <td><span class="badge ${cls}">${label}</span></td>
       <td><div class="td-actions">
-        ${!a.paid ? `<button class="btn btn-ok btn-sm" data-mark-paid="${a.id}">Mark Paid</button>` : ""}
-        <button class="btn btn-ghost btn-sm" data-view-pay="${a.id}">View</button>
+        <button class="btn ${a.pendingCount ? "btn-gold" : "btn-ghost"} btn-sm" data-review-pay="${escHtml(a.id)}">${a.pendingCount ? `Review (${a.pendingCount})` : "View"}</button>
+        ${a.settled ? "" : `<button class="btn btn-ok btn-sm" data-record-pay="${escHtml(a.id)}">Record payment</button>`}
       </div></td>
     </tr>`;
     },
     {
-      colspan: 7,
-      empty: { title: "No payment accounts", hint: "Retailer credit accounts appear here." },
+      colspan: 8,
+      empty: { title: "No payment accounts", hint: "Retailer Net accounts appear here once a Net order is placed." },
       after: (rows, meta) => {
         PAYMENT_ACCOUNTS.length = 0; rows.forEach(r => PAYMENT_ACCOUNTS.push(r));
         if(meta.penaltyRate != null) adminState.penaltyRate = meta.penaltyRate;
+        const sum = $("#pay-summary");
+        if(sum){
+          sum.innerHTML = `
+            <span><strong>${peso(meta.outstanding || 0)}</strong> outstanding</span>
+            <span>${meta.overdueCount || 0} overdue</span>
+            <span>${meta.reviewCount
+              ? `<strong style="color:var(--warn)">${meta.reviewCount} payment${meta.reviewCount === 1 ? "" : "s"} waiting for review</strong> (${peso(meta.reviewAmount)})`
+              : "No payments waiting for review"}</span>`;
+        }
         wirePaymentRowActions();
       },
     }
   );
 
-  $$("#payments-table th[data-sort]").forEach(th=>{
-    const isSorted = th.dataset.sort === adminState.paySort.col;
-    th.classList.toggle("sorted", isSorted);
-    th.classList.toggle("desc", isSorted && adminState.paySort.dir==="desc");
-    if(!th.querySelector(".sort-arrow")){
-      th.innerHTML += `<span class="sort-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>`;
-    }
-    th.onclick = ()=>{
-      if(adminState.paySort.col === th.dataset.sort){
-        adminState.paySort.dir = adminState.paySort.dir === "asc" ? "desc" : "asc";
-      } else {
-        adminState.paySort = { col: th.dataset.sort, dir: "asc" };
-      }
-      adminState.payPager.page = 1;
-      renderPayments();
-    };
-  });
-
-  /* Restored: extracting the row-action wiring above had removed this
-     handler's opening line along with it. penaltyEl is already declared
-     earlier in this function, so only the button binding is re-added. */
   const saveBtn = $("#save-penalty-btn");
   if(saveBtn) saveBtn.onclick = ()=>{
     /* The rate lives in the settings table. Previously it was held only in
@@ -4433,49 +4731,148 @@ function renderPayments(){
   };
 }
 
-/* Row actions for the payment table.
-
-   Extracted because the rows are now drawn by EbPaginate.list after the render
-   function has already returned — wiring them inline would have bound handlers
-   to a tbody that was still empty. */
+/* Row actions, wired after each page is drawn — the rows are rendered by
+   EbPaginate.list after renderPayments() has returned. */
 function wirePaymentRowActions(){
-  document.querySelectorAll("#payments-tbody [data-mark-paid]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      const acct = PAYMENT_ACCOUNTS.find(a=>String(a.id) === btn.dataset.markPaid);
-      if(!acct) return;
-      openModal({
-        title:"Mark as Paid",
-        body:`<p>Mark <strong>${escHtml(acct.name)}</strong>'s balance of <strong>${peso(acct.balance)}</strong> as paid?</p>`,
-        confirmLabel:"Mark Paid", confirmClass:"btn-ok",
-        onConfirm: async ()=>{
-          try {
-            /* The settled amount, including any penalty, is computed by the
-               server from the real due date — not from what this screen
-               happens to be showing. */
-            const { data } = await EbApi.post("payments/settle.php", { id: acct.id, paid: true });
-            await loadOpsData();
-            closeModal();
-            toast(`Marked as paid — ${peso(data.settled)}${data.penalty ? ` (incl. ${peso(data.penalty)} penalty)` : ""}.`, "ok");
-            renderPayments();
-          } catch(err){ toast(err.message, "err"); }
-        }
-      });
-    });
+  document.querySelectorAll("#payments-tbody [data-review-pay]").forEach(btn=>{
+    btn.addEventListener("click", ()=> openPaymentReview(btn.dataset.reviewPay));
   });
+  document.querySelectorAll("#payments-tbody [data-record-pay]").forEach(btn=>{
+    btn.addEventListener("click", ()=> openRecordPayment(btn.dataset.recordPay));
+  });
+}
 
-  document.querySelectorAll("#payments-tbody [data-view-pay]").forEach(btn=>{
-    const acct = PAYMENT_ACCOUNTS.find(a=>String(a.id) === btn.dataset.viewPay);
-    btn.addEventListener("click", ()=> openModal({
-      title:"Payment Details",
-      body:`<p><strong>Retailer:</strong> ${escHtml(acct.name)}</p>
-            <p><strong>Email:</strong> ${escHtml(acct.email)}</p>
-            <p><strong>Scheme:</strong> ${escHtml(acct.scheme)}</p>
-            <p><strong>Balance:</strong> ${peso(acct.balance)}</p>
-            <p><strong>Due Date:</strong> ${fmtDate(acct.dueDate)}</p>
-            <p><strong>Status:</strong> ${acct.paid?"Paid":isOverdue(acct)?"Overdue":"Pending"}</p>
-            ${isOverdue(acct)&&!acct.paid?`<p style="margin-top:10px;color:var(--out-ink);font-size:.88rem">Penalty applied: ${adminState.penaltyRate}% / month.</p>`:""}`,
-      confirmLabel:null, cancelLabel:"Close"
+/* One account: its order, its figures, and every payment toward it — amount,
+   date, method, reference and screenshot — newest first. This is where three
+   separate transfers toward one balance are read side by side. A payment the
+   retailer sent can be verified, or rejected with a reason they will see. */
+async function openPaymentReview(id){
+  let data;
+  try { ({ data } = await EbApi.get("payments/get.php", { id })); }
+  catch(err){ toast(err.message, "err"); return; }
+  const a = data.account, o = data.order;
+
+  const rows = data.payments.map(p => {
+    const [cls, label] = CP_STATUS_BADGE[p.status] || ["badge-muted", p.status];
+    const shot = p.proof ? imageUrl(p.proof) : "";
+    const via = p.source === "customer" ? "sent by the retailer"
+              : p.source === "staff"    ? "recorded at the counter"
+              : "settled before payment tracking";
+    return `
+      <div class="cp-row cp-${escHtml(p.status)}">
+        <div class="cp-main">
+          <div class="cp-amount">${peso(p.amount)} <span class="badge ${cls}">${label}</span></div>
+          <div class="muted cp-meta">Paid ${fmtDate(p.paidDate)} · ${escHtml(CP_METHOD_LABEL[p.method] || "method not recorded")}${p.refNum ? ` · ref <code>${escHtml(p.refNum)}</code>` : ""} · ${via}</div>
+          ${p.note ? `<div class="muted cp-meta">${escHtml(p.note)}</div>` : ""}
+          ${p.decidedBy ? `<div class="muted cp-meta">${p.status === "rejected" ? "Rejected" : "Verified"} by ${escHtml(p.decidedBy)}, ${fmtDateTime(p.decidedAt)}</div>` : ""}
+          ${p.status === "rejected" && p.rejectReason ? `<div class="cp-reason">Reason: ${escHtml(p.rejectReason)}</div>` : ""}
+          ${p.status === "pending" ? `
+            <div class="cp-actions">
+              <button class="btn btn-ok btn-sm" data-cp-verify="${p.id}">Verify</button>
+              <button class="btn btn-ghost-danger btn-sm" data-cp-reject="${p.id}">Reject…</button>
+            </div>
+            <div class="cp-reject hide" data-cp-reject-box="${p.id}">
+              <textarea class="control" rows="2" maxlength="500" placeholder="Why is this payment rejected? The retailer sees this." data-cp-reason="${p.id}"></textarea>
+              <button class="btn btn-ghost-danger btn-sm" data-cp-reject-go="${p.id}">Reject payment</button>
+            </div>` : ""}
+        </div>
+        ${shot ? `<a class="cp-shot" href="${escHtml(shot)}" target="_blank" rel="noopener noreferrer" title="Open full size"><img src="${escHtml(shot)}" alt="Payment screenshot" loading="lazy"></a>` : ""}
+      </div>`;
+  }).join("") || `<p class="muted">No payments yet.</p>`;
+
+  openModal({
+    title: `${a.name} — ${a.scheme}`,
+    large: true,
+    body: `
+      <div class="cp-summary">
+        <div><span class="muted">Order</span><strong>${o ? escHtml(o.id) : "—"}</strong>${o ? `<small class="muted">${fmtDate(o.date)} · ${escHtml(o.status)}</small>` : ""}</div>
+        <div><span class="muted">Billed</span><strong>${peso(a.billed)}</strong></div>
+        <div><span class="muted">Paid</span><strong>${peso(a.paidAmount)}</strong></div>
+        ${a.penalty ? `<div><span class="muted">Penalty</span><strong style="color:var(--out-ink)">${peso(a.penalty)}</strong></div>` : ""}
+        <div><span class="muted">Left</span><strong>${peso(a.remaining)}</strong></div>
+        <div><span class="muted">Due</span><strong>${fmtDate(a.dueDate)}</strong>${a.overdue ? `<small style="color:var(--out-ink)">${a.daysPastDue} days late</small>` : ""}</div>
+      </div>
+      <div class="cp-list">${rows}</div>`,
+    confirmLabel: null,
+    cancelLabel: "Close",
+    onOpen: () => wirePaymentReview(id),
+  });
+}
+
+function wirePaymentReview(accountId){
+  const list = document.querySelector(".cp-list");
+  if(!list) return;
+  const decide = async (pid, decision, reason) => {
+    try {
+      const { data } = await EbApi.post("payments/decide.php", { payment_id: +pid, decision, reason });
+      toast(decision === "verify"
+        ? `Payment verified — ${data.account.settled ? "account settled" : peso(data.account.remaining) + " left"}.`
+        : "Payment rejected. The retailer will see your reason.", "ok");
+      closeModal();
+      renderPayments();
+      loadOpsData();
+      /* Reopened, so the next payment on the same account can be checked
+         without hunting for the row again. */
+      openPaymentReview(accountId);
+    } catch(err){ toast(err.message, "err"); }
+  };
+  list.querySelectorAll("[data-cp-verify]").forEach(b =>
+    b.addEventListener("click", () => decide(b.dataset.cpVerify, "verify")));
+  list.querySelectorAll("[data-cp-reject]").forEach(b =>
+    b.addEventListener("click", () => {
+      list.querySelector(`[data-cp-reject-box="${b.dataset.cpReject}"]`)?.classList.toggle("hide");
     }));
+  list.querySelectorAll("[data-cp-reject-go]").forEach(b =>
+    b.addEventListener("click", () => {
+      const pid = b.dataset.cpRejectGo;
+      const reason = list.querySelector(`[data-cp-reason="${pid}"]`).value.trim();
+      if(!reason){ toast("Say why the payment is rejected — the retailer sees this.", "warn"); return; }
+      decide(pid, "reject", reason);
+    }));
+}
+
+/* Money received at the counter (or a transfer staff watched arrive), recorded
+   as exactly what came in. Verified at once by the person recording it. */
+function openRecordPayment(id){
+  const a = PAYMENT_ACCOUNTS.find(x => String(x.id) === String(id));
+  if(!a) return;
+  const today = (typeof SERVER_DATES !== "undefined" && SERVER_DATES?.today) || ymd(new Date());
+  openModal({
+    title: `Record payment — ${a.name}`,
+    body: `
+      <p style="font-size:.88rem;margin-bottom:12px">${escHtml(a.scheme)} · billed ${peso(a.billed)} · paid ${peso(a.paidAmount)} · <strong>${peso(a.payable)} can be recorded</strong>${a.pendingAmount ? ` (${peso(a.pendingAmount)} sent by the retailer is waiting for review)` : ""}.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="field"><label>Amount received</label><input class="control" type="number" step="0.01" min="0.01" max="${a.payable}" id="m-rp-amount" value="${a.payable.toFixed(2)}"><span class="field-error" id="m-rp-amount-err"></span></div>
+        <div class="field"><label>Method</label><select class="control" id="m-rp-method"><option value="cash">Cash</option><option value="gcash">GCash</option><option value="bank">Bank Transfer</option></select></div>
+        <div class="field"><label>Reference number</label><input class="control" id="m-rp-ref" maxlength="100" placeholder="Required for GCash / bank"><span class="field-error" id="m-rp-ref-err"></span></div>
+        <div class="field"><label>Date received</label><input class="control" type="date" id="m-rp-date" value="${today}" max="${today}"></div>
+      </div>
+      <div class="field"><label>Note (optional)</label><input class="control" id="m-rp-note" maxlength="500"></div>`,
+    confirmLabel: "Record payment",
+    confirmClass: "btn-ok",
+    onConfirm: async ()=>{
+      $("#m-rp-amount-err").textContent = "";
+      $("#m-rp-ref-err").textContent = "";
+      try {
+        const { data } = await EbApi.post("payments/record.php", {
+          account_id: a.id,
+          amount:     parseFloat($("#m-rp-amount").value),
+          method:     $("#m-rp-method").value,
+          ref_num:    $("#m-rp-ref").value.trim() || null,
+          paid_date:  $("#m-rp-date").value || null,
+          note:       $("#m-rp-note").value.trim() || null,
+        });
+        closeModal();
+        toast(`Recorded ${peso(data.payment.amount)} — ${data.account.settled ? "account settled" : peso(data.account.remaining) + " left"}.`, "ok");
+        await loadOpsData();
+        renderPayments();
+      } catch(err){
+        const f = err.fields || {};
+        if(f.amount)  $("#m-rp-amount-err").textContent = f.amount;
+        if(f.ref_num) $("#m-rp-ref-err").textContent = f.ref_num;
+        if(!f.amount && !f.ref_num) toast(err.message, "err");
+      }
+    }
   });
 }
 
@@ -4627,10 +5024,15 @@ function roleCard(role, index, isSuperAdmin){
 
   const modules = Object.entries(areas).map(([area, perms])=>{
     const rows = perms.map(p=>{
-      const checked = isSuperAdmin || granted.includes(p.key);
-      const locked  = isSuperAdmin;
-      return `<label class="role-toggle-row ${locked?"locked":""}">
-        <span>${escHtml(p.label)}</span>
+      /* A Super-Admin-only permission is shown to every role — so it is plain
+         that it exists and who holds it — but locked off. The server refuses it
+         anyway (Rbac::SYSTEM_ONLY); a switch that looks usable and then fails
+         on save would only teach people to distrust the screen. */
+      const reserved = !isSuperAdmin && !!p.systemOnly;
+      const checked = isSuperAdmin || (!reserved && granted.includes(p.key));
+      const locked  = isSuperAdmin || reserved;
+      return `<label class="role-toggle-row ${locked?"locked":""}"${reserved?` title="Super Admin only — this cannot be granted to another role."`:""}>
+        <span>${escHtml(p.label)}${p.systemOnly?` <span class="badge badge-muted" style="font-size:.6rem">Super Admin only</span>`:""}</span>
         <span class="switch">
           <input type="checkbox" data-role="${escHtml(role)}" data-perm-key="${p.key}" ${checked?"checked":""} ${locked?"disabled":""}/>
           <span class="switch-track"><span class="switch-thumb"></span></span>

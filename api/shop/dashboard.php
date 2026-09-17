@@ -27,7 +27,7 @@ declare(strict_types=1);
  *
  * THE NUMBERS COME FROM THE SAME PLACE THE OTHER SCREENS' DO
  * ----------------------------------------------------------
- * Credit standing is Payments::accountStanding(), the same call
+ * Credit standing is Payments::describeAccount(), the same call
  * shop/my-payments.php and portal payments/list.php make. A retailer shown a
  * total outstanding here that differs by a peso from their Payment Schemes page
  * will not assume a rounding rule; they will assume one of the two is lying.
@@ -94,11 +94,11 @@ $counts = [
    taken from Revenue::clause() rather than written out here, because a second
    opinion about what counts as revenue is how the customer's total and the
    portal's report come to disagree. */
-[$spendClause, $spendParams] = Revenue::clause('o');
+[$spendSql, $spendParams] = Revenue::spendSql('?');
 $counts['lifetimeSpend'] = (float) Database::scalar(
-    "SELECT COALESCE(SUM(o.total), 0) FROM orders o
-      WHERE o.customer_id = ? AND $spendClause",
-    array_merge([$customerId], $spendParams)
+    "SELECT $spendSql",
+    /* The id is bound twice: once for orders, once for Net payments. */
+    array_merge([$customerId], $spendParams, [$customerId])
 );
 
 /* ------------------------------------------------------------------
@@ -218,11 +218,7 @@ $payments = [];
 if ($isRetailer) {
     $rate = Payments::penaltyRate();
     $rows = Database::all(
-        'SELECT id, order_id, scheme, balance, due_date, paid,
-                DATEDIFF(CURDATE(), due_date) AS days_past_due
-           FROM payment_accounts
-          WHERE customer_id = ?
-          ORDER BY paid ASC, due_date ASC',
+        Payments::accountSelect() . ' WHERE pa.customer_id = ? ORDER BY pa.paid ASC, pa.due_date ASC',
         [$customerId]
     );
 
@@ -231,10 +227,10 @@ if ($isRetailer) {
     $nextDue = null;
 
     foreach ($rows as $r) {
-        $paid     = (bool) $r['paid'];
-        $standing = Payments::accountStanding(
-            (float) $r['balance'], (int) $r['days_past_due'], $paid, $rate
-        );
+        /* Part payments count, and the penalty is charged only on what was
+           unpaid on the due date — Payments::describeAccount(). */
+        $standing = Payments::describeAccount($r, $rate);
+        $paid     = $standing['settled'];
 
         if (!$paid) {
             $outstanding += $standing['totalDue'];

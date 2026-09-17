@@ -163,12 +163,11 @@ if ($isUpdate) {
 
 /* Lifetime spend uses the one revenue definition (D2), bound rather than
    inlined — the statuses live in Revenue::STATUSES, not in this string. */
-[$spendClause, $spendParams] = Revenue::clause('o');
+[$spendSql, $spendParams] = Revenue::spendSql('c.id');
 $row = Database::one(
     "SELECT c.id, c.name, c.email, c.contact, c.status, c.joined,
             (SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.id) AS orders,
-            (SELECT COALESCE(SUM(o.total),0) FROM orders o
-              WHERE o.customer_id = c.id AND $spendClause) AS spend
+            $spendSql AS spend
        FROM customers c WHERE c.id = ?",
     array_merge($spendParams, [$id])
 );

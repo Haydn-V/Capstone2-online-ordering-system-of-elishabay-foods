@@ -162,6 +162,17 @@ if (!preg_match('/^[0-9 +\-()]{7,20}$/', $data['contact'])) {
 if ($data['order_type'] === 'delivery' && $address === null) {
     $fieldErrors['address'] = 'A delivery address is required.';
 }
+/* CASH IS COLLECTED AT THE COUNTER, so it is a pickup method only.
+   On a delivery it would mean handing goods to a courier against money nobody
+   has taken — the shop carries the loss on a refusal at the door, and there is
+   no counter at which to settle it.
+
+   The storefront already hides the tile for a delivery; this is the control.
+   A client can send whatever it likes, and this endpoint is reachable without
+   one. */
+if ($data['pay_method'] === 'cash' && $data['order_type'] === 'delivery') {
+    $fieldErrors['pay_method'] = 'Cash is available on pickup only. Choose GCash or bank transfer for a delivery.';
+}
 /* Only the transfer methods carry a reference. A credit order has nothing to
    reference yet — nothing has been paid — and Payments::orderFields() already
    returns null for both proof columns and 0 for proof_amount when the method is
@@ -171,6 +182,11 @@ if ($data['order_type'] === 'delivery' && $address === null) {
    could not silently start demanding a screenshot for it. */
 if (in_array($data['pay_method'], ['gcash', 'bank'], true) && $refNum === null) {
     $fieldErrors['ref_num'] = 'Enter the reference number of your payment.';
+}
+/* Senior citizen and PWD discounts are given at the counter, where the ID can
+   be seen. A discount claimed from a browser is a discount anyone can claim. */
+if (!empty($in['sc_pwd'])) {
+    $fieldErrors['sc_pwd'] = 'Senior citizen and PWD discounts are applied at the counter, where your ID can be checked.';
 }
 if ($fieldErrors !== []) {
     Response::validation('Please check the highlighted fields.', $fieldErrors);
@@ -184,7 +200,7 @@ try {
     $ids = array_keys($wanted);
     $ph  = implode(',', array_fill(0, count($ids), '?'));
     $products = Database::all(
-        "SELECT id, name, price, stock, archived FROM products WHERE id IN ($ph)",
+        "SELECT id, name, price, tax_type, stock, archived FROM products WHERE id IN ($ph)",
         $ids
     );
     $byId = [];
@@ -208,9 +224,20 @@ try {
         $unit = (float) $p['price'];
         $lineTotal = round($unit * $qty, 2);
         $total += $lineTotal;
-        $lines[] = ['id' => $id, 'name' => $p['name'], 'qty' => $qty, 'price' => $unit, 'lineTotal' => $lineTotal];
+        $lines[] = ['id' => $id, 'name' => $p['name'], 'qty' => $qty, 'price' => $unit,
+                    'lineTotal' => $lineTotal, 'taxType' => $p['tax_type']];
     }
-    $total = round($total, 2);
+
+    /* The VAT breakdown, stored with the order (api/core/Tax.php). No senior or
+       PWD discount online; a retailer registered as a withholding agent keeps
+       its tax, which lowers what it transfers — `amountDue` — not the sale. */
+    $tax = Tax::compute(
+        array_map(static fn(array $l): array => ['gross' => $l['lineTotal'], 'tax_type' => $l['taxType']], $lines),
+        null,
+        Tax::withholdingRateFor((string) $buyer['id'])
+    );
+    $total = $tax['total'];
+    $due   = $tax['amountDue'];
 
     /* Who this order belongs to.
 
@@ -243,7 +270,7 @@ try {
 
        The amount and the date are named. "You have an overdue balance" sends
        the retailer to a screen to find out which; naming it lets them act.
-       Penalty included via accountStanding(), because the figure that quietly
+       Penalty included via Payments::describeAccount(), because the figure that quietly
        excludes it is the one that causes the argument.
 
        Inside the transaction, so the check and the INSERT that follows read the
@@ -251,23 +278,25 @@ try {
        the request, and an open transaction at that point would be abandoned
        rather than closed. Same shape as the stock conflicts above. */
     if (Payments::isCredit($data['pay_method'])) {
-        $overdue = Database::all(
-            'SELECT balance, due_date, DATEDIFF(CURDATE(), due_date) AS days_past_due
-               FROM payment_accounts
-              WHERE customer_id = ? AND paid = 0 AND due_date < CURDATE()
-              ORDER BY due_date ASC',
-            [$customerId]
-        );
+        /* Measured with Payments::describeAccount(), so a retailer who has paid
+           part of a late balance is held to what is actually left — the same
+           figure their Payment Schemes page shows them. */
+        $rate    = Payments::penaltyRate();
+        $overdue = array_values(array_filter(
+            array_map(
+                static fn(array $r): array => Payments::describeAccount($r, $rate),
+                Database::all(
+                    Payments::accountSelect()
+                    . ' WHERE pa.customer_id = ? AND pa.paid = 0 AND pa.due_date < CURDATE()
+                        ORDER BY pa.due_date ASC',
+                    [$customerId]
+                )
+            ),
+            static fn(array $a): bool => $a['overdue']
+        ));
         if ($overdue !== []) {
-            $rate  = Payments::penaltyRate();
-            $owed  = 0.0;
-            foreach ($overdue as $o) {
-                $standing = Payments::accountStanding(
-                    (float) $o['balance'], (int) $o['days_past_due'], false, $rate
-                );
-                $owed += $standing['totalDue'];
-            }
-            $oldest = $overdue[0]['due_date'];
+            $owed   = array_sum(array_column($overdue, 'remaining'));
+            $oldest = $overdue[0]['dueDate'];
             $pdo->rollBack();
             Response::conflict(sprintf(
                 'You have %s overdue on your account (due %s). Settle it to use credit terms again — '
@@ -287,27 +316,33 @@ try {
 
        This line and its counterpart in pos/checkout.php were the same
        copy-pasted expression, `$refNum !== null ? 1 : 0`, in two files. */
-    $pay = Payments::orderFields($data['pay_method'], $refNum, $proofPath, $total, false);
+    /* The amount DUE: what a withholding retailer actually transfers, and so
+       what Payment Verification should find on the screenshot. */
+    $pay = Payments::orderFields($data['pay_method'], $refNum, $proofPath, $due, false);
 
     Database::run(
         'INSERT INTO orders (id, customer_id, customer_name, email, contact, address,
                              type, order_type, customer_type, method, total, date, datetime,
                              status, notes, pay_verified, proof_uploaded, proof_ref_num,
-                             proof_image_path, proof_amount, cashier, batch_code_hint)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), NOW(), ?, ?, ?, ?, ?, ?, ?, NULL, NULL)',
-        [
+                             proof_image_path, proof_amount, cashier, batch_code_hint,
+                             gross_total, vat_rate, less_vat, net_of_vat, sc_pwd_discount, vatable_sales,
+                             vat_amount, vat_exempt_sales, sc_pwd_type, sc_pwd_id, sc_pwd_name,
+                             withholding_rate, withholding_tax)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), NOW(), ?, ?, ?, ?, ?, ?, ?, NULL, NULL,
+                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        array_merge([
             $orderId, $customerId, $data['name'], $email ?: null, $data['contact'], $address,
             'online', $data['order_type'], 'regular', $data['pay_method'], $total,
             'pending', $notes,
             $pay['pay_verified'], $pay['proof_uploaded'], $pay['proof_ref_num'],
             $pay['proof_image_path'], $pay['proof_amount'],
-        ]
+        ], array_values(Tax::orderColumns($tax)))
     );
 
     foreach ($lines as $l) {
         Database::run(
-            'INSERT INTO order_items (order_id, product_id, qty, price_at_purchase) VALUES (?, ?, ?, ?)',
-            [$orderId, $l['id'], $l['qty'], $l['price']]
+            'INSERT INTO order_items (order_id, product_id, qty, price_at_purchase, tax_type) VALUES (?, ?, ?, ?, ?)',
+            [$orderId, $l['id'], $l['qty'], $l['price'], $l['taxType']]
         );
     }
 
@@ -324,6 +359,8 @@ try {
     $credit = null;
     if (Payments::isCredit($data['pay_method'])) {
         $credit = Payments::openCreditAccount($orderId, $buyer, $data['pay_method'], $total);
+        Payments::recordWithholding($credit['id'], (string) $buyer['id'], $tax['withholdingTax'],
+            (float) $tax['withholdingRate'], null);
     }
 
     /* Notify the staff. The Order Queue reads the orders table directly, but a
@@ -390,6 +427,9 @@ try {
 
 Response::created([
     'id'        => $orderId,
+    'type'      => 'online',
+    /* A retailer's own TIN for the Sales Invoice; null for a regular shopper. */
+    'tin'       => Orders::buyerTin((string) $buyer['id']),
     'status'    => 'pending',
     'name'      => $data['name'],
     'contact'   => $data['contact'],
@@ -400,6 +440,8 @@ Response::created([
     'refNum'    => $refNum,
     'items'     => $lines,
     'total'     => $total,
+    'tax'       => $tax,
+    'amountDue' => $due,
     'placedAt'  => date('Y-m-d H:i'),
     /* Null for an immediate sale. For a credit sale: the account id, the scheme
        as payment_accounts stores it, the balance and the due date the DATABASE

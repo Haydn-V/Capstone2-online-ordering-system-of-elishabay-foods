@@ -4,7 +4,8 @@ declare(strict_types=1);
 /**
  * POST /api/content/save.php
  * Body: { "about"?, "vision"?, "mission"?, "contact"?: {...}, "faqs"?: [{q,a}],
- *         "hero"?: [{title, image}], "featured"?: ["prod-id", …] }
+ *         "hero"?: [{title, image}], "featured"?: ["prod-id", …],
+ *         "payment"?: { "gcash"?: {name, number, qr}, "bank"?: {bank, name, number, qr} } }
  *
  * Requires landing.manage.
  *
@@ -213,6 +214,53 @@ try {
             );
         }
         $changed[] = 'featured (' . ($order - 1) . ')';
+    }
+
+    /* ---- official payment accounts (GCash, bank transfer) -------------------
+       Where customers SEND money: the account name, number and QR code shown at
+       checkout and on a retailer's Pay form. Stored as flat site_content keys
+       (pay_gcash_name, pay_bank_qr, …) like the contact details beside them, so
+       no table is needed for six short values.
+
+       A QR path is validated to the exact shape api/uploads/image.php produces
+       and must exist on disk: it ends up in an <img src> on the public
+       storefront. An empty string removes it. */
+    if (isset($in['payment']) && is_array($in['payment'])) {
+        $PAY_FIELDS = [
+            'gcash' => ['name' => 100, 'number' => 40, 'qr' => 0],
+            'bank'  => ['bank' => 80, 'name' => 100, 'number' => 40, 'qr' => 0],
+        ];
+        foreach ($PAY_FIELDS as $acct => $fields) {
+            if (!isset($in['payment'][$acct]) || !is_array($in['payment'][$acct])) {
+                continue;
+            }
+            foreach ($fields as $f => $max) {
+                if (!array_key_exists($f, $in['payment'][$acct])) {
+                    continue;
+                }
+                $val = trim((string) $in['payment'][$acct][$f]);
+                if ($f === 'qr') {
+                    if ($val !== '' && (!preg_match('#^/uploads/content/[a-f0-9]{32}\.webp$#', $val)
+                                        || !is_file(dirname(__DIR__, 2) . $val))) {
+                        $pdo->rollBack();
+                        Response::validation('Check the payment QR codes.', [
+                            'payment' => 'That QR image is not on the server. Upload it again.',
+                        ]);
+                    }
+                } elseif (mb_strlen($val) > $max) {
+                    $pdo->rollBack();
+                    Response::validation('Check the payment accounts.', [
+                        'payment' => "Keep the {$acct} {$f} under {$max} characters.",
+                    ]);
+                }
+                Database::run(
+                    'INSERT INTO site_content (key_name, value_text) VALUES (?, ?)
+                     ON DUPLICATE KEY UPDATE value_text = VALUES(value_text)',
+                    ["pay_{$acct}_{$f}", $val]
+                );
+                $changed[] = "payment.{$acct}.{$f}";
+            }
+        }
     }
 
     if ($changed === []) {

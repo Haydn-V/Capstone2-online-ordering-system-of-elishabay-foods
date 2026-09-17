@@ -39,7 +39,9 @@ $total = (int) Database::scalar(
 );
 
 $rows = Database::all(
-    "SELECT o.id, o.datetime, o.date, o.status, o.total, o.order_type,
+    "SELECT o.id, o.datetime, o.date, o.status, o.total, o.order_type, o.customer_name, o.type,
+            " . Orders::buyerTinSql('o.customer_id') . " AS buyer_tin,
+            " . Tax::selectColumns('o') . ",
             o.method, o.address, o.notes, o.pay_verified,
             o.tracking_number, o.delivered_at
        FROM orders o
@@ -113,10 +115,18 @@ if ($rows !== []) {
 
 Response::ok(array_map(static fn(array $o): array => [
     'id'          => $o['id'],
+    /* The name recorded ON the order — the Sales Invoice's "Registered Name".
+       Not the profile's current name: an invoice states who bought, then. */
+    'customerName'=> $o['customer_name'],
+    'type'        => $o['type'],
+    'tin'         => $o['buyer_tin'],
     'date'        => $o['date'],
     'datetime'    => $o['datetime'],
     'status'      => $o['status'],
     'total'       => (float) $o['total'],
+    /* The VAT breakdown stored at the sale (api/core/Tax.php) — what the Sales
+       Invoice prints, never recalculated. `amountDue` nets off withholding. */
+    'tax'         => Tax::describeOrder($o),
     'orderType'   => $o['order_type'],
     'payMethod'   => $o['method'],
     'address'     => $o['address'],

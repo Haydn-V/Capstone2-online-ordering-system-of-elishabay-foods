@@ -2,75 +2,85 @@
 declare(strict_types=1);
 
 /**
- * What counts as revenue — one definition, used everywhere.
+ * Revenue — the one definition of money the business has received.
  *
- * WHY THIS FILE EXISTS
- * --------------------
- * The system had three different answers to "what is revenue?", all of them
- * `status <> 'cancelled'` written out by hand in a different file:
+ * D2 made "completed orders only" the rule, so pending and on-hold orders
+ * stopped counting as earnings. That was right for a sale paid at the time and
+ * wrong for one sold on Net 30/60/90 terms: a completed Net 60 order counted its
+ * whole total on the day it was placed, whether or not a peso had arrived, and
+ * the Sales Report could not be matched against a retailer's own receipts.
  *
- *   reports/sales.php      the Sales Report headline figures
- *   orders/list.php        the filtered-revenue meta on every order list
- *   customers/list.php     lifetime spend per customer
- *   customers/save.php     the same, recomputed after an edit
+ * Since 2026-09-11 revenue has two parts:
  *
- * Four copies of a business rule is four chances to change three of them. It
- * had already gone wrong once: the Sales Report filtered by date and not by
- * status at all, so every period containing a cancellation was overstated.
+ *   1. ORDERS PAID AT THE TIME — completed, and not on credit terms. Counted on
+ *      the order's date, for its total. Unchanged.
+ *   2. PAYMENTS TOWARD NET ACCOUNTS — each VERIFIED row in credit_payments,
+ *      counted on its own paid_date, for its own amount. A ₱13,330 Net 60 order
+ *      paid in three transfers is three amounts on three dates.
  *
- * WHAT CHANGED, AND WHY THE NUMBER MOVES
- * --------------------------------------
- * `status <> 'cancelled'` counts a great deal that is not revenue. An order
- * sitting at `pending` has not been paid. One at `on-hold` has a payment
- * problem — that is usually exactly why it is on hold. `accepted` and
- * `shipping` mean goods have not reached the customer. Booking all of those as
- * earnings is the accounting equivalent of counting a quotation as a sale.
+ * A credit ORDER never counts as revenue; its payments do.
  *
- * Revenue is now the terminal, paid, fulfilled state and nothing else:
- * `completed`. Note that `delivered` is NOT terminal — the transition map in
- * orders/status.php moves `delivered` on to `completed`, so counting it would
- * book the same order twice across a period boundary.
+ * LEGACY payments (settled before payment tracking existed — migration 013)
+ * are excluded from DATED revenue: when that money arrived was never recorded,
+ * and inventing a date would put it into a month it may not belong to. They do
+ * count toward a customer's lifetime spend, which has no date.
  *
- * This makes reported revenue LOWER than it was, by design. The previous figure
- * included money nobody had received.
- *
- * RETURNS
- * -------
- * Returns are never netted silently into the revenue figure. A report shows the
- * gross figure and the refunds as a separate subtracted line, because "we sold
- * ₱60,000 and refunded ₱4,000" and "we made ₱56,000" describe very different
- * businesses and only the first is actionable.
+ * Every reader of revenue — reports/sales.php, the dashboard, customer spend and
+ * the orders list — uses this class. The JavaScript mirror is isRevenue() plus
+ * receivedBetween() in assets/js/portal/engine.js.
  */
 final class Revenue
 {
-    /**
-     * Order statuses that count as earned revenue.
-     *
-     * If you add a status to the orders enum, decide explicitly whether it
-     * belongs here. The default answer is no.
-     */
+    /** Order statuses that count, for an order paid at the time. */
     public const STATUSES = ['completed'];
 
-    /**
-     * Return statuses whose refund has actually been paid out. A return that is
-     * merely `received` or `approved` has cost nothing yet.
-     */
+    /** Return statuses that count as money paid back out. */
     public const REFUNDED_STATUSES = ['processed'];
 
+    /** Methods whose ORDERS are not revenue — their payments are. */
+    public static function creditMethods(): array
+    {
+        return array_keys(Payments::CREDIT);
+    }
+
     /**
-     * SQL fragment for the revenue filter, e.g. "o.status IN (?)".
-     * Returns the clause; push the values onto your params in the same order.
-     *
-     * @param string $alias table alias used in the query
-     * @return array{0:string,1:array<int,string>} [clause, params]
+     * Orders that are revenue in themselves: completed, and not on credit
+     * terms. Returns [sql, params] against `$alias`.
      */
     public static function clause(string $alias = 'o'): array
     {
-        $ph = implode(',', array_fill(0, count(self::STATUSES), '?'));
-        return ["{$alias}.status IN ($ph)", self::STATUSES];
+        $st = implode(',', array_fill(0, count(self::STATUSES), '?'));
+        $cm = implode(',', array_fill(0, count(self::creditMethods()), '?'));
+        return [
+            "{$alias}.status IN ($st) AND {$alias}.method NOT IN ($cm)",
+            array_merge(self::STATUSES, self::creditMethods()),
+        ];
     }
 
-    /** Same, for refunds against product_returns. */
+    /** Net-account payments that are dated revenue: verified, and not legacy. */
+    public static function creditClause(string $alias = 'cp'): array
+    {
+        return ["{$alias}.status = 'verified' AND {$alias}.source <> 'legacy'", []];
+    }
+
+    /**
+     * A customer's lifetime spend: orders paid at the time, plus every verified
+     * payment toward their Net accounts (legacy included — that money arrived).
+     * `$customerExpr` is the SQL naming the customer id: a column such as
+     * `c.id`, or `?` — in which case bind the id before AND after the params.
+     */
+    public static function spendSql(string $customerExpr): array
+    {
+        [$c, $p] = self::clause('o');
+        return [
+            "((SELECT COALESCE(SUM(o.total), 0) FROM orders o
+                WHERE o.customer_id = {$customerExpr} AND $c)
+              + (SELECT COALESCE(SUM(cp.amount), 0) FROM credit_payments cp
+                  WHERE cp.customer_id = {$customerExpr} AND cp.status = 'verified'))",
+            $p,
+        ];
+    }
+
     public static function refundClause(string $alias = 'r'): array
     {
         $ph = implode(',', array_fill(0, count(self::REFUNDED_STATUSES), '?'));

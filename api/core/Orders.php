@@ -42,17 +42,64 @@ final class Orders
     private const THROTTLE_KEY = 'autocomplete_last_run';
 
     /**
-     * Complete every online order delivered more than an hour ago.
+     * The BIR TIN a Sales Invoice prints for this buyer, as a SQL expression.
+     *
+     * A retailer's TIN, and nobody else's. It is the one the retailer typed
+     * on their partner application (b2b_applications.bir_tin) — the customer
+     * row has no TIN of its own, so the approved application is the record.
+     * A regular customer's invoice leaves the TIN line blank, as the paper
+     * form would be.
+     *
+     * An ARCHIVED retailer still gets it: an invoice reprinted after the
+     * account was closed describes a sale made while they were a retailer.
+     *
+     * Matched by customer_id or by email because decide.php links the two
+     * either way — an application made before the shopper had an account is
+     * joined to it by address. The newest approved application wins.
+     *
+     * `$customerCol` is interpolated: pass a column name (`o.customer_id`) or a
+     * `?` placeholder, never a value.
+     */
+    public static function buyerTinSql(string $customerCol): string
+    {
+        return "(SELECT a.bir_tin
+                   FROM customers bc
+                   JOIN b2b_applications a
+                     ON a.status = 'approved'
+                    AND (a.customer_id = bc.id OR a.email = bc.email)
+                  WHERE bc.id = {$customerCol}
+                    AND (bc.status = 'retailer'
+                         OR (bc.status = 'archived' AND bc.status_before_archive = 'retailer'))
+                    AND a.bir_tin IS NOT NULL AND a.bir_tin <> ''
+                  ORDER BY a.id DESC
+                  LIMIT 1)";
+    }
+
+    /** buyerTinSql() for one customer id. Null for anyone but a retailer. */
+    public static function buyerTin(?string $customerId): ?string
+    {
+        if ($customerId === null || $customerId === '') {
+            return null;
+        }
+        $tin = Database::scalar('SELECT ' . self::buyerTinSql('?'), [$customerId]);
+        return ($tin === false || $tin === null || $tin === '') ? null : (string) $tin;
+    }
+
+    /**
+     * Complete every delivered order that has waited more than an hour.
      *
      * Returns the number moved. Safe to call on every request — see
      * sweepIfDue(), which is what the list endpoints actually call.
      *
-     * WALK-IN ORDERS ARE EXCLUDED. A walk-in is completed at the till by
-     * pos/checkout.php the moment it is paid; one sitting at `delivered` is a
-     * delivery a cashier rang up, and the same customer-confirmation rule
-     * applies — but `type = 'online'` is what the Scope describes, and widening
-     * a rule beyond what was asked for is how a sweep starts closing orders
-     * somebody was still working on.
+     * ONLINE ORDERS AND WALK-IN DELIVERIES. A walk-in PICKUP is completed at
+     * the till by pos/checkout.php and never reaches `delivered`, so it cannot
+     * match. A walk-in DELIVERY is a parcel like any online one — rung up at
+     * the counter, then shipped with a courier number through Order Status —
+     * and it was left out of this sweep only because walk-in deliveries had no
+     * screen to be moved on. They do now (orders/list.php `with_deliveries`),
+     * so the same one-hour customer-confirmation rule applies to them. Walk-in
+     * buyers usually have no account to press Mark Received with, which makes
+     * the sweep the normal way theirs complete, not the exception.
      */
     public static function autoCompleteDelivered(): int
     {
@@ -64,7 +111,7 @@ final class Orders
             "SELECT id, customer_name, delivered_at
                FROM orders
               WHERE status = 'delivered'
-                AND type = 'online'
+                AND (type = 'online' OR order_type = 'delivery')
                 AND delivered_at IS NOT NULL
                 AND delivered_at <= NOW() - INTERVAL " . self::AUTO_COMPLETE_AFTER
         );

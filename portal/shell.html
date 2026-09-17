@@ -895,6 +895,29 @@
             </svg>
             Product Reviews
           </button>
+          <!-- VAT MAINTENANCE. vat.manage belongs to Super Admin alone and the
+               Roles & Permissions screen cannot grant it (Rbac::SYSTEM_ONLY), so
+               for every other role this item simply never appears. Hiding it is
+               presentation; api/vat/* checks the permission and the system role. -->
+          <button
+            class="nav-item"
+            data-mod="vat"
+            data-perm="vat.manage"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="19" y1="5" x2="5" y2="19" />
+              <circle cx="6.5" cy="6.5" r="2.5" />
+              <circle cx="17.5" cy="17.5" r="2.5" />
+            </svg>
+            VAT Maintenance
+          </button>
 
           <div class="nav-group">
             <span class="nav-group-label"

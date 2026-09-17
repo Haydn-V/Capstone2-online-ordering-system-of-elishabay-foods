@@ -74,6 +74,10 @@ $lines = array_map(static fn(array $r): array => [
    a mismatch is visible instead of hidden. */
 $computed = round(array_sum(array_column($lines, 'lineTotal')), 2);
 
+/* The Net account this order opened, if it is on terms. */
+$creditRow = Database::one(Payments::accountSelect() . ' WHERE pa.order_id = ?', [$o['id']]);
+$credit    = $creditRow ? Payments::creditSummary(Payments::describeAccount($creditRow)) : null;
+
 Response::ok([
     'id'           => $o['id'],
     'customerId'   => $o['customer_id'],
@@ -86,6 +90,9 @@ Response::ok([
     'customerType' => $o['customer_type'],
     'payMethod'    => $o['method'],
     'total'        => (float) $o['total'],
+    /* The VAT breakdown stored at the sale (api/core/Tax.php) — what the Sales
+       Invoice prints, never recalculated. `amountDue` nets off withholding. */
+    'tax'          => Tax::describeOrder($o),
     'computedTotal'=> $computed,
     'totalsAgree'  => abs($computed - (float) $o['total']) < 0.01,
     'date'         => $o['date'],
@@ -104,6 +111,7 @@ Response::ok([
     'deliveredAt'  => $o['delivered_at'],
     'batch'        => $o['batch_code_hint'],
     'items'        => $lines,
+    'credit'       => $credit,
     'history'      => array_map(static fn(array $h): array => [
         'from'      => $h['from_status'],
         'to'        => $h['to_status'],

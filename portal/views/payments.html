@@ -56,6 +56,13 @@
     <button class="btn btn-gold btn-sm" id="save-penalty-btn">
       Save Rate
     </button>
+    <select class="filter-select" id="pay-filter" aria-label="Show accounts" style="margin-left: auto">
+      <option value="all">All accounts</option>
+      <option value="review">Waiting for review</option>
+      <option value="open">Not yet paid</option>
+      <option value="overdue">Overdue</option>
+      <option value="paid">Paid</option>
+    </select>
     <select
       class="filter-select"
       id="pay-page-size"
@@ -67,16 +74,20 @@
       <option value="50">50 per page</option>
     </select>
   </div>
+  <!-- Filled by renderPayments(): outstanding, overdue, and how many payments
+       retailers have sent that are waiting for someone to check them. -->
+  <div class="pay-summary-line" id="pay-summary"></div>
   <div class="table-wrap">
-    <table class="data-table sortable-table" id="payments-table">
+    <table class="data-table" id="payments-table">
       <thead>
         <tr>
-          <th data-sort="name">Retailer</th>
-          <th data-sort="email">Email</th>
-          <th data-sort="scheme">Scheme</th>
-          <th data-sort="balance">Outstanding</th>
-          <th data-sort="dueDate">Due Date</th>
-          <th data-sort="statusRank">Status</th>
+          <th>Retailer</th>
+          <th>Scheme</th>
+          <th>Billed</th>
+          <th>Paid</th>
+          <th>Left</th>
+          <th>Due Date</th>
+          <th>Status</th>
           <th>Actions</th>
         </tr>
       </thead>

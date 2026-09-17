@@ -242,6 +242,33 @@ const isCreditMethod = key => CREDIT_METHODS.some(m => m.key === key);
 const UPLOAD_MAX_MB  = 8;
 const UPLOAD_ACCEPT  = { "image/jpeg": "JPEG", "image/png": "PNG", "image/webp": "WebP" };
 
+/* Where a GCash or bank payment is SENT: the account name, number and QR code
+   maintained in Landing Page Maintenance and served by content/get.php
+   (window.EB_LANDING.payment). Used at checkout and on a retailer's Pay form.
+
+   With nothing published it says so, rather than showing an empty frame that
+   reads like a broken image. */
+function payQrHtml(method){
+  const pay = (window.EB_LANDING && window.EB_LANDING.payment) || {};
+  const a = pay[method] || {};
+  const title = method === "bank" ? "Bank Transfer" : "GCash";
+  const rows = [];
+  if(method === "bank" && a.bank) rows.push(`<div class="pay-qr-row"><span>Bank</span><b>${esc(a.bank)}</b></div>`);
+  if(a.name)   rows.push(`<div class="pay-qr-row"><span>Account name</span><b>${esc(a.name)}</b></div>`);
+  if(a.number) rows.push(`<div class="pay-qr-row"><span>${method === "bank" ? "Account number" : "GCash number"}</span><b class="pay-qr-mono">${esc(a.number)}</b></div>`);
+  if(!a.qr && !rows.length){
+    return `<div class="pay-qr pay-qr-empty">Our ${title} details are not published yet. Contact us for where to send your payment.</div>`;
+  }
+  return `<div class="pay-qr">
+      ${a.qr ? `<img class="pay-qr-img" src="${escAttr(imageUrl(a.qr))}" alt="${title} QR code">` : ""}
+      <div class="pay-qr-info">
+        <div class="pay-qr-title">Pay by ${title}</div>
+        ${rows.join("")}
+        <div class="pay-qr-hint">${a.qr ? "Scan the code with your app, then" : "Send your payment, then"} upload the screenshot below.</div>
+      </div>
+    </div>`;
+}
+
 function productAvailable(p){
   if(!p) return false;
   return p.inStock !== undefined ? p.inStock : (p.stock === undefined || p.stock > 0);
@@ -1427,6 +1454,9 @@ function openCheckout(){
         <div class="co-summary">
           ${itemsHTML}
           <div class="li tot"><span class="li-name">Total</span><span class="li-qty">${cartLineCount()} ${cartLineCount()===1?"product":"products"}</span><span class="li-amt">${peso(sub)}</span></div>
+          <!-- Filled only for a retailer registered as a withholding agent — see
+               the quote in onOpen below. Empty and hidden for everyone else. -->
+          <div class="co-tax-note" id="co-tax-note" hidden></div>
         </div>
       </div>
 
@@ -1474,13 +1504,16 @@ function openCheckout(){
              "Cash" / "GCash" / "Bank Transfer" and still drives both the proof
              block and the pay_method sent to the server. -->
         <div class="toggle-group co-pay" id="co-payment" role="group" aria-label="Payment method">
-          <button type="button" class="tg active" data-pay="cash">Cash <small>On pickup or delivery</small></button>
+          <button type="button" class="tg active" data-pay="cash">Cash <small>Pay when you collect</small></button>
           <button type="button" class="tg" data-pay="gcash">GCash <small>Screenshot required</small></button>
           <button type="button" class="tg" data-pay="bank">Bank Transfer <small>Screenshot required</small></button>
           ${isRetailer ? CREDIT_METHODS.map(m => `
           <button type="button" class="tg tg-credit" data-pay="${m.key}">${m.label} <small>${m.hint}</small></button>`).join("") : ""}
         </div>
         <div id="proof-block" class="hide">
+          <!-- Filled by payQrHtml() for the method picked: the account to send to
+               and its QR code, from Landing Page Maintenance. -->
+          <div id="co-pay-qr"></div>
           <div class="field"><label for="co-ref">Reference Number</label><input class="control" id="co-ref" type="text" placeholder="e.g. 1234 5678 90"><span class="field-error" data-err></span></div>
           <div class="field" id="co-proof-field">
             <label for="co-proof">Payment Screenshot</label>
@@ -1543,6 +1576,27 @@ function openCheckout(){
   openModal("Checkout", body, {wide:true, onOpen:(root)=>{
     /* `payment` now holds the API key, not a display string. */
     let orderType = "delivery", payment = "cash";
+
+    /* WITHHOLDING TAX. A retailer registered as a withholding agent (VAT
+       Maintenance) pays the total LESS the tax it keeps for the BIR, so it
+       needs to be told the amount to actually transfer — send the full total
+       and Payment Verification sees a screenshot that does not match. The
+       figure is the server's (shop/quote.php runs the same Tax::compute() the
+       checkout does); nobody else is asked, so a regular shopper's checkout
+       makes no extra request. */
+    if (isRetailer) {
+      EbApi.post("shop/quote.php", { items: state.cart.map(i => ({ id: i.id, qty: i.qty })) })
+        .then(({ data }) => {
+          const t = data.tax, note = root.querySelector("#co-tax-note");
+          if (!note || !(t.withholdingTax > 0)) return;
+          note.innerHTML = `<div class="li"><span class="li-name">Less: withholding tax (${+t.withholdingRate}%)</span>`
+            + `<span class="li-qty">you remit to the BIR</span><span class="li-amt">− ${EbFormat.pesoExact(t.withholdingTax)}</span></div>`
+            + `<div class="li tot"><span class="li-name">Amount to pay</span><span class="li-qty">send BIR Form 2307</span>`
+            + `<span class="li-amt">${EbFormat.pesoExact(t.amountDue)}</span></div>`;
+          note.hidden = false;
+        })
+        .catch(() => { /* The checkout computes it anyway; the note is a courtesy. */ });
+    }
     const addrField = root.querySelector("#address-field");
 
     /* ---- PREFILL (decision I9) ---------------------------------------
@@ -1617,8 +1671,43 @@ function openCheckout(){
         b.classList.add("active");
         orderType = b.dataset.type;
         addrField.classList.toggle("hide", orderType==="pickup");
+        syncPayForOrderType();
       });
     });
+
+    /* CASH IS A PICKUP-ONLY METHOD.
+
+       It is money handed over at the counter. On a delivery there is no
+       counter — the goods travel to the customer and the payment does not
+       travel back, so a refusal at the door leaves the shop holding both the
+       loss and the return trip. api/shop/checkout.php refuses the combination
+       outright; this keeps the form from offering it in the first place.
+
+       DISABLED RATHER THAN REMOVED. A tile that vanishes when Delivery is
+       picked reads as a glitch, and a customer who wanted to pay cash learns
+       nothing. Greyed out with its hint rewritten to "Pickup only" answers the
+       question where it is asked.
+
+       The default state needs this too: the form opens on Delivery AND Cash,
+       which is now a combination the server would reject — so this runs once
+       at wiring time, not only on change. */
+    function syncPayForOrderType(){
+      const cashBtn = root.querySelector('#co-payment .tg[data-pay="cash"]');
+      if(!cashBtn) return;
+      const blocked = orderType === "delivery";
+      cashBtn.disabled = blocked;
+      cashBtn.classList.toggle("tg-unavailable", blocked);
+      cashBtn.title = blocked ? "Cash is available on pickup only." : "";
+      const hint = cashBtn.querySelector("small");
+      if(hint) hint.textContent = blocked ? "Pickup only" : "Pay when you collect";
+      /* Moved, not just disabled: leaving `payment` on a method the server will
+         reject sends the customer to a validation error they cannot see the
+         cause of. Done with a real click so the proof block and the QR follow
+         the same path they would for any other choice. */
+      if(blocked && payment === "cash"){
+        root.querySelector('#co-payment .tg[data-pay="gcash"]')?.click();
+      }
+    }
 
     // payment method reveals proof fields for GCash/Bank
     const proof = root.querySelector("#proof-block");
@@ -1632,8 +1721,17 @@ function openCheckout(){
            payment that is not due for a month is how a retailer concludes the
            form is broken. */
         proof.classList.toggle("hide", payment === "cash" || isCreditMethod(payment));
+        const qrBox = root.querySelector("#co-pay-qr");
+        if(qrBox) qrBox.innerHTML = (payment === "gcash" || payment === "bank") ? payQrHtml(payment) : "";
       });
     });
+
+    /* RUN ONCE NOW, not only on change. The form opens on Delivery with Cash
+       already active — the markup ships both as the default — which is the one
+       combination the server refuses. Without this line the customer can open
+       checkout, touch nothing, and be rejected on submit for a choice the form
+       made for them. */
+    syncPayForOrderType();
 
     /* The screenshot is uploaded the moment it is chosen, and the ORDER
        carries the path the server gives back. Uploading at submit time would
@@ -1914,6 +2012,13 @@ function openCheckout(){
           id: order.id,
           name: order.name, contact: order.contact,
           orderType: order.orderType, payment: payLabel(payment),
+          /* The raw key as well as the label: the invoice ticks CASH SALES or
+             CHARGE SALES from it, and a label is not something to branch on. */
+          payMethod: payment,
+          /* Null unless the buyer is a retailer — see Orders::buyerTinSql(). */
+          tin: order.tin || null,
+          /* The stored VAT breakdown — the invoice prints it as the server decided it. */
+          tax: order.tax || null,
           /* Null unless the server opened a receivable. The scheme and the due
              date come from the RESPONSE, not from the tile that was clicked:
              the due date is computed by the database, and printing a date the
@@ -1940,39 +2045,42 @@ function showReceipt(order){
      have been quoting a number nobody could look up. The fallback covers only
      the case where this is somehow called without a placed order. */
   const id = order.id || txId();
-  const date = order.placedAt || new Date().toLocaleString("en-PH", {dateStyle:"medium", timeStyle:"short"});
-  const itemsHTML = order.items.map(it=>`<div class="rb-row"><span>${it.name} × ${it.qty}</span><span>${peso(it.price*it.qty)}</span></div>`).join("");
+
+  /* THE SAME SALES INVOICE THE CASHIER PRINTS — assets/js/core/invoice.js.
+     A customer holding a different-looking document from the one on the
+     counter is a customer asking which one is real. */
+  const invoice = EbInvoice.fromOrder({
+    id, type: "online", tin: order.tin, tax: order.tax, name: order.name, address: order.address, items: order.items,
+    total: order.total, payMethod: order.payMethod,
+    /* A Date, not toISOString(): that formats in UTC, so an order confirmed
+       before 8am in Manila would print yesterday's date on the invoice. */
+    placedAt: order.placedAt || new Date(),
+  });
+  EbInvoice.ensureStyles();
+
   const body = `
     <div class="receipt">
       <div class="check">${ICONS.check}</div>
       <h3 style="font-size:1.9rem">Order Placed!</h3>
-      <p style="color:var(--text-muted)">Thank you, ${esc(order.name)}. A soft-copy receipt is below.</p>
+      <p style="color:var(--text-muted)">Thank you, ${esc(order.name)}. Your sales invoice is below.</p>
+      <div class="receipt-invoice">${EbInvoice.render(invoice)}</div>
+      ${order.credit ? `
+      <!-- A credit order commits the retailer to a date. Saying so is the
+           difference between terms they agreed to and terms they find out
+           about when the account goes overdue. The paper invoice has no place
+           for it, so it sits outside the invoice rather than inside it. -->
       <div class="receipt-box">
-        <div class="rb-row"><span>Transaction ID</span><span class="txid">${id}</span></div>
-        <div class="rb-row"><span>Date</span><span>${date}</span></div>
-        <div class="rb-row"><span>Customer</span><span>${esc(order.name)}</span></div>
-        <div class="rb-row"><span>Contact</span><span>${esc(order.contact)}</span></div>
-        <div class="rb-row"><span>Order Type</span><span style="text-transform:capitalize">${order.orderType}</span></div>
-        ${order.orderType==="delivery"?`<div class="rb-row"><span>Address</span><span style="max-width:55%;text-align:right">${esc(order.address)}</span></div>`:""}
-        <div class="rb-row"><span>Payment</span><span>${esc(order.payment)}</span></div>
-        ${order.notes?`<div class="rb-row"><span>Notes</span><span style="max-width:55%;text-align:right">${esc(order.notes)}</span></div>`:""}
-        <div class="rb-items">${itemsHTML}</div>
-        <div class="rb-row" style="font-weight:700;font-size:1.1rem"><span>Total</span><span>${peso(order.total)}</span></div>
-        ${order.credit ? `
-        <!-- A credit order commits the retailer to a date. Saying so on the
-             receipt is the difference between terms they agreed to and terms
-             they find out about when the account goes overdue. The figures are
-             the server's: the due date is computed by the database, and the
-             same row is what their Payment Schemes page and the cashier's
-             screen read. -->
         <div class="rb-credit">
           <div class="rb-row"><span>Payment terms</span><span><b>${esc(order.credit.scheme)}</b></span></div>
           <div class="rb-row"><span>Balance due</span><span><b>${peso(order.credit.balance)}</b></span></div>
           <div class="rb-row"><span>Due date</span><span><b>${EbFormat.fmtDate(order.credit.dueDate)}</b></span></div>
           <p class="rb-credit-note">This balance is now on your account. Track it under <a href="${escAttr(EbFormat.APP_BASE)}public/profile/my-payments.html">Payment Schemes</a>.</p>
-        </div>` : ""}
+        </div>
+      </div>` : ""}
+      <div class="receipt-actions">
+        <button class="btn btn-ghost" id="receipt-print" type="button">Print invoice</button>
+        <button class="btn btn-primary" id="receipt-done" type="button">Done</button>
       </div>
-      <button class="btn btn-primary btn-block" id="receipt-done">Done</button>
     </div>`;
   /* Local copy only. api/shop/checkout.php deletes the customer's cart_items
      rows inside the same transaction that writes the order, so the server is
@@ -1981,8 +2089,9 @@ function showReceipt(order){
      what the database already says. */
   state.cart = [];
   updateCartBadge(); renderCart();
-  openModal("Receipt", body, {wide:true, onOpen:(root)=>{
+  openModal("Sales Invoice", body, {wide:true, onOpen:(root)=>{
     root.querySelector("#receipt-done").addEventListener("click", closeModal);
+    root.querySelector("#receipt-print").addEventListener("click", ()=> EbInvoice.print(invoice));
   }});
   showToast("Order placed successfully!", "success");
 }

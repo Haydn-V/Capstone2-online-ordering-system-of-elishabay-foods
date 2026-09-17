@@ -105,6 +105,22 @@
       <option value="all">All Products</option>
       <option value="1">Expiry Risk Only</option>
     </select>
+    <!-- WHAT THE BANDS ARE MEASURED OVER, not another way to filter them.
+         Level, Movement and Cover are rates over a trailing window, so this
+         control changes what "Critical" means rather than which rows are
+         shown — which is why the caption under the table says, in words,
+         which window answered. Session-scoped: it resets on reload and
+         changes nobody else's screen. -->
+    <select
+      class="filter-select"
+      id="filter-inv-window"
+      aria-label="Sales window the stock bands are measured over"
+    >
+      <option value="default">Measured: Default window</option>
+      <option value="week">Measured: Last 7 days</option>
+      <option value="yesterday">Measured: Yesterday</option>
+      <option value="month">Measured: Last 30 days</option>
+    </select>
     <select
       class="filter-select"
       id="inv-report-page-size"
@@ -141,6 +157,7 @@
   </div>
   <div class="table-toolbar" style="margin-top: 14px">
     <span class="muted" id="inv-report-showing" style="font-size: 0.82rem"></span>
+    <span class="muted" id="inv-window-note" style="font-size: 0.78rem; margin-left: 12px"></span>
     <div class="pagination" id="inv-report-pagination" style="margin-left: auto"></div>
   </div>
 </section>

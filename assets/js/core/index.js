@@ -58,6 +58,7 @@ import { EbRbac }     from "./rbac.js";
 import { EbPaginate } from "./pagination.js";
 import { EbSelect }   from "./select.js";
 import { EbDate }     from "./datepicker.js";
+import { EbInvoice }  from "./invoice.js";
 
 /* The bridge. Everything above is importable as a module; these globals
    exist only for the classic scripts that have not been converted. */
@@ -69,6 +70,8 @@ window.EbRbac     = EbRbac;
 window.EbPaginate = EbPaginate;
 window.EbSelect   = EbSelect;
 window.EbDate     = EbDate;
+/* The Sales Invoice renderer — every receipt in the portal and the storefront. */
+window.EbInvoice  = EbInvoice;
 
 /* One delegated listener that swaps any image which fails to load for the
    defined placeholder. Installed here rather than per page so no screen can
@@ -79,4 +82,4 @@ EbFormat.installImageFallback(document);
 /* Re-exported so a converted module can import everything from one place:
        import { EbApi, EbUI } from "../core/index.js";
 */
-export { EbApi, EbSession, EbFormat, EbUI, EbRbac, EbPaginate, EbSelect, EbDate };
+export { EbApi, EbSession, EbFormat, EbUI, EbRbac, EbPaginate, EbSelect, EbDate, EbInvoice };

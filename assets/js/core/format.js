@@ -131,7 +131,16 @@ const PAY_METHODS = {
   cash: "Cash", gcash: "GCash", bank: "Bank Transfer",
   net30: "Net 30", net60: "Net 60", net90: "Net 90",
 };
-const payMethodLabel = m => PAY_METHODS[m] || m || "—";
+/* An unrecognised key falls through to the key ITSELF on purpose: a method
+   added to the database before this map knows about it should read "paymaya"
+   rather than a dash that hides it.
+   The two strings below are the exception. They are what a missing value looks
+   like after it has been through string interpolation somewhere upstream, and
+   passing them through prints the word "undefined" in the Method column —
+   which is how this column read for a whole release once already. A value that
+   stringified from nothing is missing, not a new payment method. */
+const payMethodLabel = m =>
+  PAY_METHODS[m] || (m && m !== "undefined" && m !== "null" ? m : "—");
 
 const STATUS_LABELS = {
   pending: "Pending", accepted: "Accepted", shipping: "Shipping",

@@ -153,7 +153,7 @@
        only find out what they owed by asking the person they owed it to.
 
        Every figure here comes from api/shop/my-payments.php, which computes it
-       with Payments::accountStanding() — the same function the cashier's screen
+       with Payments::describeAccount() — the same function the cashier's screen
        uses. Nothing is calculated in this file. A penalty worked out twice is a
        penalty that eventually disagrees with itself, and the customer-facing
        copy is the one that starts an argument. */
@@ -234,7 +234,7 @@
       if (s.overdueCount > 0) {
         el.innerHTML = `<div class="pay-banner overdue">
           <strong>${s.overdueCount} payment${s.overdueCount === 1 ? " is" : "s are"} overdue.</strong>
-          A ${payEsc(String(s.penaltyRate))}% penalty is applied to each overdue balance and is included in the totals below.
+          A ${payEsc(String(s.penaltyRate))}% penalty is added to what was still unpaid on the due date, and is included below.
           Please settle as soon as you can, or contact us to arrange terms.</div>`;
       } else if (s.dueSoonCount > 0) {
         el.innerHTML = `<div class="pay-banner soon">
@@ -249,9 +249,14 @@
       document.getElementById("pay-summary").innerHTML = `
         <div class="pay-summary">
           <div class="pay-stat">
-            <span class="pay-stat-label">Total outstanding</span>
+            <span class="pay-stat-label">Left to pay</span>
             <span class="pay-stat-val">${payPeso(s.totalOutstanding)}</span>
             <small>Including any penalties</small>
+          </div>
+          <div class="pay-stat">
+            <span class="pay-stat-label">Waiting for review</span>
+            <span class="pay-stat-val">${s.pendingCount}</span>
+            <small>payment${s.pendingCount === 1 ? "" : "s"} sent, not yet checked</small>
           </div>
           <div class="pay-stat">
             <span class="pay-stat-label">Overdue</span>
@@ -266,9 +271,53 @@
         </div>`;
     }
 
-    const STATE_LABEL = { paid: "Paid", overdue: "Overdue", "due-soon": "Due soon", pending: "Pending" };
+    const STATE_LABEL = { paid: "Paid", overdue: "Overdue", partial: "Partly paid", pending: "Unpaid" };
+    const MP_PAY_STATUS = { pending: "Waiting for review", verified: "Verified", rejected: "Rejected" };
+    const MP_PAY_METHOD = { gcash: "GCash", bank: "Bank Transfer", cash: "Cash" };
+
+    /* The accounts last loaded, so a Pay form reads the figures it was opened
+       against without another request. Replaced wholesale on every load. */
+    let mpAccounts = [];
+
+    function mpDays(a) {
+      if (a.settled) return "";
+      const n = Math.abs(a.daysUntilDue);
+      if (a.overdue) return `${n} day${n === 1 ? "" : "s"} late`;
+      return a.daysUntilDue === 0 ? "due today" : `in ${n} day${n === 1 ? "" : "s"}`;
+    }
+
+    /* Every payment toward the account, newest first: the three transfers
+       toward one balance are read here, each with its own status. */
+    function mpHistory(a) {
+      if (!a.payments.length) return "";
+      return `
+        <div class="pay-history">
+          <div class="pay-history-title">Payments</div>
+          <div class="table-wrap">
+            <table class="pay-table pay-history-table">
+              <thead><tr><th>Paid on</th><th>Amount</th><th>Method</th><th>Reference</th><th>Status</th></tr></thead>
+              <tbody>
+                ${a.payments.map(p => `
+                  <tr class="pay-row-${payEsc(p.status)}">
+                    <td>${payEsc(EbFormat.fmtDate(p.paidDate))}</td>
+                    <td><strong>${payPeso(p.amount)}</strong></td>
+                    <td>${payEsc(MP_PAY_METHOD[p.method] || "—")}</td>
+                    <td class="mono">${payEsc(p.refNum || "—")}${p.proof
+                      ? ` · <a href="${payEsc(EbFormat.imageUrl(p.proof))}" target="_blank" rel="noopener noreferrer">screenshot</a>` : ""}</td>
+                    <td>
+                      <span class="order-status status-${p.status === "verified" ? "paid" : p.status === "rejected" ? "overdue" : "due-soon"}">${payEsc(MP_PAY_STATUS[p.status] || p.status)}</span>
+                      ${p.status === "rejected" && p.rejectReason ? `<small class="pay-days">${payEsc(p.rejectReason)}</small>` : ""}
+                      ${p.source === "legacy" ? `<small class="pay-days">Settled before online payments</small>` : ""}
+                    </td>
+                  </tr>`).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+    }
 
     function renderList(accounts) {
+      mpAccounts = accounts;
       const list = document.getElementById("pay-list");
       if (!accounts.length) {
         list.innerHTML = `<div class="orders-empty">
@@ -277,39 +326,160 @@
           <a href="../shop.html" class="btn btn-gold">Browse Shop</a></div>`;
         return;
       }
-
-      list.innerHTML = `
-        <div class="table-wrap">
-          <table class="pay-table">
-            <thead>
-              <tr>
-                <th>Reference</th><th>Terms</th><th>Balance</th>
-                <th>Penalty</th><th>Total due</th><th>Due date</th><th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${accounts.map(a => `
-                <tr class="state-${payEsc(a.state)}">
-                  <td class="mono">${payEsc(a.orderId || a.id)}</td>
-                  <td>${payEsc(a.scheme)}</td>
-                  <td>${payPeso(a.balance)}</td>
-                  <td>${a.penalty ? `<span class="is-overdue">${payPeso(a.penalty)}</span>` : "—"}</td>
-                  <td><strong>${a.paid ? "—" : payPeso(a.totalDue)}</strong></td>
-                  <td>
-                    ${payEsc(EbFormat.fmtDate(a.dueDate))}
-                    ${a.paid ? "" : `<small class="pay-days">${
-                      a.overdue ? `${Math.abs(a.daysUntilDue)} day${Math.abs(a.daysUntilDue) === 1 ? "" : "s"} late`
-                                : `in ${a.daysUntilDue} day${a.daysUntilDue === 1 ? "" : "s"}`}</small>`}
-                  </td>
-                  <td><span class="order-status status-${payEsc(a.state)}">${payEsc(STATE_LABEL[a.state] || a.state)}</span></td>
-                </tr>`).join("")}
-            </tbody>
-          </table>
-        </div>
+      list.innerHTML = accounts.map(a => {
+        const pct = a.owed > 0 ? Math.min(100, Math.round(a.paidAmount / a.owed * 100)) : 100;
+        const soon = a.dueSoon ? `<span class="order-status status-due-soon">Due soon</span>` : "";
+        const days = mpDays(a);
+        return `
+        <article class="pay-acct state-${payEsc(a.state)}">
+          <header class="pay-acct-head">
+            <div>
+              <div class="pay-acct-ref">${payEsc(a.orderId || a.id)}</div>
+              <div class="pay-acct-sub">${payEsc(a.scheme)} · due ${payEsc(EbFormat.fmtDate(a.dueDate))}${days ? ` · ${payEsc(days)}` : ""}</div>
+            </div>
+            <div class="pay-acct-chips">${soon}<span class="order-status status-${payEsc(a.state)}">${payEsc(STATE_LABEL[a.state] || a.state)}</span></div>
+          </header>
+          <div class="pay-progress" role="progressbar" aria-label="Paid so far" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="width:${pct}%"></span></div>
+          <dl class="pay-figs">
+            <div><dt>Billed</dt><dd>${payPeso(a.billed)}</dd></div>
+            <div><dt>Paid</dt><dd>${payPeso(a.paidAmount)}</dd></div>
+            ${a.penalty ? `<div><dt>Penalty</dt><dd class="is-overdue">${payPeso(a.penalty)}</dd></div>` : ""}
+            ${a.pendingAmount ? `<div><dt>Waiting for review</dt><dd>${payPeso(a.pendingAmount)}</dd></div>` : ""}
+            <div><dt>Left to pay</dt><dd><strong>${payPeso(a.remaining)}</strong></dd></div>
+          </dl>
+          ${a.settled ? "" : a.payable > 0
+            ? `<button class="btn btn-gold btn-sm" type="button" data-pay-open="${payEsc(a.id)}">Pay</button>`
+            : `<p class="field-hint">Everything left is covered by a payment waiting for review. This updates once our staff check it.</p>`}
+          <div class="pay-form-slot" id="pay-form-${payEsc(a.id)}"></div>
+          ${mpHistory(a)}
+        </article>`;
+      }).join("") + `
         <p class="field-hint" style="margin-top:12px">
-          Penalties are calculated when the page loads, against today's date — the same
-          figures our staff see. Contact us if anything looks wrong.
+          Payments you send are checked by our staff before they count. Penalties are calculated
+          against today's date — the same figures our staff see. Contact us if anything looks wrong.
         </p>`;
+      list.querySelectorAll("[data-pay-open]").forEach(btn =>
+        btn.addEventListener("click", () => mpOpenPay(btn.dataset.payOpen)));
+    }
+
+    /* The Pay form.
+
+       The screenshot is uploaded the moment it is chosen, as at checkout, and
+       the payment carries the path the server issued. A screenshot that is
+       replaced, or left behind by Cancel, is discarded so it does not sit on
+       the server with nothing pointing at it.
+
+       The amount starts at everything payable and may be lowered: a part
+       payment is normal, and the rest can be sent later. The server re-checks
+       every rule here (api/shop/credit-pay.php); this only spares a round trip. */
+    function mpOpenPay(id) {
+      const a = mpAccounts.find(x => x.id === id);
+      const slot = document.getElementById("pay-form-" + id);
+      if (!a || !slot) return;
+      document.querySelectorAll(".pay-form-slot").forEach(s => { if (s !== slot) s.innerHTML = ""; });
+
+      let method = "gcash";
+      let proofPath = null;
+      slot.innerHTML = `
+        <form class="pay-form" novalidate>
+          <div class="toggle-group pay-form-methods" role="group" aria-label="Payment method">
+            <button type="button" class="tg active" data-pm="gcash">GCash</button>
+            <button type="button" class="tg" data-pm="bank">Bank Transfer</button>
+          </div>
+          <div data-qr>${payQrHtml("gcash")}</div>
+          <div class="field">
+            <label>Amount</label>
+            <input class="control" type="number" inputmode="decimal" step="0.01" min="0.01" max="${a.payable}" value="${a.payable.toFixed(2)}" data-f="amount">
+            <small class="field-hint">Up to ${payPeso(a.payable)}. You can pay part now and the rest later.</small>
+            <span class="field-error" data-err="amount"></span>
+          </div>
+          <div class="field">
+            <label>Reference number</label>
+            <input class="control" type="text" maxlength="100" placeholder="e.g. 1234 5678 90" data-f="ref_num">
+            <span class="field-error" data-err="ref_num"></span>
+          </div>
+          <div class="field">
+            <label>Payment screenshot</label>
+            <input class="control" type="file" accept="image/png,image/jpeg,image/webp" data-f="proof">
+            <small class="field-hint" data-proof-status>PNG, JPEG or WebP.</small>
+            <span class="field-error" data-err="proof_image"></span>
+          </div>
+          <div class="pay-form-actions">
+            <button type="submit" class="btn btn-gold">Send payment</button>
+            <button type="button" class="btn btn-ghost" data-pay-cancel>Cancel</button>
+          </div>
+        </form>`;
+
+      const form = slot.querySelector("form");
+      const setErr = (f, msg) => {
+        const el = form.querySelector(`[data-err="${f}"]`);
+        if (el) el.textContent = msg || "";
+      };
+      const discard = p => {
+        if (p) EbApi.post("uploads/discard.php", { path: p }).catch(() => {});
+      };
+
+      form.querySelectorAll("[data-pm]").forEach(b => b.addEventListener("click", () => {
+        method = b.dataset.pm;
+        form.querySelectorAll("[data-pm]").forEach(x => x.classList.toggle("active", x === b));
+        form.querySelector("[data-qr]").innerHTML = payQrHtml(method);
+      }));
+
+      form.querySelector('[data-f="proof"]').addEventListener("change", async e => {
+        const file = e.target.files[0];
+        const status = form.querySelector("[data-proof-status]");
+        setErr("proof_image", "");
+        if (!file) return;
+        status.textContent = "Uploading…";
+        const previous = proofPath;
+        proofPath = null;
+        try {
+          const data = await EbApi.upload(file, "references");
+          proofPath = data.path;
+          status.textContent = "Screenshot attached.";
+          discard(previous);
+        } catch (err) {
+          status.textContent = "PNG, JPEG or WebP.";
+          setErr("proof_image", (err.fields && err.fields.file) || err.message);
+          e.target.value = "";
+        }
+      });
+
+      form.querySelector("[data-pay-cancel]").addEventListener("click", () => {
+        discard(proofPath);
+        slot.innerHTML = "";
+      });
+
+      form.addEventListener("submit", async e => {
+        e.preventDefault();
+        form.querySelectorAll("[data-err]").forEach(x => { x.textContent = ""; });
+        const amount = parseFloat(form.querySelector('[data-f="amount"]').value);
+        const ref = form.querySelector('[data-f="ref_num"]').value.trim();
+        let bad = false;
+        if (!(amount > 0)) { setErr("amount", "Enter the amount you sent."); bad = true; }
+        else if (amount > a.payable + 0.004) { setErr("amount", `Only ${payPeso(a.payable)} is left to pay.`); bad = true; }
+        if (!ref) { setErr("ref_num", "Enter the reference number from your transfer."); bad = true; }
+        if (!proofPath) { setErr("proof_image", "Attach a screenshot of the transfer."); bad = true; }
+        if (bad) return;
+
+        const btn = form.querySelector('[type="submit"]');
+        btn.disabled = true;
+        btn.textContent = "Sending…";
+        try {
+          await EbApi.post("shop/credit-pay.php", {
+            account_id: a.id, amount, method, ref_num: ref, proof_image: proofPath,
+          });
+          proofPath = null;
+          showToast("Payment sent. We will check it and update your balance.", "success");
+          loadMyPayments();
+        } catch (err) {
+          const fields = err.fields || {};
+          Object.keys(fields).forEach(k => setErr(k, fields[k]));
+          if (!Object.keys(fields).length) showToast(err.message, "error");
+          btn.disabled = false;
+          btn.textContent = "Send payment";
+        }
+      });
     }
 
     /* Waits for the server's answer, not for a flag. See the note on the same

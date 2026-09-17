@@ -81,6 +81,108 @@ final class Inventory
     /** @var array<string,float>|null */
     private static ?array $cache = null;
 
+    /* ==========================================================
+       THE WINDOW
+       ----------------------------------------------------------
+       How far back "how fast does this sell" looks. It was one stored
+       setting, the same for every screen and every reader.
+
+       One number cannot answer the question, because the question changes
+       with the shelf. Ninety days is the right lens on a slow mover — short
+       enough to notice it going cold, long enough that a quiet fortnight does
+       not reclassify it. It is the wrong lens the morning after a bulk order
+       clears half the stock: that sale is one day in ninety, the rate barely
+       moves, and the band still says Safe while the shelf is visibly empty.
+
+       So the window is now a CHOICE the reader makes per request, and the
+       stored setting is what they get when they do not make one. A shorter
+       window is more responsive and noisier, which is the honest trade —
+       "Yesterday" over one quiet Sunday will call the whole catalogue
+       Non-Moving, and that is what yesterday actually says.
+
+       Every rate stays normalised to per-day and per-month, so the movement
+       thresholds keep their meaning whichever window is in force and two
+       products read under the same window are always comparable.
+
+       WHY `yesterday` IS A DATE RATHER THAN A COUNT. The trailing windows
+       include today, which is a PART day: at 9am it holds an hour of trade
+       and drags every rate down. That is tolerable across a week and fatal
+       across one day, so "Yesterday" is the last COMPLETE day — the previous
+       date, whole. ========================================================== */
+
+    /** Windows a caller may ask for, in days. Keys are the API's values. */
+    public const WINDOWS = [
+        'yesterday' => 1,
+        'week'      => 7,
+        'month'     => 30,
+    ];
+
+    /** The window in force for THIS request; null means the stored setting. */
+    private static ?string $window = null;
+
+    /**
+     * Choose the window for this request. An unknown key is a caller error,
+     * not something to silently ignore — a typo would otherwise be answered
+     * with ninety-day numbers under a "Yesterday" heading.
+     */
+    public static function useWindow(?string $key): void
+    {
+        if ($key === null || $key === '' || $key === 'default') {
+            self::$window = null;
+            return;
+        }
+        if (!isset(self::WINDOWS[$key])) {
+            Response::validation('Unknown sales window.', [
+                'window' => 'Use yesterday, week, month or default.',
+            ]);
+        }
+        self::$window = $key;
+    }
+
+    /** The key in force, or null for the stored default. */
+    public static function windowKey(): ?string
+    {
+        return self::$window;
+    }
+
+    /** How many days the rate is divided by. */
+    public static function windowDays(): int
+    {
+        return self::$window === null
+            ? (int) self::tunables()['velocity_window_days']
+            : self::WINDOWS[self::$window];
+    }
+
+    /**
+     * The window as a phrase, for screens that have to say what they measured.
+     * "No sales in the last 1 days" is the sentence this exists to prevent.
+     */
+    public static function windowLabel(): string
+    {
+        if (self::$window === 'yesterday') {
+            return 'yesterday';
+        }
+        return sprintf('the last %d days', self::windowDays());
+    }
+
+    /**
+     * The date test that defines the window, against an orders alias.
+     *
+     * Trailing windows count back from today INCLUSIVE, so `week` is seven
+     * calendar days rather than eight. The old form was `>= CURDATE() -
+     * INTERVAL 90 DAY`, which is ninety-one days divided by ninety — a
+     * rounding error nobody would notice at that length and a 100% one at the
+     * lengths this now offers.
+     */
+    public static function windowSql(string $alias = 'o'): string
+    {
+        if (self::$window === 'yesterday') {
+            return "{$alias}.date = (CURDATE() - INTERVAL 1 DAY)";
+        }
+        $back = self::windowDays() - 1;
+        return "{$alias}.date >= (CURDATE() - INTERVAL {$back} DAY)";
+    }
+
     /**
      * The tunables, read once per request.
      *
@@ -127,7 +229,8 @@ final class Inventory
     /** Forget the cached tunables — for a request that has just written one. */
     public static function forget(): void
     {
-        self::$cache = null;
+        self::$cache  = null;
+        self::$window = null;
     }
 
     /**
@@ -206,14 +309,14 @@ final class Inventory
      */
     public static function velocityJoin(): string
     {
-        $win = (int) self::tunables()['velocity_window_days'];
+        $when = self::windowSql('o');
 
         return "LEFT JOIN (
                     SELECT oi.product_id, SUM(oi.qty) AS units
                       FROM order_items oi
                       JOIN orders o ON o.id = oi.order_id
                      WHERE o.status = 'completed'
-                       AND o.date >= (CURDATE() - INTERVAL {$win} DAY)
+                       AND {$when}
                      GROUP BY oi.product_id
                 ) vel ON vel.product_id = p.id";
     }
@@ -241,7 +344,7 @@ final class Inventory
     /** Derived rate and cover columns, for the layer above the base select. */
     public static function derivedSelect(): string
     {
-        $win = (int) self::tunables()['velocity_window_days'];
+        $win = self::windowDays();
 
         return "COALESCE(window_units, 0) / {$win}                AS per_day,
                 (COALESCE(window_units, 0) * 30.0) / {$win}       AS per_month,
@@ -452,8 +555,8 @@ final class Inventory
                     'note'         => $daysToExpiry < 0
                         ? sprintf('Lot %s expired %d day(s) ago with %d unit(s) unsold.',
                             $r['first_expiry_lot'], abs($daysToExpiry), $expiryQty)
-                        : sprintf('No sales in the last %d days — lot %s expires in %d day(s) with %d unit(s) on hand.',
-                            (int) $t['velocity_window_days'], $r['first_expiry_lot'], $daysToExpiry, $expiryQty),
+                        : sprintf('No sales in %s — lot %s expires in %d day(s) with %d unit(s) on hand.',
+                            self::windowLabel(), $r['first_expiry_lot'], $daysToExpiry, $expiryQty),
                 ];
             } else {
                 $daysToSell = (int) ceil($expiryQty / $perDay);
@@ -482,7 +585,10 @@ final class Inventory
             'perDay'      => round($perDay, 3),
             'perMonth'    => round((float) ($r['per_month'] ?? 0), 1),
             'windowUnits' => (int) ($r['window_units'] ?? 0),
-            'windowDays'  => (int) $t['velocity_window_days'],
+            'windowDays'  => self::windowDays(),
+            /* The phrase, not just the number — a screen saying "no sales in
+               the last 1 days" is the reason this is here. */
+            'windowLabel' => self::windowLabel(),
             'daysCover'   => $cover,
             'leadDays'    => (int) $t['restock_lead_days'],
             'expiryRisk'  => $expiryRisk,

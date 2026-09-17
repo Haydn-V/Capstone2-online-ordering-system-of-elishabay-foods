@@ -278,12 +278,12 @@ function buildDerivedNotifications(){
         out.push({ id:"nd-sch-"+acct.id, type:"scheme-due", priority:"critical",
           accountId:acct.id, read:false,
           time: acct.dueDate + " 08:00",
-          msg: acct.name + " is overdue on " + acct.scheme + " — " + peso(acct.balance) +
+          msg: acct.name + " is overdue on " + acct.scheme + " — " + peso(acct.remaining ?? acct.balance) +
                " outstanding since " + fmtDate(acct.dueDate) });
       } else if(days >= 0 && days <= 14){
         out.push({ id:"nd-sch-"+acct.id, type:"scheme-due", accountId:acct.id, read:true,
           time: acct.dueDate + " 08:00",
-          msg: acct.name + " — " + acct.scheme + " of " + peso(acct.balance) +
+          msg: acct.name + " — " + acct.scheme + " of " + peso(acct.remaining ?? acct.balance) +
                " due in " + days + " day" + (days === 1 ? "" : "s") });
       }
     });
@@ -903,12 +903,12 @@ function renderOnlineTxns(){
     adminState.onlineTxnPager,
     () => $("#online-txn-tbody"),
     (page, limit) => EbApi.get("orders/list.php", {
-      page, limit, type: "online", sort: "newest",
+      page, limit, type: "online", with_deliveries: 1, sort: "newest",
       status: filter === "all" ? null : filter,
       search: $("#txn-search")?.value || null,
     }),
     o => `<tr>
-      <td class="mono-sm">${escHtml(o.id)}</td>
+      <td class="mono-sm">${escHtml(o.id)}${o.type === "walk-in" ? ` <span class="badge badge-warn" title="Rung up at the POS as a delivery. Paid at the counter; shipped and tracked here like an online order.">Walk-in delivery</span>` : ""}</td>
       <td>${escHtml(o.customer)}</td>
       <td class="muted">${fmtDateTime(o.datetime)}</td>
       <td>${escHtml(payMethodLabel(o.payMethod))}</td>
@@ -1016,7 +1016,7 @@ function renderQueue(){
     adminState.queuePager,
     () => $("#queue-list"),
     (page, limit) => EbApi.get("orders/list.php", {
-      page, limit, type: "online", status: statuses, sort: "oldest",
+      page, limit, type: "online", with_deliveries: 1, status: statuses, sort: "oldest",
     }),
     (o, i) => {
       const hasProof = o.proof.uploaded;
@@ -1029,7 +1029,7 @@ function renderQueue(){
       <div class="order-card ${!hasProof?"urgent":""}">
         <div class="order-card-header">
           <span style="font-size:.72rem;font-weight:800;color:var(--text-muted);background:var(--bg-soft);border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center">#${seq}</span>
-          <span class="order-card-id">${escHtml(o.id)}</span>
+          <span class="order-card-id">${escHtml(o.id)}</span>${o.type === "walk-in" ? ` <span class="badge badge-warn" title="Rung up at the POS as a delivery. Paid at the counter; shipped and tracked here like an online order.">Walk-in delivery</span>` : ""}
           <span class="order-card-customer">${escHtml(o.customer)}</span>
           ${statusChip(o.status)}
           <span class="order-card-date">${fmtDateTime(o.datetime)}</span>
@@ -1167,14 +1167,19 @@ function renderPaymentVerify(){
       sort: "oldest",
     }),
     o => {
-      const total = o.total;
+      /* The AMOUNT DUE, not the sale total. A retailer registered as a
+         withholding agent transfers the total less the tax it keeps for the
+         BIR (VAT Maintenance), so its correct payment would otherwise be
+         flagged MISMATCH. Equal to the total for everyone else. */
+      const total = (o.tax && o.tax.amountDue != null) ? o.tax.amountDue : o.total;
+      const withheld = o.tax && o.tax.withholdingTax > 0 ? o.tax.withholdingTax : 0;
       const match = Math.abs((o.proof.amount || 0) - total) < 0.01;
       const itemRows = o.items.map(it =>
         `<div class="pv-row"><span class="pv-row-label">${escHtml(it.name || it.id)} ×${it.qty}</span><span class="pv-row-val">${it.price != null ? peso(it.price * it.qty) : "—"}</span></div>`).join("");
       return `
       <div class="pv-card">
         <div class="pv-card-header">
-          <span class="order-card-id">${escHtml(o.id)}</span>
+          <span class="order-card-id">${escHtml(o.id)}</span>${o.type === "walk-in" ? ` <span class="badge badge-warn" title="Rung up at the POS as a delivery. Paid at the counter; shipped and tracked here like an online order.">Walk-in delivery</span>` : ""}
           <span class="order-card-customer">${escHtml(o.customer)}</span>
           ${statusChip(o.status)}
           <span style="flex:1"></span>
@@ -1186,8 +1191,9 @@ function renderPaymentVerify(){
             ${itemRows}
             <div class="pv-row" style="border-top:1px solid var(--border);margin-top:6px;padding-top:10px">
               <span class="pv-row-label" style="font-weight:700">Total Due</span>
-              <span class="pv-row-val" style="font-size:1.1rem;color:var(--gold-ink)">${peso(total)}</span>
-            </div>
+              <span class="pv-row-val" style="font-size:1.1rem;color:var(--gold-ink)">${EbFormat.pesoExact(total)}</span>
+            </div>${withheld ? `
+            <div class="pv-row"><span class="pv-row-label">Withholding tax kept by buyer</span><span class="pv-row-val">${EbFormat.pesoExact(withheld)} of ${EbFormat.pesoExact(o.total)}</span></div>` : ""}
           </div>
           <div class="pv-section">
             <div class="pv-section-label">Payment Proof</div>
@@ -1326,7 +1332,7 @@ function renderOrderStatus(){
     adminState.orderStatusPager,
     () => $("#order-status-tbody"),
     (page, limit) => EbApi.get("orders/list.php", {
-      page, limit, type: "online", sort: "newest",
+      page, limit, type: "online", with_deliveries: 1, sort: "newest",
       status: $("#status-filter")?.value || null,
       search: $("#status-search")?.value || null,
     }),
@@ -1334,7 +1340,7 @@ function renderOrderStatus(){
       const canUpdate = STATUS_TRANSITIONS[o.status]?.length > 0;
       const notes = o.notes || "";
       return `<tr>
-      <td class="mono-sm">${escHtml(o.id)}</td>
+      <td class="mono-sm">${escHtml(o.id)}${o.type === "walk-in" ? ` <span class="badge badge-warn" title="Rung up at the POS as a delivery. Paid at the counter; shipped and tracked here like an online order.">Walk-in delivery</span>` : ""}</td>
       <td>${escHtml(o.customer)}</td>
       <td class="muted">${fmtDateTime(o.datetime)}</td>
       <td style="font-weight:700">${peso(o.total)}</td>
@@ -1470,7 +1476,7 @@ function openStatusModal(orderId){
    Returns true on success so callers can decide whether to close a modal. */
 async function updateOrderStatus(orderId, newStatus, note, trackingNumber){
   try {
-    await EbApi.post("orders/status.php", {
+    const { data } = await EbApi.post("orders/status.php", {
       id: orderId, status: newStatus, note: note || null,
       /* Sent only when there is one. The endpoint ignores it on any transition
          that is not a delivery being dispatched, so a stray value cannot be
@@ -1478,7 +1484,14 @@ async function updateOrderStatus(orderId, newStatus, note, trackingNumber){
       tracking_number: trackingNumber || null,
     });
     await loadOrders();
-    toast(`Order ${orderId} → ${STATUS_LABEL[newStatus]}`, "ok");
+    /* The SERVER's status, not the one requested. Accepting a cash pickup
+       order completes it in the same move, and a toast reading "Accepted" for
+       an order that is done — and already in the Sales Report — sends the
+       operator looking for it in the queue. */
+    const landed = (data && data.status) || newStatus;
+    toast(data && data.autoCompleted
+      ? `Order ${orderId} completed — cash on pickup, added to sales.`
+      : `Order ${orderId} → ${STATUS_LABEL[landed] || landed}`, "ok");
     if(typeof initNotifBadge === "function") initNotifBadge();
     return true;
   } catch(err){
@@ -1513,7 +1526,7 @@ async function renderHistory(){
   let res;
   try {
     res = await EbApi.get("orders/list.php", {
-      type: "online",
+      type: "online", with_deliveries: 1,
       search: q || null,
       from: from || null,
       to: to || null,
@@ -1541,7 +1554,7 @@ async function renderHistory(){
   const rows = list.map(o=>{
     const total = orderTotal(o);
     return `<tr>
-      <td class="mono-sm">${escHtml(o.id)}</td>
+      <td class="mono-sm">${escHtml(o.id)}${o.type === "walk-in" ? ` <span class="badge badge-warn" title="Rung up at the POS as a delivery. Paid at the counter; shipped and tracked here like an online order.">Walk-in delivery</span>` : ""}</td>
       <td>${escHtml(o.customer)}</td>
       <td class="muted">${escHtml(o.email)}</td>
       <td class="muted">${fmtDateTime(o.datetime)}</td>
@@ -1620,11 +1633,11 @@ function renderReceipts(){
     adminState.receiptsPager,
     () => $("#receipts-tbody"),
     (page, limit) => EbApi.get("orders/list.php", {
-      page, limit, type: "online", status: "completed", sort: "newest",
+      page, limit, type: "online", with_deliveries: 1, status: "completed", sort: "newest",
       search: $("#receipt-search")?.value || null,
     }),
     o => `<tr>
-      <td class="mono-sm">${escHtml(o.id)}</td>
+      <td class="mono-sm">${escHtml(o.id)}${o.type === "walk-in" ? ` <span class="badge badge-warn" title="Rung up at the POS as a delivery. Paid at the counter; shipped and tracked here like an online order.">Walk-in delivery</span>` : ""}</td>
       <td>${escHtml(o.customer)}</td>
       <td class="muted">${fmtDateTime(o.datetime)}</td>
       <td style="font-weight:700">${peso(o.total)}</td>
@@ -1665,44 +1678,26 @@ function renderReceipts(){
 function openReceipt(orderId){
   const o = ORDERS.find(o=>o.id===orderId);
   if(!o) return;
-  const total = orderTotal(o);
-  const lines = o.items.map(it=>{
-    const p = getProduct(it.id);
-    return `<div class="receipt-line item-line">
-      <span class="l">${escHtml(p?p.name:it.id)} ×${it.qty}</span>
-      <span class="r">${p?peso(p.price*it.qty):"—"}</span>
-    </div>`;
-  }).join("");
+  /* Line amounts come from each line's price AT PURCHASE, inside
+     EbInvoice.fromOrder(). This screen used to multiply by the product's
+     CURRENT price, so editing a price quietly rewrote every past receipt. */
+  const invoice = EbInvoice.fromOrder(o);
+  EbInvoice.ensureStyles();
+
+  /* Workflow facts the paper form has no place for — shown here, not printed. */
+  const notes = [
+    `Status <b>${escHtml(STATUS_LABEL[o.status] || o.status)}</b>`,
+    `Paid by <b>${escHtml(payMethodLabel(o.payMethod))}</b>`,
+  ];
+  if(o.proof && o.proof.refNum) notes.push(`Ref # <b>${escHtml(o.proof.refNum)}</b>`);
 
   openModal({
-    title: "Receipt — " + orderId,
+    title: "Sales Invoice — " + orderId,
     large: true,
-    body: `<div class="receipt">
-      <div class="receipt-header">
-        <div class="receipt-brand">Elisha Bay</div>
-        <div class="receipt-sub">JURIS BAY FOODS, INC. · Dagupan City, Pangasinan</div>
-        <div class="receipt-sub">Online Order Receipt</div>
-        <div class="receipt-txn">${escHtml(o.id)}</div>
-      </div>
-      <div class="receipt-line"><span class="l">Customer</span><span class="r">${escHtml(o.customer)}</span></div>
-      <div class="receipt-line"><span class="l">Email</span><span class="r">${escHtml(o.email)}</span></div>
-      <div class="receipt-addr">Deliver to: ${escHtml(o.address)}</div>
-      <hr class="receipt-divider" />
-      ${lines}
-      <hr class="receipt-divider" />
-      <div class="receipt-total-row"><span>Total</span><span class="receipt-total-val">${peso(total)}</span></div>
-      <div class="receipt-line" style="margin-top:8px"><span class="l">Payment</span><span class="r">${escHtml(payMethodLabel(o.payMethod))}</span></div>
-      ${o.proof.refNum ? `<div class="receipt-line"><span class="l">Ref #</span><span class="r">${escHtml(o.proof.refNum)}</span></div>` : ""}
-      <div class="receipt-line"><span class="l">Date</span><span class="r">${fmtDateTime(o.datetime)}</span></div>
-      <div class="receipt-footer">
-        Thank you for your order!<br>
-        Elisha Bay · Juris Bay Foods, Inc.<br>
-        Dagupan City, Pangasinan<br>
-        <strong>STATUS: ${STATUS_LABEL[o.status].toUpperCase()}</strong>
-      </div>
-    </div>`,
+    body: `<div class="invoice-till-note">${notes.join('<span aria-hidden="true">·</span>')}</div>
+      ${EbInvoice.render(invoice)}`,
     confirmLabel:"Print", confirmClass:"btn-ghost", cancelLabel:"Close",
-    onConfirm(){ window.print(); }
+    onConfirm(){ EbInvoice.print(invoice); }
   });
 }
 
@@ -2058,12 +2053,16 @@ function openOrderDetail(orderId){
       <div class="order-detail-section">
         <div class="order-detail-heading">Payment</div>
         <div class="detail-row"><span class="detail-row-label">Method</span><span class="detail-row-val">${escHtml(payMethodLabel(o.payMethod))}</span></div>
-        <div class="detail-row"><span class="detail-row-label">Proof Uploaded</span><span class="detail-row-val" style="color:${o.proof.uploaded?"var(--ok)":"var(--out)"}">${o.proof.uploaded?"✓ Yes":"✗ No"}</span></div>
+        ${o.credit ? "" : `<div class="detail-row"><span class="detail-row-label">Proof Uploaded</span><span class="detail-row-val" style="color:${o.proof.uploaded?"var(--ok)":"var(--out)"}">${o.proof.uploaded?"✓ Yes":"✗ No"}</span></div>`}
         ${o.proof.refNum ? `<div class="detail-row"><span class="detail-row-label">Reference #</span><span class="detail-row-val"><code>${escHtml(o.proof.refNum)}</code></span></div>` : ""}
         ${o.proof.image ? `<div class="detail-row"><span class="detail-row-label">Payment Screenshot</span><span class="detail-row-val">${proofImageBlock(o)}</span></div>` : ""}
         ${o.trackingNumber ? `<div class="detail-row"><span class="detail-row-label">Tracking #</span><span class="detail-row-val"><code>${escHtml(o.trackingNumber)}</code></span></div>` : ""}
         ${o.deliveredAt ? `<div class="detail-row"><span class="detail-row-label">Delivered</span><span class="detail-row-val">${fmtDateTime(o.deliveredAt)}</span></div>` : ""}
-        <div class="detail-row"><span class="detail-row-label">Verified</span><span class="detail-row-val" style="color:${o.payVerified?"var(--ok)":"var(--text-muted)"}">${o.payVerified?"✓ Verified":"Pending"}</span></div>
+        ${o.credit
+          /* A Net order is paid later, in instalments checked in Payment Schemes —
+             "Pending" here read as a payment nobody had looked at. */
+          ? `<div class="detail-row"><span class="detail-row-label">Payment</span><span class="detail-row-val">On ${escHtml(o.credit.scheme)} terms · ${peso(o.credit.paidAmount)} of ${peso(o.credit.owed)} paid${o.credit.settled ? " — settled" : ` · ${peso(o.credit.remaining)} left, due ${fmtDate(o.credit.dueDate)}`}</span></div>`
+          : `<div class="detail-row"><span class="detail-row-label">Verified</span><span class="detail-row-val" style="color:${o.payVerified?"var(--ok)":"var(--text-muted)"}">${o.payVerified?"✓ Verified":"Pending"}</span></div>`}
       </div>
       <div class="order-detail-section">
         <div class="order-detail-heading">Status</div>

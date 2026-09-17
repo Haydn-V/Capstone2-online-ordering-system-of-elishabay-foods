@@ -219,7 +219,13 @@ async function restoreInvProduct(productId){
 /* ============================================================
    MODULE: INVENTORY MANAGEMENT
    ============================================================ */
-function renderInventoryManage(tab="overview"){
+/* `preselect` is a product id for the Restock and Adjustment forms to open on.
+   The per-row "Restock" / "Adjust" buttons in Stock Overview pass their own
+   product; without it both forms opened on the FIRST product in the list, so
+   restocking "Bangus in Tomato Sauce" from its own row restocked whatever
+   sorted first — and the Adjustment form offered that other product's lots to
+   dispose from. Ignored by every other tab. */
+function renderInventoryManage(tab="overview", preselect=null){
   /* THE PILL ROW DOES NOT GO THROUGH navigate(), so it does not get
      enterModule()'s reset. Without this, switching Restock -> Stock Overview on
      the pills kept whatever filter the last visit left behind — the same stuck
@@ -278,9 +284,9 @@ function renderInventoryManage(tab="overview"){
 
   const container = $("#invmgmt-view-content");
   if(tab==="overview")  container.innerHTML = buildStockOverview();
-  if(tab==="restock")   container.innerHTML = buildRestockForm();
+  if(tab==="restock")   container.innerHTML = buildRestockForm(preselect);
   if(tab==="replenish") container.innerHTML = buildReplenishForm();
-  if(tab==="adjust")    container.innerHTML = buildAdjustForm();
+  if(tab==="adjust")    container.innerHTML = buildAdjustForm(preselect);
   if(tab==="adjlog")    container.innerHTML = buildAdjLog();
   if(tab==="archive")   container.innerHTML = buildArchiveView();
 
@@ -298,6 +304,9 @@ function fillStockOverview(){
       page, limit, status: "all", sort: "name",
       search: adminState.invOverviewQuery || null,
       level: adminState.invOverviewLevel === "all" ? null : adminState.invOverviewLevel,
+      /* The Level filter reads the bands, and the window is what the bands are
+         measured over — see STOCK_WINDOWS in engine.js. */
+      window: stockWindowParam(),
     }),
     p => {
       const si = stockInfo(p);
@@ -319,13 +328,14 @@ function fillStockOverview(){
     {
       colspan: 6,
       empty: { title: "No products match filters", hint: "Adjust the search or level filter." },
-      after: () => {
+      after: (rows, meta) => {
         document.querySelectorAll("#invmgmt-overview-tbody [data-quick-restock]").forEach(btn=>{
-          btn.addEventListener("click", ()=> renderInventoryManage("restock"));
+          btn.addEventListener("click", ()=> renderInventoryManage("restock", btn.dataset.quickRestock));
         });
         document.querySelectorAll("#invmgmt-overview-tbody [data-quick-adjust]").forEach(btn=>{
-          btn.addEventListener("click", ()=> renderInventoryManage("adjust"));
+          btn.addEventListener("click", ()=> renderInventoryManage("adjust", btn.dataset.quickAdjust));
         });
+        paintStockWindowNote("#ovw-window-note", meta);
       },
     }
   );
@@ -353,6 +363,9 @@ function buildStockOverview(){
         <option value="crit" ${lv==="crit"?"selected":""}>Critical</option>
         <option value="out" ${lv==="out"?"selected":""}>Out of Stock</option>
       </select>
+      <select class="filter-select" id="filter-ovw-window" aria-label="Sales window the stock bands are measured over">
+        ${stockWindowOptions()}
+      </select>
       <select class="filter-select" id="stock-ovw-page-size" aria-label="Rows per page">
         <option value="10">10 per page</option>
         <option value="25">25 per page</option>
@@ -365,13 +378,259 @@ function buildStockOverview(){
   </table></div>
   <div class="table-toolbar" style="margin-top:14px">
     <span class="muted" id="stock-ovw-showing" style="font-size:.82rem"></span>
+    <span class="muted" id="ovw-window-note" style="font-size:.78rem;margin-left:12px"></span>
     <div class="pagination" id="stock-ovw-pagination" style="margin-left:auto"></div>
   </div>`;
 }
 
-function buildRestockForm(){
-  const opts = PRODUCTS.filter(p=>!p.archived).map(p=>`<option value="${p.id}">${escHtml(p.name)} (${p.stock} in stock)</option>`).join("");
-  return `<div class="panel" style="max-width:560px">
+/* ============================================================
+   WHAT TO RESTOCK, AND HOW MUCH
+   ============================================================
+   The restock form asked for a quantity and offered nothing to decide it
+   with. The number typed there was a guess, and the evidence that would have
+   settled it — how fast this product has actually been leaving — was two
+   screens away in the Inventory Report.
+
+   This panel puts the evidence beside the field: recent daily sales as a
+   chart, the rate they imply, and a suggested quantity built from that rate.
+   It fills the empty right-hand side of the form, which is where the operator
+   is already looking.
+
+   MEASURED FROM ORDERS ALREADY IN THE BROWSER. Every completed order is
+   loaded with its line items (api/orders/list.php sends `items`), so the
+   series needs no request of its own and cannot disagree with the order
+   screens. The load is the newest 500 orders, which covers this fortnight
+   many times over at present volume; if the shop ever trades 500 orders in
+   two weeks, this chart is one of the things that would need server-side
+   paging.
+
+   COMPLETED ORDERS ONLY, matching api/core/Inventory.php — an order that was
+   cancelled consumed nothing, and counting it would recommend replacing stock
+   that never left. */
+
+/* Both bases the user asked for. `yesterday` is the last COMPLETE day rather
+   than the last 24 hours, for the same reason as Inventory::windowSql(): today
+   is a part day, and at 9am it would halve the rate on its own. */
+const RESTOCK_BASES = {
+  week:      { days: 7, label: "Last 7 days",  phrase: "in the last 7 days" },
+  yesterday: { days: 1, label: "Yesterday",    phrase: "yesterday" },
+};
+
+/* Two weeks of bars. Long enough to see a trend behind whichever basis is
+   selected, short enough that each bar is still readable. */
+const RESTOCK_CHART_DAYS = 14;
+
+/* Units of one product per day, oldest first, ending today. Days with no sale
+   are present as zeroes — a gap in a bar chart has to mean "sold nothing",
+   and it cannot if missing days are simply absent. */
+function salesByDay(productId, days){
+  const series = [];
+  const slotOf = {};
+  for(let i = days - 1; i >= 0; i--){
+    slotOf[dAgo(i)] = series.length;
+    series.push({ date: dAgo(i), units: 0 });
+  }
+  ORDERS.forEach(o=>{
+    if(o.status !== "completed") return;
+    const slot = slotOf[o.date];
+    if(slot === undefined) return;
+    (o.items || []).forEach(it=>{
+      if(it.id === productId) series[slot].units += (+it.qty || 0);
+    });
+  });
+  return series;
+}
+
+/* The suggestion, and every number behind it.
+ *
+ * ORDER UP TO A TARGET, rather than "add N". The question is not how much to
+ * add, it is how much should be on the shelf when the delivery lands: the
+ * rate, times the days that have to be covered, less what is already there.
+ *
+ * The days to cover are the restock lead time TWICE — once for the wait
+ * itself, and once so the shelf is not empty again the day it arrives. The
+ * lead time is the server's (`restock_lead_days`, the same setting the
+ * Critical band uses), so changing it in settings moves this suggestion and
+ * the bands together instead of leaving them to drift apart.
+ */
+function restockAdvice(product, basisKey){
+  const basis  = RESTOCK_BASES[basisKey] || RESTOCK_BASES.week;
+  const chart  = salesByDay(product.id, RESTOCK_CHART_DAYS);
+  /* The basis is the tail of the same series the chart draws, minus today for
+     `yesterday` — so the highlighted bars are exactly what was counted. */
+  const window = basis.days === 1
+    ? chart.slice(chart.length - 2, chart.length - 1)
+    : chart.slice(chart.length - basis.days);
+
+  const units      = window.reduce((n, d)=> n + d.units, 0);
+  const perDay     = units / basis.days;
+  const lead       = (product.inventory && product.inventory.leadDays) || 14;
+  const targetDays = lead * 2;
+  const target     = Math.ceil(perDay * targetDays);
+  const cover      = perDay > 0 ? Math.round(product.stock / perDay) : null;
+
+  return {
+    basis, chart, window, units, perDay, lead, targetDays, target, cover,
+    from: window.length ? window[0].date : null,
+    to:   window.length ? window[window.length - 1].date : null,
+    recommended: Math.max(0, target - product.stock),
+  };
+}
+
+/* The chart. Inline SVG rather than a library: fourteen rectangles do not
+   need one, and the portal's chart library is not loaded on this screen.
+   Colour is carried by CSS variables so it follows the theme, and each bar
+   carries a <title> so the exact figure is one hover away — the axis labels
+   below name only the ends, which is all fourteen bars have room for. */
+function salesChartSvg(advice){
+  const inBasis = new Set(advice.window.map(d=>d.date));
+  const peak    = Math.max(1, ...advice.chart.map(d=>d.units));
+  const W = 240, H = 64, GAP = 2;
+  const bw = (W - GAP * (advice.chart.length - 1)) / advice.chart.length;
+
+  const bars = advice.chart.map(function(d, i){
+    /* A floor of 2px on any non-zero day: a single unit against a 400-unit
+       peak rounds to nothing, and "sold one" must not look like "sold none". */
+    const h = d.units === 0 ? 0 : Math.max(2, (d.units / peak) * (H - 8));
+    const x = i * (bw + GAP);
+    const cls = inBasis.has(d.date) ? "rs-bar is-on" : "rs-bar";
+    return `<rect class="${cls}" x="${x.toFixed(1)}" y="${(H - h).toFixed(1)}"
+                  width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="1.5"
+             ><title>${escHtml(fmtDate(d.date))} — ${d.units} unit${d.units === 1 ? "" : "s"}</title></rect>`;
+  }).join("");
+
+  return `<div class="rs-chart">
+    <div class="rs-chart-peak"><span>${peak.toLocaleString()}</span> peak day</div>
+    <svg viewBox="0 0 ${W} ${H}" role="img"
+         aria-label="Daily units sold over the last ${advice.chart.length} days. Peak ${peak}.">
+      <line class="rs-axis" x1="0" y1="${H}" x2="${W}" y2="${H}"/>
+      ${bars}
+    </svg>
+    <div class="rs-chart-axis">
+      <span>${escHtml(fmtDate(advice.chart[0].date))}</span>
+      <span>Today</span>
+    </div>
+  </div>`;
+}
+
+/* The panel. Rebuilt whole whenever the product or the basis changes — it is
+   small, and rebuilding is what keeps the chart, the numbers and the sentence
+   underneath from ever describing different products. */
+function buildRestockInsight(product, basisKey){
+  if(!product){
+    return `<div class="panel rs-insight" id="rs-insight">
+      <div class="panel-header"><span class="panel-title">Recent sales</span></div>
+      <p class="muted" style="font-size:.84rem">Choose a product to see how fast it has been selling.</p>
+    </div>`;
+  }
+
+  const a    = restockAdvice(product, basisKey);
+  const rate = a.perDay >= 10 ? Math.round(a.perDay) : Math.round(a.perDay * 10) / 10;
+
+  /* THREE OUTCOMES, EACH SAYING WHY. A bare number with no reasoning is a
+     number nobody can argue with, which is the opposite of useful when the
+     operator knows something the data does not (a delivery due, a promotion
+     starting). */
+  let verdict;
+  if(a.units === 0){
+    verdict = `<div class="rs-advice is-none">
+      <div class="rs-advice-lead">No sales to go on</div>
+      <p>Nothing was sold ${escHtml(a.basis.phrase)}. Try the wider basis, or decide from the ${a.chart.length}-day chart above.</p>
+    </div>`;
+  } else if(a.recommended === 0){
+    verdict = `<div class="rs-advice is-ok">
+      <div class="rs-advice-lead">No restock needed</div>
+      <p><strong>${product.stock.toLocaleString()}</strong> in stock is about
+         <strong>${a.cover}</strong> day${a.cover === 1 ? "" : "s"} at ${rate}/day —
+         past the ${a.targetDays}-day target.</p>
+    </div>`;
+  } else {
+    verdict = `<div class="rs-advice">
+      <div class="rs-advice-lead">Suggested quantity</div>
+      <div class="rs-advice-num">${a.recommended.toLocaleString()}</div>
+      <p>${rate}/day × ${a.targetDays} days = ${a.target.toLocaleString()},
+         less ${product.stock.toLocaleString()} in stock.
+         The ${a.targetDays} days are the ${a.lead}-day restock lead time twice over:
+         once for the wait, once so the shelf is not empty when it lands.</p>
+      <button type="button" class="btn btn-ghost btn-sm" id="rs-use-suggested">Use ${a.recommended.toLocaleString()}</button>
+    </div>`;
+  }
+
+  return `<div class="panel rs-insight" id="rs-insight">
+    <div class="panel-header">
+      <span class="panel-title">Recent sales</span>
+      <div class="rs-basis" role="group" aria-label="What the suggestion is based on">
+        ${Object.entries(RESTOCK_BASES).map(([key, b])=>
+          `<button type="button" class="rs-basis-btn${b === a.basis ? " is-on" : ""}"
+                   data-basis="${key}" aria-pressed="${b === a.basis}">${escHtml(b.label)}</button>`
+        ).join("")}
+      </div>
+    </div>
+    <div class="rs-headline">
+      <strong>${a.units.toLocaleString()}</strong> unit${a.units === 1 ? "" : "s"} ${escHtml(a.basis.phrase)}
+      <span class="muted">· about ${rate}/day · completed orders</span>
+    </div>
+    ${salesChartSvg(a)}
+    ${verdict}
+  </div>`;
+}
+
+/* TWO LEVELS OF WIRING, and the split is load-bearing.
+ *
+ * Repainting the panel replaces its nodes, so the controls INSIDE it must be
+ * re-bound every time. The product select is not inside it and survives — so
+ * binding it here too would add one more listener per repaint, and each of
+ * those would repaint again. Three product changes and a single click runs the
+ * handler eight times.
+ *
+ * `wireRestockInsight` is therefore the once-per-render entry point, and
+ * `wireInsightControls` is the part that runs again after each repaint. */
+function wireRestockInsight(container){
+  const sel = container.querySelector("#rs-product");
+  if(sel && !sel.dataset.insightWired){
+    sel.dataset.insightWired = "1";
+    sel.addEventListener("change", ()=> repaintRestockInsight(container));
+  }
+  wireInsightControls(container);
+}
+
+function repaintRestockInsight(container){
+  const host = container.querySelector("#rs-insight");
+  const sel  = container.querySelector("#rs-product");
+  if(!host || !sel) return;
+  host.outerHTML = buildRestockInsight(getProduct(sel.value), adminState.restockBasis);
+  wireInsightControls(container);
+}
+
+function wireInsightControls(container){
+  container.querySelectorAll(".rs-basis-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      adminState.restockBasis = btn.dataset.basis;
+      repaintRestockInsight(container);
+    });
+  });
+
+  /* Fills the field rather than submitting: it is a suggestion, and the
+     operator may know a delivery is due tomorrow. */
+  container.querySelector("#rs-use-suggested")?.addEventListener("click", ()=>{
+    const sel = container.querySelector("#rs-product");
+    const qty = container.querySelector("#rs-qty");
+    const p   = sel && getProduct(sel.value);
+    if(!p || !qty) return;
+    qty.value = restockAdvice(p, adminState.restockBasis).recommended;
+    qty.focus();
+  });
+}
+
+function buildRestockForm(preselect=null){
+  const active = PRODUCTS.filter(p=>!p.archived);
+  const opts = active.map(p=>`<option value="${p.id}"${p.id===preselect?" selected":""}>${escHtml(p.name)} (${p.stock} in stock)</option>`).join("");
+  /* The panel beside the form reads the SAME product the select opens on —
+     including the preselect a Stock Overview row passes in — so the two halves
+     of the screen can never describe different products. */
+  const shown = (preselect && active.find(p=>p.id===preselect)) || active[0] || null;
+  return `<div class="restock-layout">
+  <div class="panel" style="max-width:560px">
     <div class="panel-header"><span class="panel-title">Restock a Product</span></div>
     <form id="restock-form" novalidate>
       <div class="field"><label>Product</label>
@@ -409,7 +668,9 @@ function buildRestockForm(){
         Restock
       </button>
     </form>
-  </div>`;
+  </div>
+  ${buildRestockInsight(shown, adminState.restockBasis)}
+</div>`;
 }
 
 function buildReplenishForm(){
@@ -461,8 +722,11 @@ function buildReplenishForm(){
   </div>`;
 }
 
-function buildAdjustForm(){
-  const opts = PRODUCTS.filter(p=>!p.archived).map(p=>`<option value="${p.id}">${escHtml(p.name)}</option>`).join("");
+function buildAdjustForm(preselect=null){
+  /* The lot picker is filled from whichever product is selected when the form
+     is wired, so opening on the right product is what makes it offer the
+     right product's lots. */
+  const opts = PRODUCTS.filter(p=>!p.archived).map(p=>`<option value="${p.id}"${p.id===preselect?" selected":""}>${escHtml(p.name)}</option>`).join("");
   return `<div class="panel" style="max-width:560px">
     <div class="panel-header"><span class="panel-title">Stock Adjustment</span></div>
     <p style="font-size:.84rem;color:var(--text-muted);margin-bottom:18px">Record disposal (expiry/damage/defects) or returns. Each adjustment is logged in the audit trail.</p>
@@ -641,6 +905,14 @@ function wireInventoryManageView(tab, container){
       adminState.stockOvwPager.page = 1;
       rerender();
     });
+    /* Same control as the Inventory Report's, writing the same session state,
+       so the two screens cannot disagree about what they are showing. */
+    const filterWindow = $("#filter-ovw-window");
+    filterWindow?.addEventListener("change", ()=>{
+      adminState.stockWindow = filterWindow.value;
+      adminState.stockOvwPager.page = 1;
+      rerender();
+    });
     /* focus was lost anyway on every rebuild under the old show/hide
        approach too (attribute wasn't preserved) — re-focusing here just
        makes typing feel continuous now that a real re-render happens
@@ -650,16 +922,17 @@ function wireInventoryManageView(tab, container){
       filterSearch.setSelectionRange(filterSearch.value.length, filterSearch.value.length);
     }
     container.querySelectorAll("[data-quick-restock]").forEach(btn=>{
-      btn.addEventListener("click", ()=> renderInventoryManage("restock"));
+      btn.addEventListener("click", ()=> renderInventoryManage("restock", btn.dataset.quickRestock));
     });
     container.querySelectorAll("[data-quick-adjust]").forEach(btn=>{
-      btn.addEventListener("click", ()=> renderInventoryManage("adjust"));
+      btn.addEventListener("click", ()=> renderInventoryManage("adjust", btn.dataset.quickAdjust));
     });
 
     fillStockOverview();
   }
 
   if(tab==="restock"){
+    wireRestockInsight(container);
     container.querySelector("#restock-form")?.addEventListener("submit", async e=>{
       e.preventDefault();
       const form      = e.target;
@@ -685,7 +958,9 @@ function wireInventoryManageView(tab, container){
              need it to label the carton. */
           const lot = res && res.lotCode ? ` Lot ${res.lotCode} opened.` : "";
           toast(`Restocked ${p.name} +${qty} units. New stock: ${p.stock}.${lot}`, "ok");
-          renderInventoryManage("restock");
+          /* Stay on the product just restocked. Redrawing on the first product
+             made a successful restock look as if it had gone to the wrong one. */
+          renderInventoryManage("restock", productId);
         }
       } catch(err){
         if(err.isValidation) EbUI.showFieldErrors(form, err.fields);
@@ -829,7 +1104,7 @@ function wireInventoryManageView(tab, container){
           container.querySelector("#adj-type").value="disposal";
           typeDisposalBtn.classList.add("active","disposal");
           typeReturnBtn.classList.remove("active");
-          renderInventoryManage("adjust");
+          renderInventoryManage("adjust", productId);
         }
       } catch(err){
         if(err.isValidation) EbUI.showFieldErrors(form, err.fields);

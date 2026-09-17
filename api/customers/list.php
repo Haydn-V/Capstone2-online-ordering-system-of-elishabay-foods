@@ -42,7 +42,7 @@ $total = (int) Database::scalar("SELECT COUNT(*) $sql", $params);
 
 /* Lifetime spend uses the one revenue definition (D2). The spend params come
    FIRST because the sub-select appears before $sql in the statement. */
-[$spendClause, $spendParams] = Revenue::clause('o');
+[$spendSql, $spendParams] = Revenue::spendSql('c.id');
 $rows = Database::all(
     /* canSignIn, NOT the hash. The column is never sent — a staff screen has
        no use for it and shipping password material to a browser is how it ends
@@ -50,8 +50,7 @@ $rows = Database::all(
     "SELECT c.id, c.name, c.email, c.contact, c.status, c.joined,
             (c.password IS NOT NULL) AS can_sign_in,
             (SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.id) AS order_count,
-            (SELECT COALESCE(SUM(o.total),0) FROM orders o
-              WHERE o.customer_id = c.id AND $spendClause) AS lifetime_spend
+            $spendSql AS lifetime_spend
      $sql
      ORDER BY c.name ASC
      LIMIT {$paging['limit']} OFFSET {$paging['offset']}",

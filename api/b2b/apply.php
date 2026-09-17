@@ -136,37 +136,14 @@ if ($tin !== null) {
     }
 }
 
-/* Normalised to the canonical scheme name the rest of the system uses.
-   ---------------------------------------------------------------------
-   The form offers friendly labels — "Net 30 Days Credit Terms" — while
-   b2b_applications.requested_terms is seeded with "Net 30", payment_accounts
-   .scheme stores "Net 30", and Payments::schemeLabel() produces "Net 30". Storing
-   the form's label verbatim would put a value in the column that no screen and
-   no lookup downstream matches.
-
-   Both spellings are accepted so the endpoint is not brittle to a wording
-   change on the page, and "Cash on Delivery" is a real answer meaning no credit
-   line is being asked for — stored as NULL rather than refused. */
-$TERMS = [
-    'Cash on Delivery (COD)'     => null,
-    'Cash on Delivery'           => null,
-    'COD'                        => null,
-    'Net 30 Days Credit Terms'   => 'Net 30',
-    'Net 60 Days Credit Terms'   => 'Net 60',
-    'Net 90 Days Credit Terms'   => 'Net 90',
-    'Net 30'                     => 'Net 30',
-    'Net 60'                     => 'Net 60',
-    'Net 90'                     => 'Net 90',
-];
-$termsRaw = trim((string) ($in['requested_terms'] ?? ''));
-$terms = null;
-if ($termsRaw !== '') {
-    if (!array_key_exists($termsRaw, $TERMS)) {
-        $fieldErrors['requested_terms'] = 'Choose one of the listed payment terms.';
-    } else {
-        $terms = $TERMS[$termsRaw];
-    }
-}
+/* Payment terms are not collected on the application.
+   ---------------------------------------------------
+   The form used to ask for a "Requested Credit Tier". Nothing downstream read
+   it: approval never stored a scheme against the customer, and a retailer picks
+   Net 30/60/90 on each order at checkout. Any `requested_terms` a caller still
+   sends is ignored rather than refused, so an old cached copy of the form does
+   not fail. The column stays in b2b_applications for applications that
+   predate this and is written NULL from here on. */
 
 $username = trim((string) ($in['username'] ?? '')) ?: null;
 if ($username !== null && !preg_match('/^[A-Za-z0-9._-]{3,50}$/', $username)) {
@@ -278,7 +255,7 @@ try {
             $appCode, $customerId, $data['business_name'], $data['applicant_name'],
             $data['email'], $data['phone'], $data['business_type'], $tin,
             $data['business_address'], $username, $hash,
-            $terms, trim((string) ($in['monthly_volume'] ?? '')) ?: null,
+            null, trim((string) ($in['monthly_volume'] ?? '')) ?: null,
             $notesStored, 'pending',
         ]
     );
@@ -301,9 +278,8 @@ try {
         'INSERT INTO audit_logs (ts, actor, actor_user_id, type, description)
          VALUES (NOW(), ?, NULL, ?, ?)',
         [$data['applicant_name'], 'user',
-         sprintf('B2B application %s submitted — %s, %s, requested %s.',
-             $appCode, $data['business_name'], $data['business_type'],
-             $terms ?? 'cash on delivery')]
+         sprintf('B2B application %s submitted — %s, %s.',
+             $appCode, $data['business_name'], $data['business_type'])]
     );
 
     $pdo->commit();

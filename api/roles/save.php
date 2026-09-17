@@ -54,6 +54,16 @@ if ($unknown) {
     ]);
 }
 
+/* Super Admin's own permissions cannot be handed out. Refused by name, so the
+   person trying learns why rather than seeing the switch silently reset. */
+$reserved = array_values(array_filter($wanted, [Rbac::class, 'isSystemOnly']));
+if ($reserved) {
+    Response::validation('That permission belongs to Super Admin only.', [
+        'permissions' => 'Only the Super Admin can hold: ' . implode(', ', $reserved)
+            . '. It cannot be granted to another role.',
+    ]);
+}
+
 $clash = Database::scalar('SELECT COUNT(*) FROM roles WHERE name = ? AND id <> ?',
     [$data['name'], $in['id'] ?? 0]);
 if ($clash) {

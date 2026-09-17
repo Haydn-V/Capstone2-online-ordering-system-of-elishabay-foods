@@ -52,7 +52,11 @@ Response::ok([
             /* A system role holds everything unconditionally and owns no
                role_permissions rows. Reporting the full list here keeps the
                matrix honest instead of showing Super Admin with zero ticks. */
-            'permissions' => $isSystem ? $allKeys : ($grants[(int) $r['id']] ?? []),
+            /* A non-system role never reports a SYSTEM_ONLY permission, even if
+               a stray row grants it — Rbac::forRole() ignores that row too. */
+            'permissions' => $isSystem
+                ? $allKeys
+                : array_values(array_diff($grants[(int) $r['id']] ?? [], Rbac::SYSTEM_ONLY)),
             'activeUsers' => (int) $r['active_users'],
             'totalUsers'  => (int) $r['total_users'],
         ];
@@ -61,5 +65,7 @@ Response::ok([
         'key'   => $p['permission_key'],
         'area'  => $p['area'],
         'label' => $p['label'],
+        /* So the matrix can show it locked for every other role. */
+        'systemOnly' => Rbac::isSystemOnly($p['permission_key']),
     ], $permissions),
 ]);

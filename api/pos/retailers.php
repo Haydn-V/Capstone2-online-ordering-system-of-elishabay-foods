@@ -28,16 +28,24 @@ require __DIR__ . '/../core/bootstrap.php';
 Response::requireMethod('GET');
 Rbac::require('pos.use');
 
-$rows = Database::all(
-    "SELECT c.id, c.name,
-            COALESCE(SUM(CASE WHEN pa.paid = 0 THEN pa.balance ELSE 0 END), 0) AS outstanding,
-            SUM(CASE WHEN pa.paid = 0 AND DATEDIFF(CURDATE(), pa.due_date) > 0 THEN 1 ELSE 0 END) AS overdue_count
-       FROM customers c
-       LEFT JOIN payment_accounts pa ON pa.customer_id = c.id
-      WHERE c.status = 'retailer'
-      GROUP BY c.id, c.name
-      ORDER BY c.name"
-);
+/* What each retailer still owes AFTER the payments staff have verified
+   (Payments::describeAccount) — not the billed total of every open account. A
+   retailer who has paid half was being shown owing the whole, at exactly the
+   moment the cashier decides whether to extend more credit. */
+$rate  = Payments::penaltyRate();
+$owing = [];
+foreach (Database::all(Payments::accountSelect() . ' WHERE pa.paid = 0') as $r) {
+    $a   = Payments::describeAccount($r, $rate);
+    $cid = (string) $a['customerId'];
+    $owing[$cid]['outstanding']   = ($owing[$cid]['outstanding'] ?? 0.0) + $a['remaining'];
+    $owing[$cid]['overdue_count'] = ($owing[$cid]['overdue_count'] ?? 0) + ($a['overdue'] ? 1 : 0);
+}
+$rows = array_map(static fn(array $c): array => [
+    'id'            => $c['id'],
+    'name'          => $c['name'],
+    'outstanding'   => round($owing[$c['id']]['outstanding'] ?? 0.0, 2),
+    'overdue_count' => $owing[$c['id']]['overdue_count'] ?? 0,
+], Database::all("SELECT id, name FROM customers WHERE status = 'retailer' ORDER BY name"));
 
 /* Outstanding balance and overdue count travel with the name so the cashier can
    see, at the moment of choosing, that this retailer already owes money and is

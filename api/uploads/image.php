@@ -72,6 +72,12 @@ $PURPOSES = [
     'products'   => ['perm' => 'products.manage', 'who' => 'staff'],
     'content'    => ['perm' => 'landing.manage',  'who' => 'staff'],
     'references' => ['perm' => null,              'who' => 'customer'],
+    /* The GCash / bank QR codes customers scan to pay (Landing Page
+       Maintenance). Filed with the other landing images, and encoded
+       LOSSLESS: every other purpose here is a photo, where WebP q82 is
+       invisible, but lossy compression softens the edges of a QR code's
+       squares, and a blurred code is one a phone will not scan. */
+    'payment-qr' => ['perm' => 'landing.manage',  'who' => 'staff', 'dir' => 'content', 'lossless' => true],
 ];
 
 $purpose = trim((string) ($_POST['purpose'] ?? ''));
@@ -247,7 +253,11 @@ imagedestroy($src);
    no traversal to defend against because no caller-supplied string reaches the
    path at all. */
 $projectRoot = dirname(__DIR__, 2);              /* api/uploads -> api -> root */
-$dir         = $projectRoot . '/uploads/' . $purpose;
+/* A purpose may file into another purpose's folder: payment QR codes live with
+   the rest of the landing content. The folder still comes from the table
+   above, never from the request. */
+$folder      = $rule['dir'] ?? $purpose;
+$dir         = $projectRoot . '/uploads/' . $folder;
 
 if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
     error_log('[uploads] cannot create ' . $dir);
@@ -259,7 +269,7 @@ $abs  = $dir . '/' . $name;
 
 $written = false;
 try {
-    $written = imagewebp($dst, $abs, OUTPUT_QUALITY);
+    $written = imagewebp($dst, $abs, !empty($rule['lossless']) ? IMG_WEBP_LOSSLESS : OUTPUT_QUALITY);
 } catch (Throwable $e) {
     error_log('[uploads] encode failed: ' . $e->getMessage());
 }
@@ -271,7 +281,7 @@ if (!$written || !is_file($abs)) {
 }
 
 $finalBytes = (int) filesize($abs);
-$path       = '/uploads/' . $purpose . '/' . $name;
+$path       = '/uploads/' . $folder . '/' . $name;
 
 /* ---------------------------------------------------------------
    6. Remember that WE issued this path, so it can be discarded
