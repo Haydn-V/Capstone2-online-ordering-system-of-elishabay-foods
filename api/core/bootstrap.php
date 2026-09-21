@@ -34,6 +34,10 @@ require_once __DIR__ . '/Tax.php';
 /* After Notify.php — review-save.php raises a Warning when a customer leaves a
    low rating, and Reviews owns the constant that decides what "low" means. */
 require_once __DIR__ . '/Reviews.php';
+/* Needs Database only. Resolves PSGC codes to a verified address for checkout,
+   registration, the profile and the retailer application — one copy of the
+   rule that a barangay must belong to the city it is posted with. */
+require_once __DIR__ . '/Address.php';
 
 $__cfg = Database::config();
 

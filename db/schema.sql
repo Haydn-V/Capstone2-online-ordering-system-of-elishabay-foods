@@ -1,3 +1,45 @@
+/* =============================================================
+   db/schema.sql — THE BASELINE, NOT THE CURRENT SCHEMA
+
+   This builds the tables as they were before the migrations in
+   db/migrations/ ran. It is not meant to be installed on its own.
+   The install is this file, schema-additions.sql, seed.sql, then
+   EVERY migration in numeric order (docs/SETUP.md, "Import order").
+
+   So what the later files add is deliberately NOT here. A reader
+   looking for it will not find it, and that is not drift —
+   nothing removed it. Measured against a live install:
+
+     audit_logs.actor_user_id                     schema-additions.sql
+     login_attempts (table)                       schema-additions.sql
+       .context                                   012
+     order_status_history (table)                 schema-additions.sql
+     payment_accounts.order_id                    004
+     customers.addr_street/city/province/zip/region   005
+     customers.addr_barangay + four addr_*_code   015
+     orders VAT breakdown, sc_pwd_*, withholding_*    014
+     order_items.tax_type, products.tax_type      014
+     withholding_agents (table)                   014
+     orders.ship_* (structured delivery address)  015
+     b2b_applications.biz_*                       015
+     ph_regions/provinces/cities/barangays        015
+
+   Checked, not assumed: a scratch database built through the
+   documented order has exactly the columns and the 37 foreign keys
+   the live database has.
+
+   One exception, for honesty: product_reviews and
+   products.review_count (migration 011) WERE folded in here. It is
+   harmless — 011 checks information_schema and skips what already
+   exists, and seed.sql recomputes review_count itself — but it
+   means this file is a baseline with one later table in it, not a
+   perfectly clean snapshot of either state.
+
+   THE `USE elisha_bay_db;` BELOW IGNORES the database named on the
+   mysql command line. To build a scratch copy, rewrite that line
+   first — see docs/SETUP.md, "The trap".
+   ============================================================= */
+
 CREATE DATABASE IF NOT EXISTS elisha_bay_db;
 USE elisha_bay_db;
 

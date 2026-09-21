@@ -63,7 +63,8 @@ $customer = Auth::requireCustomer('Sign in to view your profile.');
 
 $row = Database::one(
     'SELECT id, name, email, contact,
-            addr_street, addr_city, addr_province, addr_zip, addr_region
+            addr_street, addr_barangay, addr_city, addr_province, addr_zip, addr_region,
+            addr_region_code, addr_province_code, addr_city_code, addr_barangay_code
        FROM customers WHERE id = ?',
     [$customer['id']]
 );
@@ -131,29 +132,35 @@ if (array_key_exists('email', $in)) {
     }
 }
 
-/* Address. Each part is optional and independently clearable — partial is a
-   real state, and someone who knows their city but not their ZIP should be able
-   to save what they know. */
-$addressMap = [
-    'street'   => ['col' => 'addr_street',   'max' => 160],
-    'city'     => ['col' => 'addr_city',     'max' => 80],
-    'province' => ['col' => 'addr_province', 'max' => 80],
-    'zip'      => ['col' => 'addr_zip',      'max' => 10],
-    'region'   => ['col' => 'addr_region',   'max' => 80],
-];
+/* Address — through Address::resolve, the same rule checkout, registration
+   and the retailer form use.
 
+   It was five independent free-text fields, each "optional and independently
+   clearable". That suited five text boxes and does not suit a picker: a city
+   chosen without its barangay is not a partial address, it is a question with
+   no answer, and a saved one would prefill half a checkout. So now it is all or
+   nothing — entirely empty clears the saved address, anything started must be
+   finished — and the NAMES are looked up from the codes here, never taken from
+   the request.
+
+   Before the PSGC data is loaded, resolve() accepts the one free-text line the
+   form falls back to. It is kept in addr_street, which is what that column held
+   before it had a barangay beside it. */
 if (isset($in['address']) && is_array($in['address'])) {
-    foreach ($addressMap as $key => $spec) {
-        if (!array_key_exists($key, $in['address'])) {
-            continue;
-        }
-        $val = trim((string) $in['address'][$key]);
-        if (mb_strlen($val) > $spec['max']) {
-            $errors[$key] = 'Keep this under ' . $spec['max'] . ' characters.';
-            continue;
-        }
-        $fields[$spec['col']] = $val !== '' ? $val : null;
-    }
+    $a = Address::resolve($in['address'], false);
+    $legacy = $a !== null && $a['barangay_code'] === null;
+    $fields += [
+        'addr_street'        => $a === null ? null : ($legacy ? $a['line'] : $a['street']),
+        'addr_barangay'      => $a['barangay']      ?? null,
+        'addr_city'          => $a['city']          ?? null,
+        'addr_province'      => $a['province']      ?? null,
+        'addr_region'        => $a['region']        ?? null,
+        'addr_zip'           => $a['zip']           ?? null,
+        'addr_region_code'   => $a['region_code']   ?? null,
+        'addr_province_code' => $a['province_code'] ?? null,
+        'addr_city_code'     => $a['city_code']     ?? null,
+        'addr_barangay_code' => $a['barangay_code'] ?? null,
+    ];
 }
 
 /* Name. Saves immediately — getting it wrong is an inconvenience, not a route
@@ -196,9 +203,12 @@ if ($fields !== []) {
    pages through. Worth its own table if customer activity needs recording;
    not worth corrupting this one. */
 
+/* The same column list as the read at the top — profilePayload() needs every
+   one of them, and a second, shorter list here is how the two drift apart. */
 $row = Database::one(
     'SELECT id, name, email, contact,
-            addr_street, addr_city, addr_province, addr_zip, addr_region
+            addr_street, addr_barangay, addr_city, addr_province, addr_zip, addr_region,
+            addr_region_code, addr_province_code, addr_city_code, addr_barangay_code
        FROM customers WHERE id = ?',
     [$customer['id']]
 );
@@ -351,13 +361,20 @@ function profileChangeCodeEmail(string $name, string $code, array $pending): str
  */
 function profilePayload(array $row): array
 {
-    $parts = array_values(array_filter([
-        $row['addr_street'],
-        $row['addr_city'],
-        $row['addr_province'],
-        $row['addr_zip'],
-        $row['addr_region'],
-    ], static fn(?string $v): bool => $v !== null && trim($v) !== ''));
+    /* Composed by Address::compose — the same function that writes
+       orders.address — so the line the checkout prefills and the line an
+       invoice later prints are joined by one rule, not two. */
+    $a = [
+        'street'           => $row['addr_street'],
+        'barangay'         => $row['addr_barangay'],
+        'sub_municipality' => null,
+        'city'             => $row['addr_city'],
+        'province'         => $row['addr_province'],
+        'region'           => $row['addr_region'],
+        'zip'              => $row['addr_zip'],
+    ];
+    $line  = Address::compose($a);
+    $hasAny = $line !== '' || $row['addr_barangay_code'] !== null;
 
     return [
         'id'      => $row['id'],
@@ -366,14 +383,22 @@ function profilePayload(array $row): array
         'contact' => $row['contact'],
         'address' => [
             'street'   => $row['addr_street'],
+            'barangay' => $row['addr_barangay'],
             'city'     => $row['addr_city'],
             'province' => $row['addr_province'],
             'zip'      => $row['addr_zip'],
             'region'   => $row['addr_region'],
-            'line'     => $parts === [] ? '' : implode(', ', $parts),
+            /* The codes the picker chose them from. The picker prefills its
+               dropdowns from THESE; a saved address with no codes (typed before
+               the location data existed) prefills the street line only. */
+            'region_code'   => $row['addr_region_code'],
+            'province_code' => $row['addr_province_code'],
+            'city_code'     => $row['addr_city_code'],
+            'barangay_code' => $row['addr_barangay_code'],
+            'line'     => $line,
             /* So the client never has to infer "is there an address?" from
                whether a joined string is empty. */
-            'hasAny'   => $parts !== [],
+            'hasAny'   => $hasAny,
         ],
     ];
 }

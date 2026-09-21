@@ -561,7 +561,7 @@ function buildRestockInsight(product, basisKey){
       <span class="panel-title">Recent sales</span>
       <div class="rs-basis" role="group" aria-label="What the suggestion is based on">
         ${Object.entries(RESTOCK_BASES).map(([key, b])=>
-          `<button type="button" class="rs-basis-btn${b === a.basis ? " is-on" : ""}"
+          `<button type="button" class="rs-basis-btn${b === a.basis ? " active" : ""}"
                    data-basis="${key}" aria-pressed="${b === a.basis}">${escHtml(b.label)}</button>`
         ).join("")}
       </div>
@@ -630,7 +630,7 @@ function buildRestockForm(preselect=null){
      of the screen can never describe different products. */
   const shown = (preselect && active.find(p=>p.id===preselect)) || active[0] || null;
   return `<div class="restock-layout">
-  <div class="panel" style="max-width:560px">
+  <div class="panel">
     <div class="panel-header"><span class="panel-title">Restock a Product</span></div>
     <form id="restock-form" novalidate>
       <div class="field"><label>Product</label>
@@ -727,7 +727,18 @@ function buildAdjustForm(preselect=null){
      is wired, so opening on the right product is what makes it offer the
      right product's lots. */
   const opts = PRODUCTS.filter(p=>!p.archived).map(p=>`<option value="${p.id}"${p.id===preselect?" selected":""}>${escHtml(p.name)}</option>`).join("");
-  return `<div class="panel" style="max-width:560px">
+  /* TWO COLUMNS, because the form only ever needed 560px and the screen is
+     three times that. The empty right half is now the consequence of the
+     adjustment, drawn from PRODUCTS and BATCHES — both already in memory, both
+     refreshed after every movement — so it costs no request and cannot be
+     staler than the lot picker beside it.
+
+     It is worth the space because this form destroys stock. "9 left, becomes
+     8" in front of someone before they press Submit Adjustment is the cheapest
+     possible check on a typo in the quantity box, and the lot table answers
+     "which one has gone off" without leaving for the Expiry Monitor. */
+  return `<div class="adj-split">
+    <div class="panel adj-form-col">
     <div class="panel-header"><span class="panel-title">Stock Adjustment</span></div>
     <p style="font-size:.84rem;color:var(--text-muted);margin-bottom:18px">Record disposal (expiry/damage/defects) or returns. Each adjustment is logged in the audit trail.</p>
     <form id="adjust-form" novalidate>
@@ -765,7 +776,122 @@ function buildAdjustForm(preselect=null){
         Submit Adjustment
       </button>
     </form>
+    </div>
+
+    <aside class="panel adj-preview-col" id="adj-preview" aria-live="polite">
+      <div class="panel-header"><span class="panel-title">What this affects</span></div>
+      <div id="adj-preview-body"></div>
+    </aside>
   </div>`;
+}
+
+/* The right-hand column. Everything here is derived — no state of its own, no
+   request — so it cannot disagree with the form it is describing. */
+function paintAdjustPreview(container){
+  const body = container.querySelector("#adj-preview-body");
+  if(!body) return;
+
+  const pid  = container.querySelector("#adj-product")?.value;
+  const type = container.querySelector("#adj-type")?.value || "disposal";
+  const qty  = Math.max(0, +container.querySelector("#adj-qty")?.value || 0);
+  const lot  = container.querySelector("#adj-batch")?.value || "";
+  const p    = getProduct(pid);
+
+  if(!p){ body.innerHTML = `<div class="alert-empty"><strong>No product selected</strong></div>`; return; }
+
+  const si    = stockInfo(p);
+  /* A disposal takes stock out; a return puts it back. Same arithmetic the
+     server does in inventory/adjust.php — shown here, not decided here. */
+  const after = type === "disposal" ? p.stock - qty : p.stock + qty;
+  const over  = type === "disposal" && qty > p.stock;
+
+  const lots = BATCHES
+    .filter(b => b.productId === pid)
+    .filter(b => type === "disposal" ? b.remainingQty > 0 : true)
+    .sort((a, b) => String(a.expiryDate).localeCompare(String(b.expiryDate)));
+
+  const rows = lots.map(b => {
+    const isSel = b.lotCode === lot;
+    const left  = type === "disposal" && isSel ? Math.max(0, b.remainingQty - qty) : b.remainingQty;
+    return `<tr class="${isSel ? "is-selected" : ""}">
+      <td class="mono">${escHtml(b.lotCode)}${isSel ? ` <span class="badge badge-warn">selected</span>` : ""}</td>
+      <td class="num-cell">${isSel && type === "disposal" && qty
+        ? `<span class="adj-lot-was">${b.remainingQty}</span><span class="adj-lot-arrow" aria-hidden="true">→</span>${left}`
+        : b.remainingQty}</td>
+      <td class="num-cell muted">${escHtml(fmtDate(b.expiryDate))}</td>
+    </tr>`;
+  }).join("");
+
+  /* The facts that bear on the decision, all already on the product record:
+     how long the shelf lasts at the current rate, how fast it moves, and
+     whether the earliest lot is going to expire before it sells. A disposal is
+     usually prompted by one of these three. */
+  const inv   = p.inventory || {};
+  const cover = inv.daysCover == null ? null : inv.daysCover;
+  const risk  = inv.expiryRisk;
+
+  const facts = [
+    { k: "Days of cover", v: cover == null ? "—" : `${cover}`,
+      hint: cover == null ? "Nothing has sold in the measured window." : `At the current rate. A restock takes ${inv.leadDays ?? "—"}.` },
+    { k: "Movement", v: inv.movementLabel || "—",
+      hint: inv.perMonth != null ? `About ${inv.perMonth} a month.` : "" },
+    { k: "Lots on record", v: String(lots.length), hint: "" },
+  ].map(f => `<div class="adj-prev-fact"${f.hint ? ` title="${escHtml(f.hint)}"` : ""}>
+      <span>${f.k}</span><b>${escHtml(f.v)}</b>
+    </div>`).join("");
+
+  body.innerHTML = `
+    <div class="adj-prev-product">
+      <div class="adj-prev-id">
+        <div class="adj-prev-cat">${escHtml(p.cat || "")}</div>
+        <h4 class="adj-prev-name">${escHtml(p.name)}</h4>
+      </div>
+      <span class="badge ${si.cls}"${si.reason ? ` title="${escHtml(si.reason)}"` : ""}>${escHtml(si.label)}</span>
+    </div>
+
+    <div class="adj-prev-figures">
+      <div class="adj-prev-fig">
+        <span>On hand now</span>
+        <b>${p.stock.toLocaleString()}</b>
+      </div>
+      <div class="adj-prev-arrow" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </div>
+      <div class="adj-prev-fig ${over ? "is-bad" : ""}">
+        <span>After this ${type === "disposal" ? "disposal" : "return"}</span>
+        <b>${over ? "—" : Math.max(0, after).toLocaleString()}</b>
+      </div>
+    </div>
+
+    ${over ? `<div class="adj-prev-warn">
+      That is more than the ${p.stock.toLocaleString()} on hand. The server refuses an
+      adjustment it cannot take out of stock, so lower the quantity before submitting.
+    </div>` : ""}
+
+    <div class="adj-prev-facts">${facts}</div>
+
+    ${risk && risk.atRisk ? `<div class="adj-prev-risk">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span>${escHtml(risk.note)}</span>
+    </div>` : ""}
+
+    <section class="adj-prev-lots">
+      <header class="adj-prev-lots-head">
+        <span>Lots</span>
+        <span class="adj-prev-lots-count">${lots.length
+          ? `${lots.length} on record${type === "disposal" ? " · soonest expiry first" : ""}`
+          : "none on record"}</span>
+      </header>
+      <div class="adj-prev-lots-box">
+        ${lots.length ? `<div class="adj-prev-lots-body"><table class="data-table adj-lot-table">
+          <thead><tr><th>Lot</th><th class="num">Remaining</th><th class="num">Expires</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>` : `<div class="adj-prev-lots-body"><div class="alert-empty">
+          <strong>Nothing to adjust against</strong>
+          Register a lot for this product in Batch Tracking first.
+        </div></div>`}
+      </div>
+    </section>`;
 }
 
 /* Adjustment log — server-paged.
@@ -1056,24 +1182,31 @@ function wireInventoryManageView(tab, container){
         : `${lots.length} lots, soonest expiry first.`;
     }
 
-    container.querySelector("#adj-product")?.addEventListener("change", paintLots);
+    /* The side panel follows every input that changes what the adjustment
+       would do — product, type, quantity and the lot itself. Wrapped around
+       paintLots() so the two can never show different lots. */
+    const repaint = () => { paintLots(); paintAdjustPreview(container); };
+
+    container.querySelector("#adj-product")?.addEventListener("change", repaint);
+    container.querySelector("#adj-qty")?.addEventListener("input", () => paintAdjustPreview(container));
+    container.querySelector("#adj-batch")?.addEventListener("change", () => paintAdjustPreview(container));
 
     typeDisposalBtn?.addEventListener("click", ()=>{
       typeHidden.value="disposal";
       typeDisposalBtn.classList.add("active","disposal"); typeDisposalBtn.classList.remove("return");
       typeReturnBtn.classList.remove("active","return");
       container.querySelector("[type='submit']").className="btn btn-red";
-      paintLots();
+      repaint();
     });
     typeReturnBtn?.addEventListener("click", ()=>{
       typeHidden.value="return";
       typeReturnBtn.classList.add("active","return"); typeReturnBtn.classList.remove("disposal");
       typeDisposalBtn.classList.remove("active","disposal");
       container.querySelector("[type='submit']").className="btn btn-ok";
-      paintLots();
+      repaint();
     });
 
-    paintLots();
+    repaint();
     container.querySelector("#adjust-form")?.addEventListener("submit", async e=>{
       e.preventDefault();
       const productId = container.querySelector("#adj-product").value;

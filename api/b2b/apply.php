@@ -116,10 +116,17 @@ $data = Validate::check($in)
     ->maxLen('phone', 30, 'Phone')
     ->required('business_type', 'Business type')
     ->maxLen('business_type', 50, 'Business type')
-    ->required('business_address', 'Business address')
     ->values();
 
 $fieldErrors = [];
+
+/* THE BUSINESS ADDRESS, from the picker's codes — see api/core/Address.php.
+   It was one required free-text field; a retailer's address is where stock is
+   delivered on credit terms, which makes it the last address in the system that
+   should be unstructured. Required in full: street and ZIP included.
+   check(), not resolve(), so its errors are reported with the rest below. */
+[$biz, $addrErrors] = Address::check(is_array($in['address'] ?? null) ? $in['address'] : null, true);
+$fieldErrors += $addrErrors;
 
 if (!preg_match('/^[0-9 +\-()]{7,30}$/', $data['phone'])) {
     $fieldErrors['phone'] = 'Enter a valid contact number.';
@@ -248,14 +255,27 @@ try {
     Database::run(
         'INSERT INTO b2b_applications
             (app_id_code, customer_id, business_name, applicant_name, email, phone,
-             business_type, bir_tin, business_address, username, password,
-             requested_terms, monthly_volume, notes, submitted_date, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?)',
+             business_type, bir_tin, business_address,
+             biz_street, biz_barangay, biz_city, biz_province, biz_region, biz_zip,
+             biz_region_code, biz_province_code, biz_city_code, biz_barangay_code,
+             username, password,
+             requested_terms, notes, submitted_date, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?)',
         [
             $appCode, $customerId, $data['business_name'], $data['applicant_name'],
             $data['email'], $data['phone'], $data['business_type'], $tin,
-            $data['business_address'], $username, $hash,
-            null, trim((string) ($in['monthly_volume'] ?? '')) ?: null,
+            /* business_address stays the one printable line the staff screen
+               and the approval email already show; the parts sit beside it. */
+            $biz['line'],
+            $biz['street'], $biz['barangay'], $biz['city'], $biz['province'], $biz['region'], $biz['zip'],
+            $biz['region_code'], $biz['province_code'], $biz['city_code'], $biz['barangay_code'],
+            $username, $hash,
+            /* requested_terms: an applicant no longer picks a credit term (see
+               become-partner.html). monthly_volume is no longer WRITTEN at all —
+               the form stopped asking for it. The column stays: earlier
+               applications hold values there, and dropping it would delete that
+               history to save nothing. api/b2b/list.php still returns it. */
+            null,
             $notesStored, 'pending',
         ]
     );

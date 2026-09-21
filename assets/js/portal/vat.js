@@ -57,10 +57,19 @@ function vatRenderTabs(){
   });
 }
 
+/* The live figure beside the tab row. Each tab that has one sets it; every
+   render starts by clearing it, so a count never outlives the tab it
+   describes. */
+function vatSetMeta(text){
+  const el = $("#vat-tab-meta");
+  if(el) el.textContent = text || "";
+}
+
 async function renderVat(){
   const content = $("#vat-content");
   if(!content) return;
   vatRenderTabs();
+  vatSetMeta("");
 
   if(!hasPerm("vat.manage")){
     content.innerHTML = `<div class="alert-empty"><strong>Super Admin only</strong>VAT Maintenance can only be opened by the Super Admin.</div>`;
@@ -129,11 +138,6 @@ function vatRenderRules(){
       </div>
     </div>
 
-    <p class="vat-note">
-      <strong>Changes apply to sales made after you save.</strong>
-      Invoices already issued keep the figures they were printed with.
-      Confirm these rules with the business's accountant — which senior/PWD rule applies to grocery goods, in particular.
-    </p>
     <button class="btn btn-gold" id="vat-save-rules">Save rules</button>`;
 
   $("#vat-save-rules").addEventListener("click", async (e) => {
@@ -170,12 +174,10 @@ function vatRenderRules(){
 function vatRenderProducts(){
   const rows = vatState.data.products;
   const exempt = rows.filter(p => p.taxType === "exempt").length;
+  /* A live figure, so it stays — beside the tab rather than at the end of the
+     paragraph it used to close. */
+  vatSetMeta(`${exempt} of ${rows.length} product${rows.length === 1 ? "" : "s"} exempt`);
   $("#vat-content").innerHTML = `
-    <p class="vat-note">
-      A <strong>VAT-exempt</strong> product's shelf price has no VAT in it, and its sales print under
-      VAT-Exempt Sales on the invoice. A change applies to sales from now on.
-      <span class="muted">${exempt} of ${rows.length} product${rows.length === 1 ? "" : "s"} exempt.</span>
-    </p>
     <div class="table-wrap"><table class="data-table">
       <thead><tr><th>Product</th><th>Category</th><th class="num">Shelf Price</th><th style="width:190px">Tax Type</th></tr></thead>
       <tbody>${rows.map(p => `
@@ -215,13 +217,8 @@ function vatRenderProducts(){
 function vatRenderWithholding(){
   const { retailers, rules } = vatState.data;
   const agents = retailers.filter(c => c.withholdingRate !== null).length;
+  vatSetMeta(`${agents} withholding agent${agents === 1 ? "" : "s"}`);
   $("#vat-content").innerHTML = `
-    <p class="vat-note">
-      A <strong>withholding agent</strong> keeps part of what it pays — the rate below, on the amount net of VAT —
-      and remits it to the BIR for the business, then hands over <strong>BIR Form 2307</strong>. The sale total is
-      unchanged; the invoice shows it under Less: Withholding Tax, and the cash due is less. Only current retailers
-      are listed. <span class="muted">${agents} withholding agent${agents === 1 ? "" : "s"}.</span>
-    </p>
     ${retailers.length ? `<div class="table-wrap"><table class="data-table">
       <thead><tr><th>Retailer</th><th>BIR TIN</th><th style="width:190px">Withholds</th><th style="width:130px">Rate (%)</th><th style="width:110px"></th></tr></thead>
       <tbody>${retailers.map(c => {
@@ -316,10 +313,6 @@ async function vatLoadSummary(){
       ${card("Tax Withheld by Buyers", vatMoney(t.withholdingTax), `${t.withholdingCount} sale${t.withholdingCount === 1 ? "" : "s"} · collect BIR Form 2307`)}
       ${card("Invoices", t.invoices.toLocaleString(), `${vatMoney(t.totalSales)} total sales`)}
     </div>
-    <p class="vat-note">
-      Every order not cancelled, dated by its invoice. That differs from the Sales Report on purpose: VAT is owed
-      when a sale is invoiced, even on Net terms that have not been paid yet, while revenue waits for the money.
-    </p>
     ${data.months.length ? `<div class="table-wrap"><table class="data-table">
       <thead><tr><th>Month</th><th class="num">Invoices</th><th class="num">VATable Sales</th><th class="num">Output VAT</th>
         <th class="num">VAT-Exempt</th><th class="num">SC/PWD Discounts</th><th class="num">Withheld</th><th class="num">Total Sales</th></tr></thead>

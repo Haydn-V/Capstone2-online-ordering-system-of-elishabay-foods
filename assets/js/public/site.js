@@ -259,13 +259,43 @@ function payQrHtml(method){
   if(!a.qr && !rows.length){
     return `<div class="pay-qr pay-qr-empty">Our ${title} details are not published yet. Contact us for where to send your payment.</div>`;
   }
+  /* THE CODE OPENS FULL SIZE IN A NEW TAB.
+
+     A QR has to be big enough for a camera to lock onto, and how big that is
+     depends on the screen it is being scanned off and how far away the phone
+     is — not on anything this layout can know. So the inline code is as large
+     as the card allows, and the image itself is a link to the original upload:
+     the browser's own image view scales it to the whole screen, zooms, and
+     saves, which is also the only way someone reading this ON their phone can
+     scan it at all (they cannot point that phone at its own screen).
+
+     A link and not a modal, deliberately: the checkout IS a modal, and opening
+     another over it would replace it and take everything typed so far with it.
+     rel="noopener" because target="_blank" without it hands the new tab a
+     reference back to this one. */
+  /* THE WORDS ARE ABOVE AND BELOW THE CODE, NOT BESIDE IT.
+
+     They used to share a row with it, which cost the code more than half the
+     card's width for a heading and two lines of text — and the code is the one
+     thing here that has to survive being photographed. Stacked, it gets the
+     full width of the card. The account name and number stay ABOVE it, because
+     they are what a person checks against their app before sending money, and
+     the instruction goes below, where it is read after the code is scanned. */
   return `<div class="pay-qr">
-      ${a.qr ? `<img class="pay-qr-img" src="${escAttr(imageUrl(a.qr))}" alt="${title} QR code">` : ""}
-      <div class="pay-qr-info">
+      <div class="pay-qr-head">
         <div class="pay-qr-title">Pay by ${title}</div>
         ${rows.join("")}
-        <div class="pay-qr-hint">${a.qr ? "Scan the code with your app, then" : "Send your payment, then"} upload the screenshot below.</div>
       </div>
+      ${a.qr ? `<a class="pay-qr-fig" href="${escAttr(imageUrl(a.qr))}" target="_blank" rel="noopener noreferrer">
+        <img class="pay-qr-img" src="${escAttr(imageUrl(a.qr))}" alt="${title} QR code">
+        <span class="pay-qr-zoom">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg>
+          Open full size
+        </span>
+      </a>` : ""}
+      <div class="pay-qr-hint">${a.qr
+        ? "Scan the code with your app — tap it to open it full size on another device — then"
+        : "Send your payment, then"} upload the screenshot below.</div>
     </div>`;
 }
 
@@ -1467,10 +1497,12 @@ function openCheckout(){
           <button type="button" class="tg active" data-type="delivery">Delivery <small>via LBC courier</small></button>
           <button type="button" class="tg" data-type="pickup">Pickup <small>Dagupan City</small></button>
         </div>
-        <div class="field" id="address-field" style="margin-top:14px">
-          <label for="co-address">Delivery Address</label>
-          <textarea class="control" id="co-address" rows="2" placeholder="House no., street, barangay, city, province"></textarea>
-          <span class="field-error" data-err></span>
+        <!-- The delivery address: the shared picker (address-picker.js), not a
+             free-text box. Region → Province → City → Barangay, then the street
+             and ZIP typed. Hidden for pickup, which stores no address at all. -->
+        <div class="co-address" id="address-field">
+          <div class="co-subtitle" id="co-address-title">Delivery Address</div>
+          ${EbAddress.markup("co", { variant: "field", required: true })}
         </div>
       </div>
 
@@ -1598,6 +1630,9 @@ function openCheckout(){
         .catch(() => { /* The checkout computes it anyway; the note is a courtesy. */ });
     }
     const addrField = root.querySelector("#address-field");
+    /* The picker's behaviour: cascade, loading, cache, prefill, errors. One
+       controller for the four dropdowns and two typed fields. */
+    const addr = EbAddress.mount(root, "co");
 
     /* ---- PREFILL (decision I9) ---------------------------------------
        A SUGGESTION, NOT AN OVERRIDE.
@@ -1652,7 +1687,11 @@ function openCheckout(){
         };
 
         prefilled.contact = fillIfEmpty("#co-contact", profile.contact);
-        prefilled.address = fillIfEmpty("#co-address", profile.address.line);
+        /* The address goes through the picker's own prefill, which keeps every
+           rule above: it fills only what is still empty, walks the dropdowns in
+           order waiting for each list, stops the moment the shopper touches any
+           of them, disables nothing, and writes nothing back. */
+        prefilled.address = await addr.prefill(profile.address);
         if (!root.querySelector("#co-name").value.trim() && profile.name) {
           root.querySelector("#co-name").value = profile.name;
         }
@@ -1920,7 +1959,9 @@ function openCheckout(){
       const contact = root.querySelector("#co-contact").value.trim();
       if(!name) fail("#co-name","Please enter your name.");
       if(!/^[0-9 +\-]{7,}$/.test(contact)) fail("#co-contact","Enter a valid contact number.");
-      if(orderType==="delivery" && !root.querySelector("#co-address").value.trim()) fail("#co-address","Delivery address is required.");
+      /* The same rules Address::check applies, run here so an unfinished
+         address is flagged without a round trip. The server decides. */
+      if(orderType==="delivery" && !addr.validate(true)) ok = false;
       /* Reference number and screenshot are demanded only by the two transfer
          methods — the same pair api/shop/checkout.php checks. Written as an
          explicit membership test rather than `payment !== "cash"`, because
@@ -1960,7 +2001,9 @@ function openCheckout(){
                gets the request refused outright rather than silently ignored,
                which is the point — a client that believes it can name the buyer
                should be told it cannot. */
-            address: root.querySelector("#co-address").value.trim(),
+            /* Codes, not names — the server looks the names up itself. Nothing
+               for a pickup, which stores no address. */
+            address: orderType === "delivery" ? addr.value() : null,
             notes: root.querySelector("#co-notes").value.trim(),
             order_type: orderType === "delivery" ? "delivery" : "pickup",
             /* Straight through. See PAY_METHODS_UI for what used to be here
@@ -1976,7 +2019,10 @@ function openCheckout(){
              against the form, with the cart left intact so the shopper can
              adjust rather than losing everything. */
           if (err.isValidation) {
-            Object.entries(err.fields).forEach(([f, msg]) => {
+            /* addr_* keys belong to the picker, which marks and focuses its own
+               field; everything else goes through the form's mapping below. */
+            addr.showErrors(err.fields);
+            Object.entries(err.fields).filter(([f]) => !f.startsWith("addr_")).forEach(([f, msg]) => {
               const el = root.querySelector(`#co-${f.replace("_","-")}`) || root.querySelector(`#co-${f}`);
               const box = el && el.closest(".field")?.querySelector("[data-err]");
               if (box) box.textContent = msg;
@@ -1998,10 +2044,11 @@ function openCheckout(){
            Failure is reported and does not touch the receipt. */
         if (root.querySelector("#co-save-profile")?.checked) {
           try {
-            await EbApi.post("shop/profile.php", {
-              contact: contact,
-              address: { street: root.querySelector("#co-address").value.trim() },
-            });
+            /* The address only when there was one — a pickup has none to save,
+               and posting an empty one would CLEAR the saved address. */
+            await EbApi.post("shop/profile.php", orderType === "delivery"
+              ? { contact: contact, address: addr.value() }
+              : { contact: contact });
             showToast("Saved to your profile.", "success");
           } catch (err) {
             showToast("Order placed, but your profile could not be updated: " + err.message, "info");
@@ -2230,14 +2277,15 @@ function openAuth(tab='login', hint=null){
             </div>
             <span class="field-error" data-err></span>
           </div>
-          <div class="auth-field">
-            <label for="rg-address">Address</label>
-            <div class="auth-input-group auth-input-group-ta">
-              <span class="auth-input-icon auth-icon-ta" aria-hidden="true">${ICONS.pin}</span>
-              <textarea class="auth-input auth-textarea" id="rg-address" rows="2" placeholder="Barangay, city, province" autocomplete="street-address"></textarea>
-            </div>
-            <span class="field-error" data-err></span>
-          </div>
+          <!-- The address, through the shared picker. Region through barangay
+               are required, as this form always required an address; street and
+               ZIP are optional, as the old box ("Barangay, city, province")
+               never asked for them. It used to post to register.php, which never
+               read it — every address typed here was discarded. -->
+          <fieldset class="auth-addr">
+            <legend class="auth-addr-legend">Your address</legend>
+            ${EbAddress.markup("rg", { variant: "auth", required: "location" })}
+          </fieldset>
           <div class="auth-field">
             <label for="rg-pass">Password</label>
             <div class="auth-input-group">
@@ -2269,28 +2317,29 @@ function openAuth(tab='login', hint=null){
     // Mark modal for CSS overrides (close btn colour, no title, zero body padding)
     root.closest('#modal')?.classList.add('is-auth');
 
+    /* The Create Account tab's address picker. Mounted when the modal opens,
+       not when the tab is shown, so its region list is already there by the
+       time somebody switches tabs. */
+    const rgAddr = EbAddress.mount(root, "rg");
+
     // forgot password — no backend yet, point to Facebook
     root.querySelector('[data-forgot]')?.addEventListener('click', ()=>{
       showToast('Message us on Facebook to reset your password.', 'success');
     });
 
-    /* ── Pill tab switcher ── */
+    /* ── Pill tab switcher ──
+       The pill itself is NOT moved from here any more. It used to be measured
+       with getBoundingClientRect() and written into left/width on the next
+       animation frame, which read the modal's opening `scale(.96)` as if it
+       were layout and left the pill 4% short of the tab — or, on a frame
+       before the modal had any layout, collapsed it into the corner. It is
+       positioned in CSS off `.auth-tab.active` now (see .auth-tab-slide in
+       styles.css), so the only thing this has to do is move the class. */
     const tabBtns = root.querySelectorAll('.auth-tab');
-    const slide   = root.querySelector('.auth-tab-slide');
-    const tabWrap = root.querySelector('.auth-tabs');
-    function moveSlide(btn, instant){
-      const wR = tabWrap.getBoundingClientRect(), bR = btn.getBoundingClientRect();
-      if(instant) slide.style.transition = 'none';
-      slide.style.left  = (bR.left - wR.left) + 'px';
-      slide.style.width = bR.width + 'px';
-      if(instant) requestAnimationFrame(()=>{ slide.style.transition = ''; });
-    }
-    requestAnimationFrame(()=>{ moveSlide(root.querySelector('.auth-tab.active'), true); });
     tabBtns.forEach(btn=>btn.addEventListener('click', ()=>{
       const t = btn.dataset.atab;
       tabBtns.forEach(b=>{ b.classList.remove('active'); b.setAttribute('aria-selected','false'); });
       btn.classList.add('active'); btn.setAttribute('aria-selected','true');
-      moveSlide(btn, false);
       root.querySelectorAll('.auth-panel').forEach(p=>p.classList.remove('active'));
       root.querySelector(`#ap-${t}`)?.classList.add('active');
       setTimeout(()=>root.querySelector(`#ap-${t} input`)?.focus(), 60);
@@ -2458,13 +2507,13 @@ function openAuth(tab='login', hint=null){
       const name    = root.querySelector('#rg-name').value.trim();
       const contact = root.querySelector('#rg-contact').value.trim();
       const email   = root.querySelector('#rg-email').value.trim();
-      const address = root.querySelector('#rg-address').value.trim();
       const pw      = root.querySelector('#rg-pass').value;
       const cf      = root.querySelector('#rg-confirm').value;
       if(!name)    fail('#rg-name','Name is required.');
       if(!/^[0-9 +\-]{7,}$/.test(contact)) fail('#rg-contact','Enter a valid contact number.');
       if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail('#rg-email','Enter a valid email.');
-      if(!address) fail('#rg-address','Address is required.');
+      /* Region through barangay, as the server's Address::LOCATION requires. */
+      if(!rgAddr || !rgAddr.validate("location")) ok = false;
       if(pw.length<8) fail('#rg-pass','Use at least 8 characters.');
       if(cf!==pw)  fail('#rg-confirm','Passwords do not match.');
       if(!ok) return;
@@ -2477,7 +2526,7 @@ function openAuth(tab='login', hint=null){
          creating a duplicate, so their existing order history follows them. */
       try {
         const { data } = await EbApi.post("shop/register.php", {
-          name, email, password: pw, contact, address,
+          name, email, password: pw, contact, address: rgAddr ? rgAddr.value() : null,
         });
         signIn(data.customer);
         if(data.claimedExistingRecord){
@@ -2485,7 +2534,11 @@ function openAuth(tab='login', hint=null){
         }
       } catch(err){
         if(err.isValidation){
-          Object.entries(err.fields).forEach(([f,msg]) =>
+          /* addr_* keys are the picker's; it marks its own fields. Handing them
+             to fail() would look for an #rg-addr_region that does not exist
+             and throw inside the error handler. */
+          rgAddr?.showErrors(err.fields);
+          Object.entries(err.fields).filter(([f]) => !f.startsWith('addr_')).forEach(([f,msg]) =>
             fail('#rg-' + (f === 'password' ? 'pass' : f === 'name' ? 'name' : f), msg));
         } else {
           fail('#rg-email', err.message);

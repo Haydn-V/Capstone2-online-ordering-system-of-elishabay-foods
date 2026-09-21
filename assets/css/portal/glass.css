@@ -409,7 +409,8 @@ body::before {
 .return-tab-btn,
 .alert-tab,
 .inv-action-btn,
-.range-btn {
+.range-btn,
+.rs-basis-btn {
   background: var(--glass-bg-soft);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
@@ -423,7 +424,8 @@ body::before {
 .return-tab-btn:hover,
 .alert-tab:hover,
 .inv-action-btn:hover,
-.range-btn:hover { background: var(--glass-bg); }
+.range-btn:hover,
+.rs-basis-btn:hover { background: var(--glass-bg); }
 
 /* ── Overlays: near-opaque, not translucent — see the --glass-bg-overlay
    comment above. Blur stays (still reads as "glass"), but the fill is
@@ -463,7 +465,19 @@ body::before {
 
 /* ── Misc ────────────────────────────────────────────────────── */
 .stock-bar-wrap, .expiry-bar-wrap { background: rgba(255,255,255,.34); }
-.switch-track { background: rgba(255,255,255,.34); border: 1px solid var(--glass-border); }
+/* NO BACKGROUND HERE ANY MORE. The skin used to paint the off track
+   rgba(255,255,255,.34), which on a frosted cream panel landed lighter than
+   the panel itself — 1.04:1 against the strip behind it, with a white thumb at
+   1.07:1 on top. portal.css now mixes the track from --text, which the skin
+   deliberately does not re-point, and that value is legible on a frosted pane
+   as well as an opaque one.
+
+   The hairline stays, and stays an INSET SHADOW rather than a border: a border
+   on the track changes where the thumb's absolute offsets resolve from — the
+   padding box, not the outer edge — so `top: 3px` came out 4px from the top
+   and 2px from the bottom, and the thumb sat visibly low with this skin on and
+   centred without it. The shadow draws the same line and takes up no layout. */
+.switch-track { box-shadow: inset 0 0 0 1px var(--glass-border); }
 
 /* backdrop-filter is GPU work — one per pane is fine, but skip it on
    the long scrolling lists where dozens would stack up. */

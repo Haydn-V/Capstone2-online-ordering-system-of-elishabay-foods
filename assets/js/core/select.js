@@ -75,6 +75,11 @@ let openInstance = null;
 const CSS = `
 .ebs {
   position: relative; display: inline-flex; vertical-align: middle;
+  /* A flex or grid item refuses to shrink below its content unless it is told
+     it may. Without this, a wrapper holding "Bangsamoro Autonomous Region In
+     Muslim Mindanao (BARMM)" pushes its grid cell wider than the track and the
+     control beside it gets overlapped. */
+  min-width: 0;
 }
 /* The native control: still in the DOM, still the value, still submits.
    Clipped rather than display:none so nothing about its participation in
@@ -103,7 +108,11 @@ const CSS = `
   outline: none; border-color: var(--gold);
   box-shadow: 0 0 0 3px var(--gold-dim);
 }
-.ebs-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+/* min-width: 0 is what makes the ellipsis possible. flex: 1 on its own leaves
+   the label's minimum width at its content, so a long option name widens the
+   trigger instead of being cut — the text never overflowed, the BOX did.
+   (No backticks in this comment: it lives inside a template literal.) */
+.ebs-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 /* A dropdown inside a form field is a different shape from one in a toolbar:
    full width, square-ish corners, the taller padding its sibling inputs use.
@@ -246,7 +255,13 @@ class EbSelectInstance {
        .control for its border, not for its width. */
     if (FIELD_CLASSES.some(c => sel.classList.contains(c))) {
       wrap.classList.add("ebs--field");
-      if (!sel.closest(".field")) wrap.classList.add("ebs--auto");
+      /* `.auth-field` counts as a form field too. It is the auth modal's and
+         the retailer form's name for the same wrapper `.field` is elsewhere,
+         and leaving it out meant every dropdown in those two forms fell to
+         `ebs--auto` and sized itself to its content — so picking "Bangsamoro
+         Autonomous Region In Muslim Mindanao (BARMM)" grew the Region box
+         across the Province box beside it. */
+      if (!sel.closest(".field, .auth-field")) wrap.classList.add("ebs--auto");
     }
     sel.parentNode.insertBefore(wrap, sel);
     wrap.appendChild(sel);
@@ -302,7 +317,14 @@ class EbSelectInstance {
 
   syncFromNative() {
     const opt = this.select.selectedOptions[0];
-    this.labelEl.textContent = opt ? opt.textContent.trim() : "";
+    const text = opt ? opt.textContent.trim() : "";
+    this.labelEl.textContent = text;
+    /* The label ellipsises when it does not fit — "Bangsamoro Autonomous
+       Region In Muslim Mindanao (BARMM)" will not fit anywhere sensible — so
+       the full text is kept on the title for a hover. The accessible name
+       still comes from the content, which browsers prefer over title, so this
+       adds nothing for a screen reader to say twice. */
+    this.trigger.title = text;
     this.trigger.disabled = this.select.disabled;
     if (this.open) this.renderOptions();
   }
@@ -462,6 +484,22 @@ class EbSelectInstance {
   onTriggerKey(e) {
     const k = e.key;
 
+    /* A SPACE IN THE MIDDLE OF A SEARCH IS PART OF THE SEARCH.
+
+       Space normally opens the list (closed) or chooses the active row (open).
+       But names are full of spaces — "San Jose", "Barangay 105", "Poblacion
+       East" — and typing one of those used to hit the space, open or commit the
+       list, and drop the rest of the name on the floor. So while a type-ahead
+       buffer is live (typed within the last second), Space is a character.
+       With no search in progress it keeps its usual job. This is the behaviour
+       the WAI-ARIA combobox pattern describes for the same conflict. */
+    if (k === " " && this.typeBuf && Date.now() - this.typeAt <= 1000) {
+      e.preventDefault();
+      const i = this.typeAhead(k);
+      if (i >= 0) { this.open ? this.moveTo(i) : this.choose(i); }
+      return;
+    }
+
     if (!this.open) {
       if (k === "Enter" || k === " " || k === "ArrowDown" || k === "ArrowUp") {
         e.preventDefault(); this.openPop();
@@ -504,10 +542,21 @@ class EbSelectInstance {
     const q = this.typeBuf.toLowerCase();
     const opts = this.options;
     const from = this.open ? this.activeIndex : this.select.selectedIndex;
-    /* Start after the current row so repeating one letter cycles through the
-       entries beginning with it. */
+    /* ONE LETTER starts AFTER the current row, so pressing "s" again cycles
+       through every entry beginning with S. SEVERAL LETTERS start AT the current
+       row, so "sa" stays on "San Antonio" while it still matches and moves on
+       only when it stops matching.
+
+       This used to compute the offset as `typeBuf.length > 1 ? 0 : n`, which for
+       any buffer longer than one letter is zero on EVERY pass — the loop checked
+       the current row over and over and never moved. So "san j" stopped on
+       "San Antonio" instead of reaching "San Jose", and multi-letter type-ahead
+       only ever worked when the current row already matched. Found through the
+       address picker, where a city's barangay list runs to a hundred entries;
+       the product picker had the same fault. */
+    const multi = this.typeBuf.length > 1;
     for (let n = 1; n <= opts.length; n++) {
-      const i = (from + (this.typeBuf.length > 1 ? 0 : n) + opts.length) % opts.length;
+      const i = (from + (multi ? n - 1 : n) + opts.length) % opts.length;
       if (!opts[i].disabled && opts[i].textContent.trim().toLowerCase().startsWith(q)) return i;
     }
     return -1;

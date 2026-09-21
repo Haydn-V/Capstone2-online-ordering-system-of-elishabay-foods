@@ -39,9 +39,16 @@
 -- ----------
 -- Each insert is guarded by NOT EXISTS on the product, so a second run inserts
 -- nothing. Re-runnable like schema-additions.sql and 001.
+--
+-- NO `USE elisha_bay_db;` — see the note in 003. This file used to carry that
+-- line, and it is the one migration that WRITES rows rather than adjusting a
+-- schema: pointed at a scratch database to rehearse an install, it inserted its
+-- lots into the live one instead. (A no-op there only because its NOT EXISTS
+-- guard found the lots already present — the protection was the guard, not the
+-- intent.) It now writes to the database named on the command line:
+--
+--     mysql -u root elisha_bay_db < db/migrations/009-backfill-product-lots.sql
 -- ---------------------------------------------------------------------------
-
-USE elisha_bay_db;
 
 -- Lot codes continue the existing sequence; JBF-2026-B112 was the highest.
 INSERT INTO batches

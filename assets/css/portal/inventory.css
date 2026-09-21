@@ -18,7 +18,7 @@
 .days-chip {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 10px; border-radius: var(--r-pill);
-  font-size: .72rem; font-weight: 700; letter-spacing: .04em;
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: .04em;
   white-space: nowrap;
 }
 
@@ -38,10 +38,10 @@
    BULK REPLENISH TABLE
    ================================================================= */
 .replenish-table {
-  width: 100%; border-collapse: collapse; font-size: .88rem;
+  width: 100%; border-collapse: collapse; font-size: var(--fs-base);
 }
 .replenish-table thead th {
-  padding: 10px 12px; font-size: .66rem; font-weight: 700;
+  padding: 10px 12px; font-size: var(--fs-2xs); font-weight: 700;
   letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted);
   background: var(--bg-soft); border-bottom: 1px solid var(--border);
   text-align: left;
@@ -50,7 +50,7 @@
 .replenish-table tbody tr:last-child { border-bottom: none; }
 .replenish-table td { padding: 10px 12px; vertical-align: middle; }
 .replenish-table .qty-input {
-  width: 80px; padding: 6px 10px; font-size: .88rem; font-family: inherit;
+  width: 80px; padding: 6px 10px; font-size: var(--fs-base); font-family: inherit;
   background: var(--surface); color: var(--text);
   border: 1.5px solid var(--border-lift); border-radius: var(--r-md);
   transition: border-color var(--t); text-align: center;
@@ -66,6 +66,220 @@
 /* =================================================================
    ADJUSTMENT FORM
    ================================================================= */
+
+/* The form was a 560px card on a 1600px screen with the rest of the row empty.
+   It is the left column of a two-column layout now; the right column shows
+   what the adjustment would do to the product and its lots.
+
+   IT WRAPS ON ITS OWN WIDTH, not the window's. This panel sits in the portal's
+   content column — the window less a 252px sidebar — so a media query on the
+   viewport measures the wrong thing: at a 1200px window the column is ~900px
+   and a `max-width: 1100px` query has not fired, which left the preview
+   squashed to 282px and, narrower still, to 46px with the row overflowing.
+   flex-wrap needs no query at all, and the form stays above the consequence
+   when they stack. */
+.adj-split {
+  /* TWO LINE WEIGHTS FOR THE WHOLE COLUMN, named so they cannot drift. This
+     grew four — 10, 14, 16 and 18% of --text — for lines doing two jobs, which
+     is what makes a panel feel subtly wrong without anything being obviously
+     broken. `edge` is the outside of a box, `rule` is a divider within one. */
+  --adj-edge: color-mix(in srgb, var(--text) 16%, transparent);
+  --adj-rule: color-mix(in srgb, var(--text) 11%, transparent);
+
+  display: flex; flex-wrap: wrap;
+  gap: 18px;
+  /* stretch, not flex-start: the preview matches the form's height instead of
+     stopping short and leaving a column of empty page beside a tall form. The
+     lot table takes up the slack — see .adj-prev-lots. */
+  align-items: stretch;
+}
+/* The form keeps a maximum: a set of short fields stretched across a wide
+   screen is not better for being wider, so the spare width goes to the column
+   that has something to put in it. */
+.adj-form-col    { flex: 1 1 420px; max-width: 560px; margin: 0; }
+.adj-preview-col {
+  flex: 1 1 360px; min-width: 0; margin: 0;
+  display: flex; flex-direction: column;
+}
+.adj-preview-col > #adj-preview-body {
+  display: flex; flex-direction: column; flex: 1; min-height: 0;
+}
+
+/* Product being adjusted, with the band it is in. The name is the heading of
+   this column — it was 1rem and read as a caption above the figures, which
+   made it easy to have the wrong product selected and not notice. Category
+   above it as an eyebrow, a rule underneath, and the same serif the panel
+   titles use. */
+.adj-prev-product {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  padding-bottom: 14px; margin-bottom: 16px;
+  border-bottom: 1px solid var(--adj-rule);
+}
+.adj-prev-id { min-width: 0; }
+.adj-prev-cat {
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px;
+}
+.adj-prev-name {
+  margin: 0; min-width: 0;
+  font-family: var(--font-display, inherit);
+  font-size: var(--fs-2xl); font-weight: 700; line-height: 1.2; color: var(--text);
+}
+
+/* Before and after, side by side. The point of the whole column: a typo in
+   the quantity box is visible here before Submit is pressed. */
+.adj-prev-figures {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 14px 16px; margin-bottom: 14px;
+  border: 1px solid var(--adj-edge);
+  border-radius: var(--r-md);
+}
+.adj-prev-fig { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.adj-prev-fig span {
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.adj-prev-fig b {
+  font-family: var(--font-number); font-size: var(--fs-3xl); font-weight: 800;
+  font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.01em;
+  color: var(--text);
+}
+.adj-prev-fig.is-bad b { color: var(--out-ink); }
+.adj-prev-arrow { color: var(--text-muted); display: flex; }
+.adj-prev-arrow svg { width: 20px; height: 20px; }
+
+.adj-prev-warn {
+  padding: 10px 12px; margin-bottom: 14px;
+  border: 1px solid var(--out); border-radius: var(--r-sm);
+  background: rgba(220,38,38,.08); color: var(--out-ink);
+  font-size: var(--fs-sm); line-height: 1.5;
+}
+
+/* Three figures that bear on a disposal: how long the shelf lasts, how fast it
+   moves, how many lots there are. Each carries its reasoning on the title. */
+.adj-prev-facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px; margin-bottom: 14px;
+}
+.adj-prev-fact {
+  padding: 10px 12px; border-radius: var(--r-sm);
+  border: 1px solid var(--adj-edge);
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+}
+.adj-prev-fact span {
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.adj-prev-fact b {
+  font-family: var(--font-number); font-size: var(--fs-lg); font-weight: 800;
+  font-variant-numeric: lining-nums tabular-nums; color: var(--text);
+}
+
+/* The earliest lot will not sell before its date. Worth saying on a screen
+   whose job is deciding what to throw away. */
+.adj-prev-risk {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 10px 12px; margin-bottom: 14px;
+  border: 1px solid var(--crit); border-radius: var(--r-sm);
+  background: rgba(234,88,12,.08); color: var(--crit);
+  font-size: var(--fs-sm); line-height: 1.5;
+}
+.adj-prev-risk svg { width: 16px; height: 16px; flex: none; margin-top: 1px; }
+
+/* THE LOTS GET THEIR OWN CONTAINER, and it is what absorbs the column's spare
+   height — flex: 1 with the body scrolling inside, so a product with fifteen
+   lots does not stretch the panel past the form beside it and a product with
+   one does not leave the panel short. */
+.adj-prev-lots {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column; gap: 6px;
+}
+/* THE CAPTION IS NOT A SECOND HEADER BAND.
+
+   It used to be a filled bar inside the box, sitting directly on top of the
+   table's own filled header — two stacked bands, so the eye read two headers
+   and could not tell which one owned the columns underneath. There is only one
+   header here: the table's. This is a caption above the box, in the same
+   .66rem/700/.08em label the fact tiles use, so it labels the box the way
+   every other label in this column labels its value. */
+.adj-prev-lots-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; flex: none;
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.adj-prev-lots-count { font-weight: 600; letter-spacing: .04em; text-transform: none; }
+/* The box holds the table alone now, so the border that used to wrap caption
+   + table wraps the table. */
+.adj-prev-lots-box {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  border: 1px solid var(--adj-edge);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+/* flex: 1 so one lot still fills the container rather than leaving it short,
+   and a ceiling so fifteen lots scroll instead of stretching the row — with
+   align-items: stretch the taller column sets the height for both, and an
+   uncapped lot list would have pushed the FORM to 1024px with all the empty
+   space simply moved to the other side. */
+.adj-prev-lots-body { flex: 1; min-height: 0; max-height: 360px; overflow-y: auto; }
+
+/* The table fills its container rather than floating in it: no outer border of
+   its own, header stuck to the top while the rows scroll under it. */
+.adj-lot-table { width: 100%; border-collapse: collapse; }
+/* The background is deliberately NOT set here. glass.css styles every
+   .data-table header and loads after this file, so anything set at the same
+   specificity loses the tie — and its frosted band is the portal's standard
+   sticky table header, which is what this table should look like. Only the
+   type is brought into line with the rest of this column. */
+/* THE BAND HUGS ITS LABELS.
+
+   .data-table's header is built for a full-width card: 12px of padding and the
+   inherited 1.6 line-height give a 42px band, which is right when the header
+   is the top of the page's main table. Inside this small bordered box it left
+   ~16px of empty fill above an 8px-tall uppercase label — and because the
+   header's glass fill is close in value to the panel behind it, that empty
+   strip read as a gap between the box outline and the header rather than as
+   the header's own padding. line-height: 1 takes the leading out; the padding
+   then sets the band's height and it is even top and bottom. */
+.adj-lot-table thead th {
+  position: sticky; top: 0; z-index: 1;
+  padding: 10px 14px; line-height: 1;
+  border-bottom: 1px solid var(--adj-rule);
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+/* THE HEADER MUST NOT ROUND ITS OWN CORNERS INSIDE A ROUNDED BOX.
+
+   .data-table rounds its outer header cells by --r-lg (20px) because normally
+   the table IS the card and those are the card's top corners. Here the table
+   sits inside .adj-prev-lots-box, which rounds at --r-md (12px) and clips, so
+   two different arcs met on one corner and the header's fill pulled away from
+   the border. The box owns the corner; the header fills it square. */
+.adj-lot-table thead th:first-child,
+.adj-lot-table thead th:last-child { border-radius: 0; }
+.adj-lot-table td, .adj-lot-table th { padding: 10px 14px; }
+.adj-lot-table tbody tr + tr > td {
+  border-top: 1px solid var(--adj-rule);
+}
+
+/* THE RULE MARKS THE ROW, NOT EVERY CELL IN IT.
+
+   `inset 3px 0 0` was on every td, so a three-column row grew three gold bars
+   — one down its left edge and two more straight through the middle of the
+   table. Only the first cell carries it now, and the row's own rounded ends
+   keep it reading as one band rather than three blocks. */
+.adj-prev-lots tr.is-selected > td { background: var(--gold-dim); }
+.adj-prev-lots tr.is-selected > td:first-child { box-shadow: inset 3px 0 0 var(--gold); }
+
+/* The old quantity beside the new one. A strikethrough on a single digit reads
+   as a symbol at this size, so it is an arrow — the same one the figures block
+   above uses for exactly the same "before and after" idea. */
+.adj-lot-was { color: var(--text-muted); }
+.adj-lot-arrow { color: var(--text-muted); margin: 0 4px; }
+
 .adj-type-row {
   display: flex; gap: 10px; margin-bottom: 4px; flex-wrap: wrap;
 }
@@ -73,7 +287,7 @@
   flex: 1; padding: 10px 14px; border-radius: var(--r-md);
   border: 2px solid var(--border-lift); background: transparent;
   color: var(--text-muted); font-family: var(--font-ui);
-  font-size: .76rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
   cursor: pointer; transition: all var(--t); text-align: center;
 }
 .adj-type-btn:hover { border-color: var(--gold); color: var(--text); }
@@ -102,9 +316,9 @@
 }
 .ea-icon svg { width: 16px; height: 16px; }
 .ea-info { flex: 1; min-width: 0; }
-.ea-name { font-size: .84rem; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ea-batch { font-size: .72rem; color: var(--text-muted); margin: 2px 0; }
-.ea-days  { font-size: .76rem; font-weight: 700; color: var(--accent, var(--warn)); }
+.ea-name { font-size: var(--fs-base); font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ea-batch { font-size: var(--fs-xs); color: var(--text-muted); margin: 2px 0; }
+.ea-days  { font-size: var(--fs-xs); font-weight: 700; color: var(--accent, var(--warn)); }
 
 /* =================================================================
    ADJUSTMENTS LOG
@@ -112,7 +326,7 @@
 .adj-type-tag {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 2px 9px; border-radius: var(--r-pill);
-  font-size: .7rem; font-weight: 700; text-transform: uppercase;
+  font-size: var(--fs-2xs); font-weight: 700; text-transform: uppercase;
 }
 .adj-disposal { background: rgba(220,38,38,.1);  color: var(--out-ink); }
 .adj-return   { background: rgba(24,169,87,.1);  color: var(--ok-ink);  }
@@ -136,5 +350,5 @@
   .inv-action-tabs { gap: 4px; }
   /* Through the shared custom properties, so a narrow window changes the size
      and nothing else. */
-  .inv-action-btn  { --pill-py: 7px; --pill-px: 12px; --pill-fs: .72rem; }
+  .inv-action-btn  { --pill-py: 7px; --pill-px: 12px; --pill-fs: var(--fs-xs); }
 }

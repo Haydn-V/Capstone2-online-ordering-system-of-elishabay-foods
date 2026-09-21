@@ -30,9 +30,24 @@
 
    Reversible: take a dump of the three columns first if you want to undo.
        SELECT id, batch_code_hint FROM orders;
-   ============================================================= */
 
-USE elisha_bay_db;
+   NO `USE elisha_bay_db;` — the same rule 003 onwards follow, and the
+   reason is this file. It used to open with that line, which made it
+   ignore the database named on the command line:
+
+       mysql -u root eb_scratch < db/migrations/001-unify-batch-codes.sql
+
+   silently ran against the LIVE database instead. Rehearsing the install
+   in a scratch copy therefore translated nothing in the copy — 001 had
+   done its work elsewhere — and 002 then failed on the untranslated seed
+   codes with ERROR 1452, which read exactly like a bug in 001's logic.
+   It was not: 001 ran fine, in the wrong place. (On live it was a no-op,
+   because every guard below checks for a code that no longer resolves.)
+
+   Run it against the database you mean:
+
+       mysql -u root elisha_bay_db < db/migrations/001-unify-batch-codes.sql
+   ============================================================= */
 
 SET NAMES utf8mb4;
 
@@ -122,16 +137,17 @@ UNION ALL SELECT 'adjustments with a batch code',        COUNT(*) FROM inventory
 UNION ALL SELECT 'adjustment codes resolving',           COUNT(*) FROM inventory_adjustments a JOIN batches b ON b.lot_code = a.batch_code;
 
 /* ---------------------------------------------------------------
-   NOT DONE HERE: a foreign key on these columns.
+   NOT DONE HERE: a foreign key on these columns — see 002.
 
-   A real FK (orders.batch_code_hint -> batches.lot_code) would stop the
-   problem recurring, and is the right end state. It is left out because
-   the column is nullable free text used as a hint across historical rows,
-   and adding the constraint is a decision about how strict the workflow
-   should be — not something a data-cleanup migration should impose. If
-   you want it:
+   This note used to end with a sample ALTER TABLE for anyone who wanted
+   the constraint. 002-batch-code-foreign-keys.sql now adds it, on all
+   three columns, under the names fk_orders_batch_hint,
+   fk_returns_batch_code and fk_adjustments_batch_code. The sample used a
+   different name (fk_orders_batch), so running it as well would have put
+   a SECOND, redundant key on orders.batch_code_hint. It is removed for
+   that reason.
 
-     ALTER TABLE orders
-       ADD CONSTRAINT fk_orders_batch FOREIGN KEY (batch_code_hint)
-       REFERENCES batches(lot_code) ON DELETE SET NULL ON UPDATE CASCADE;
+   Kept a separate migration because a data cleanup should not decide how
+   strict the workflow is. 002 requires this file to have run first: the
+   keys cannot be added while any old-format code survives.
    --------------------------------------------------------------- */

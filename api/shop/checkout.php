@@ -129,9 +129,23 @@ $data = Validate::check($in)
     ->in('pay_method', Payments::methods($isRetailer), 'Payment method')
     ->values();
 
-/* Always the session's address. Never read from the request. */
+/* Always the session's EMAIL address. Never read from the request. (The
+   DELIVERY address below is the customer's to give — a gift, an office — which
+   is why it is read from the request, and why it is checked so hard.) */
 $email   = (string) $buyer['email'];
-$address = trim((string) ($in['address'] ?? '')) ?: null;
+
+/* THE DELIVERY ADDRESS, from the picker's codes — see api/core/Address.php.
+   Names are looked up from the codes, never taken from the request, and each
+   level is checked to belong to the one above.
+
+   Pickup orders store NO address. The field is hidden for pickup, but its value
+   used to be sent and saved anyway, so a pickup order could carry an address it
+   was never shipped to — and the receipt would print it. check(), not
+   resolve(): its errors join the others below so they are reported together. */
+[$ship, $addressErrors] = $data['order_type'] === 'delivery'
+    ? Address::check(is_array($in['address'] ?? null) ? $in['address'] : null, true)
+    : [null, []];
+$address = $ship['line'] ?? null;
 $refNum  = trim((string) ($in['ref_num'] ?? '')) ?: null;
 $notes   = trim((string) ($in['notes'] ?? '')) ?: null;
 
@@ -159,9 +173,8 @@ $fieldErrors = [];
 if (!preg_match('/^[0-9 +\-()]{7,20}$/', $data['contact'])) {
     $fieldErrors['contact'] = 'Enter a valid contact number.';
 }
-if ($data['order_type'] === 'delivery' && $address === null) {
-    $fieldErrors['address'] = 'A delivery address is required.';
-}
+/* Keyed addr_region, addr_barangay, … — the picker lays them on its own fields. */
+$fieldErrors += $addressErrors;
 /* CASH IS COLLECTED AT THE COUNTER, so it is a pickup method only.
    On a delivery it would mean handing goods to a courier against money nobody
    has taken — the shop carries the loss on a refusal at the door, and there is
@@ -322,16 +335,28 @@ try {
 
     Database::run(
         'INSERT INTO orders (id, customer_id, customer_name, email, contact, address,
+                             ship_street, ship_barangay, ship_city, ship_province, ship_region, ship_zip,
+                             ship_region_code, ship_province_code, ship_city_code, ship_barangay_code,
                              type, order_type, customer_type, method, total, date, datetime,
                              status, notes, pay_verified, proof_uploaded, proof_ref_num,
                              proof_image_path, proof_amount, cashier, batch_code_hint,
                              gross_total, vat_rate, less_vat, net_of_vat, sc_pwd_discount, vatable_sales,
                              vat_amount, vat_exempt_sales, sc_pwd_type, sc_pwd_id, sc_pwd_name,
                              withholding_rate, withholding_tax)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), NOW(), ?, ?, ?, ?, ?, ?, ?, NULL, NULL,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                 ?, ?, ?, ?, ?, CURDATE(), NOW(), ?, ?, ?, ?, ?, ?, ?, NULL, NULL,
                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         array_merge([
             $orderId, $customerId, $data['name'], $email ?: null, $data['contact'], $address,
+            /* THE NAMES AS THEY WERE AT THE SALE, beside the codes. An order is a
+               historical record: if a barangay is renamed or recoded in a later
+               PSGC release, this invoice must still print what the parcel was
+               actually shipped to. `address` holds the composed line every
+               receipt and label already prints. */
+            $ship['street'] ?? null, $ship['barangay'] ?? null, $ship['city'] ?? null,
+            $ship['province'] ?? null, $ship['region'] ?? null, $ship['zip'] ?? null,
+            $ship['region_code'] ?? null, $ship['province_code'] ?? null,
+            $ship['city_code'] ?? null, $ship['barangay_code'] ?? null,
             'online', $data['order_type'], 'regular', $data['pay_method'], $total,
             'pending', $notes,
             $pay['pay_verified'], $pay['proof_uploaded'], $pay['proof_ref_num'],

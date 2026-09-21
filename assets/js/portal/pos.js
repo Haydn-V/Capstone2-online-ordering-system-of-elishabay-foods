@@ -137,14 +137,14 @@ function openAddModal(productId){
       <div style="font-size:.78rem;color:var(--text-muted);margin-top:4px">${p.stock} units available</div>
     </div>
     <div class="field">
-      <label style="text-align:center;display:block">Quantity</label>
-      <div style="display:flex;align-items:center;gap:12px;justify-content:center;margin-top:8px">
-        <button type="button" class="btn btn-ghost btn-sm" id="qm-minus" style="border-radius:50%;width:36px;height:36px;padding:0;font-size:1.2rem">−</button>
-        <input type="number" id="qm-qty" style="width:70px;text-align:center;font-size:1.2rem;font-weight:700;padding:8px;border:1.5px solid var(--border-lift);border-radius:var(--r-md);background:var(--surface);color:var(--text)" value="${initQty}" min="1" max="${p.stock}"/>
-        <button type="button" class="btn btn-ghost btn-sm" id="qm-plus" style="border-radius:50%;width:36px;height:36px;padding:0;font-size:1.2rem">+</button>
+      <label class="qm-label" for="qm-qty">Quantity</label>
+      <div class="qm-stepper">
+        <button type="button" class="btn btn-ghost qm-step" id="qm-minus" aria-label="Decrease quantity">−</button>
+        <input type="number" class="qm-qty" id="qm-qty" inputmode="numeric" value="${initQty}" min="1" max="${p.stock}"/>
+        <button type="button" class="btn btn-ghost qm-step" id="qm-plus" aria-label="Increase quantity">+</button>
       </div>
     </div>`,
-    confirmLabel: inCart?"Update Order":"Add to Order",
+    confirmLabel: inCart?"Update Order":"Add Order",
     confirmClass:"btn-gold",
     onConfirm(){
       const qty=parseInt($("#qm-qty").value)||1;
@@ -179,20 +179,44 @@ function renderCart(){
     cartEl.innerHTML=items.map(item=>{
       const p=getProduct(item.productId);
       if(!p) return "";
+      /* THE SAME PICTURE THE TILE SHOWED. A cart line that is only a name is
+         hard to check against a counter full of jars, and the name is
+         ellipsised at this width — "Asian Steak Ban…" is not enough to catch a
+         wrong tap. imageUrl() resolves the application-root-relative path the
+         same way createPosProductTile() does; the placeholder carries the same
+         category tint as the tile, so a product with no photo still reads as
+         the product it was. */
+      const thumbSrc = imageUrl(p);
+      const tint = p.cat.includes("Deboned") ? "var(--red)" : "var(--gold)";
+      const thumb = thumbSrc
+        ? `<img class="cart-item-thumb" src="${escHtml(thumbSrc)}" alt="" loading="lazy">`
+        : `<span class="cart-item-thumb cart-item-thumb-ph" aria-hidden="true"
+                 style="background:linear-gradient(135deg,${tint}18,${tint}35)">
+             <svg viewBox="0 0 24 24" fill="none" stroke="${tint}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+           </span>`;
+      /* TWO ROWS, not one. The cart column is 340px and the controls take most
+         of it — stepper, line total and the remove button. Beside them the
+         name had 119px, and once the thumbnail took its 40 it had 69: every
+         product read as "Asian Steak Ban…". The name and price now have the
+         column to themselves and the controls sit underneath, with the
+         thumbnail spanning both. */
       return `<div class="cart-item">
+        ${thumb}
         <div class="cart-item-info">
-          <div class="cart-item-name">${escHtml(p.name)}</div>
+          <div class="cart-item-name" title="${escHtml(p.name)}">${escHtml(p.name)}</div>
           <div class="cart-item-unit">${peso(p.price)} each</div>
         </div>
-        <div class="qty-stepper">
-          <button class="qty-btn" data-delta="-1" data-pid="${p.id}" aria-label="Decrease">−</button>
-          <span class="qty-val">${item.qty}</span>
-          <button class="qty-btn" data-delta="1"  data-pid="${p.id}" aria-label="Increase">+</button>
+        <div class="cart-item-controls">
+          <div class="qty-stepper">
+            <button class="qty-btn" data-delta="-1" data-pid="${p.id}" aria-label="Decrease">−</button>
+            <span class="qty-val">${item.qty}</span>
+            <button class="qty-btn" data-delta="1"  data-pid="${p.id}" aria-label="Increase">+</button>
+          </div>
+          <div class="cart-item-total">${peso(p.price*item.qty)}</div>
+          <button class="cart-item-remove" data-pid="${p.id}" aria-label="Remove ${escHtml(p.name)}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
         </div>
-        <div class="cart-item-total">${peso(p.price*item.qty)}</div>
-        <button class="cart-item-remove" data-pid="${p.id}" aria-label="Remove ${escHtml(p.name)}">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
       </div>`;
     }).join("");
     cartEl.querySelectorAll(".qty-btn").forEach(btn=>{
@@ -321,8 +345,11 @@ function renderPayment(){
          The ID number and name are required: the BIR wants both on the invoice,
          and api/pos/checkout.php refuses the discount without them. -->
     <div class="field hide" id="scpwd-field">
-      <label class="vat-check" style="margin:0 0 6px">
-        <input type="checkbox" id="scpwd-on"/>
+      <label class="vat-check pos-check">
+        <span class="switch">
+          <input type="checkbox" role="switch" id="scpwd-on"/>
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+        </span>
         <span>Senior citizen / PWD discount</span>
       </label>
       <div class="hide" id="scpwd-details">
@@ -389,6 +416,12 @@ function renderPayment(){
    `pay_method` field error — displayed nothing at all. The server is the
    authority; this list decides only what to RENDER, and every value in it is
    re-checked there. */
+/* wirePaymentForm()'s handle on its own senior/PWD reset, published so the
+   checkout can clear the switch after a completed sale without reaching into
+   that function's scope. Null until the payment screen has been rendered,
+   which is the only time there is anything to clear. */
+let posResetScPwd = null;
+
 const POS_CREDIT_METHODS = ["net30", "net60", "net90"];
 function isCreditMethod(m){ return POS_CREDIT_METHODS.includes(m); }
 
@@ -431,6 +464,36 @@ function wirePaymentForm(total){
       name: $("#scpwd-name")?.value.trim() || "",
     };
   }
+
+  /* BACK TO OFF, AND EMPTY, FOR THE NEXT CUSTOMER.
+
+     The discount belongs to one person and one ID, so it must not survive the
+     sale it was granted on — the next customer in the queue is a different
+     person until someone says otherwise. Left on, the switch would quietly
+     apply a 20% discount to the following sale under the previous customer's
+     ID number, which is both wrong money and a BIR record naming the wrong
+     buyer.
+
+     The ID and the name are cleared with it for the same reason. The type
+     goes back to Senior Citizen, which is what the markup ships with, so the
+     screen after a sale is the screen the cashier first saw. */
+  function resetScPwd(){
+    const on = $("#scpwd-on");
+    if(on) on.checked = false;
+    $("#scpwd-details")?.classList.add("hide");
+    const id = $("#scpwd-id"), name = $("#scpwd-name");
+    if(id)   id.value = "";
+    if(name) name.value = "";
+    scPwdType = "senior";
+    $$("#scpwd-type .order-type-btn").forEach(b =>
+      b.classList.toggle("active", b.dataset.scpwd === "senior"));
+    /* Any error left over from a refused submit refers to fields that are now
+       empty and hidden. */
+    ["err-scpwd", "err-scpwd-id", "err-scpwd-name"].forEach(k => {
+      const el = $("#" + k); if(el) el.textContent = "";
+    });
+  }
+  posResetScPwd = resetScPwd;
 
   function renderTaxBox(t){
     const box = $("#pos-tax-box");
@@ -531,11 +594,8 @@ function wirePaymentForm(total){
       if(customerType!=="retailer"){ const sel=$("#pay-retailer"); if(sel) sel.value=""; }
       else loadRetailers();
       /* A retailer sale is never a senior/PWD sale; clear it rather than hide
-         a ticked box that would still be sent. */
-      if(customerType!=="regular"){
-        const on=$("#scpwd-on"); if(on) on.checked=false;
-        $("#scpwd-details")?.classList.add("hide");
-      }
+         a switch that is still on and would still be sent. */
+      if(customerType!=="regular") resetScPwd();
       refreshQuote();
     });
   });
@@ -762,6 +822,10 @@ async function placeOrder(orderType, customerType, payMethod, total, retailerId,
   /* Only now is the sale real: clear the cart and refresh stock from the
      database rather than assuming what it became. */
   adminState.cart = [];
+  /* And the senior/PWD switch goes back to off with it — see resetScPwd().
+     It is scoped to the payment screen's own render, so it is called through
+     the hook that render publishes rather than reached into from here. */
+  if(typeof posResetScPwd === "function") posResetScPwd();
   updateCartBadge();
   await loadCatalog();
   await loadOrders();

@@ -97,8 +97,10 @@
     <div class="container partner-container">
       <div class="partner-layout">
 
-        <!-- SIDEBAR -->
-        <aside>
+        <!-- SIDEBAR. .partner-aside makes it stick beside the form instead of
+             scrolling away and leaving its column empty for the length of a
+             long application — see partner.css. -->
+        <aside class="partner-aside">
           <h2 class="partner-sidebar-head">Why Partner With Us?</h2>
 
           <div class="partner-benefit">
@@ -198,14 +200,15 @@
                 </div>
               </div>
 
-              <div class="auth-field">
-                <label for="pf-address">Complete Business Address *</label>
-                <div class="auth-input-group">
-                  <span class="auth-input-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
-                  <input class="auth-input" id="pf-address" type="text" placeholder="Street, Barangay, City, Province" required />
-                </div>
-                <span class="field-error" data-err></span>
-              </div>
+              <!-- The business address: the shared picker, rendered into the host
+                   below at DOMContentLoaded. It was one required free-text field;
+                   a retailer's address is where stock is delivered on credit
+                   terms, the last address in the system that should be typed
+                   freehand. Every part is required here, street and ZIP included. -->
+              <fieldset class="auth-addr">
+                <legend class="auth-addr-legend">Complete Business Address *</legend>
+                <div id="bp-addr-host"></div>
+              </fieldset>
 
               <div class="pf-row">
                 <div class="auth-field">
@@ -265,25 +268,17 @@
               </div>
               </div><!-- /#pf-credentials -->
 
-              <!-- The "Requested Credit Tier" field that stood first in this row is gone.
-                   An applicant no longer chooses Net 30/60/90 here: once approved, a
-                   retailer picks the term on each order at checkout. Asking now would
-                   collect a preference the system never uses. -->
-              <h4 class="pf-group-label">Wholesale Volume</h4>
-              <div class="pf-row">
-                <div class="auth-field">
-                  <label for="pf-volume">Expected Monthly Volume</label>
-                  <div class="auth-input-group">
-                    <span class="auth-input-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M18 17V9M13 17V5M8 17v-4"/></svg></span>
-                    <select class="auth-input" id="pf-volume">
-                      <option>&#8369;20,000 &ndash; &#8369;50,000 / month</option>
-                      <option selected>&#8369;50,000 &ndash; &#8369;100,000 / month</option>
-                      <option>&#8369;100,000 &ndash; &#8369;250,000 / month</option>
-                      <option>&#8369;250,000+ / month</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
+              <!-- A whole "Wholesale Volume" section used to stand here, and it is gone.
+                   It held two fields, removed one at a time:
+                     Requested Credit Tier — an applicant no longer picks Net 30/60/90;
+                       an approved retailer chooses the term on each order at checkout.
+                     Expected Monthly Volume — a band nobody acted on. It was preset
+                       to "₱50,000 – ₱100,000", so an applicant who skipped past it
+                       "declared" a volume they never chose, and the staff screen never
+                       displayed it anyway.
+                   The b2b_applications.monthly_volume column is KEPT: earlier
+                   applications have values in it, and dropping the column would delete
+                   that history to save nothing. Nothing writes to it now. -->
 
               <div class="auth-field">
                 <label for="pf-notes">Additional Notes or Target Branches</label>
@@ -323,11 +318,6 @@
           <span class="name">Elisha&nbsp;Bay</span>
         </a>
         <p class="footer-motto">"Every Mouthful is Delightful." Premium artisan food from Dagupan City.</p>
-        <div class="socials">
-          <a href="#" aria-label="Facebook"><svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg></a>
-          <a href="#" aria-label="Instagram"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="butt" stroke-linejoin="round" stroke-linejoin="round" width="16" height="16"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg></a>
-          <a href="#" aria-label="Email"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="butt" stroke-linejoin="round" stroke-linejoin="round" width="16" height="16"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></a>
-        </div>
       </div>
       <div>
         <h5>Explore</h5>
@@ -390,6 +380,7 @@
 
     <script type="module" src="../assets/js/core/index.js"></script>
     <script defer src="../assets/js/public/modal-shell.js"></script>
+    <script defer src="../assets/js/public/address-picker.js"></script>
     <script defer src="../assets/js/public/site.js"></script>
 <script>
 /* Wrapped in DOMContentLoaded, and that is not cosmetic.
@@ -409,6 +400,13 @@
    ICONS, EbApi, EbFormat and showToast are all present. */
 window.addEventListener('DOMContentLoaded', function () {
   var form = document.getElementById('partner-form');
+
+  /* The business address picker — see assets/js/public/address-picker.js.
+     Rendered before anything below runs, because the prefill further down
+     writes into it. */
+  var bpHost = document.getElementById('bp-addr-host');
+  if (bpHost) bpHost.innerHTML = EbAddress.markup('bp', { variant: 'auth', required: true });
+  var bpAddr = bpHost ? EbAddress.mount(bpHost, 'bp') : null;
   if (!form) return;
 
   /* password show/hide, matches the auth modal's eye toggle */
@@ -499,11 +497,12 @@ window.addEventListener('DOMContentLoaded', function () {
     fillIfEmpty('pf-contact-name',  profile.name);
     fillIfEmpty('pf-contact-phone', profile.contact);
     fillIfEmpty('pf-email',         profile.email);
-    /* address.line is the five addr_* columns joined by shop/profile.php, and
-       it is '' when nothing is saved — partial is a legitimate state, and an
-       empty box the applicant can type into is the correct answer to "we have
-       no address for you". */
-    fillIfEmpty('pf-address',       profile.address && profile.address.line);
+    /* The saved address, through the picker's own prefill: it fills only what
+       is still empty, walks the dropdowns in order, and stops the moment the
+       applicant touches one. A business address is often NOT the home address
+       saved on the profile, which is exactly why it is a suggestion that stays
+       fully editable rather than a copy. */
+    if (bpAddr && profile.address && profile.address.hasAny) bpAddr.prefill(profile.address);
   }
 
   prefillForSignedInCustomer();
@@ -539,6 +538,10 @@ window.addEventListener('DOMContentLoaded', function () {
        signedIn, because that is one fewer condition that can disagree with the
        one that hid the block. */
     if (pass.value && pass.value.length < 8) { ok = fail(pass, 'Use at least 8 characters.'); }
+    /* The picker validates itself — region through barangay, street and ZIP.
+       Its fields carry aria-required rather than `required`, so the generic
+       loop above does not double up on them. */
+    if (bpAddr && !bpAddr.validate(true)) ok = false;
     if (!ok) return;
 
     var submitBtn = form.querySelector('[type=submit]');
@@ -551,11 +554,12 @@ window.addEventListener('DOMContentLoaded', function () {
       business_name:    val('pf-company'),
       business_type:    val('pf-type'),
       bir_tin:          val('pf-tin'),
-      business_address: val('pf-address'),
+      /* Codes, not a string — apply.php looks the names up and composes the
+         printable line it stores as business_address. */
+      address:          bpAddr ? bpAddr.value() : null,
       applicant_name:   val('pf-contact-name'),
       phone:            val('pf-contact-phone'),
       email:            val('pf-email'),
-      monthly_volume:   val('pf-volume'),
       notes:            val('pf-notes')
     };
     /* Credentials only from a stranger. apply.php refuses them from a signed-in
@@ -575,12 +579,14 @@ window.addEventListener('DOMContentLoaded', function () {
          how an applicant gives up. */
       var map = {
         business_name: 'pf-company', business_type: 'pf-type', bir_tin: 'pf-tin',
-        business_address: 'pf-address', applicant_name: 'pf-contact-name',
+        applicant_name: 'pf-contact-name',
         phone: 'pf-contact-phone', email: 'pf-email', username: 'pf-username',
         password: 'pf-password'
       };
       var handled = false;
       if (err.isValidation) {
+        /* addr_* belong to the picker, which marks and focuses its own field. */
+        if (bpAddr && bpAddr.showErrors(err.fields)) handled = true;
         Object.keys(err.fields).forEach(function (f) {
           var el = document.getElementById(map[f]);
           if (el) { fail(el, err.fields[f]); handled = true; }

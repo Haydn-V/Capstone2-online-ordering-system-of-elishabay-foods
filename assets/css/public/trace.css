@@ -11,7 +11,7 @@
 .trace-hero .breadcrumb {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   font-family: "Montserrat", sans-serif;
-  font-size: .66rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+  font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
   color: var(--text-muted); margin-bottom: 28px;
 }
 .trace-hero .breadcrumb a { color: var(--text-muted); transition: color var(--t); }
@@ -35,7 +35,7 @@
   max-width: 32ch; margin-inline: auto;
 }
 .trace-sub {
-  font-size: 1.08rem; color: var(--text-muted); line-height: 1.78;
+  font-size: var(--fs-lg); color: var(--text-muted); line-height: 1.78;
   max-width: 56ch; margin: 0 auto 40px;
 }
 
@@ -56,7 +56,7 @@
   width: 100%; padding: 15px 16px 15px 46px;
   border: 1.5px solid var(--border-lift); border-radius: var(--r-md);
   background: var(--bg); color: var(--text);
-  font-family: "Montserrat", sans-serif; font-size: .92rem; font-weight: 600;
+  font-family: "Montserrat", sans-serif; font-size: var(--fs-md); font-weight: 600;
   letter-spacing: .04em;
   transition: border-color var(--t), box-shadow var(--t);
 }
@@ -69,12 +69,12 @@
 }
 .trace-hint {
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-  font-size: .8rem; color: var(--text-muted); margin: 0;
+  font-size: var(--fs-sm); color: var(--text-muted); margin: 0;
 }
 .trace-hint svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--text-muted); }
 .trace-sample {
   border: none; background: none; padding: 0; cursor: pointer;
-  font-family: "Montserrat", monospace; font-size: .8rem; font-weight: 700;
+  font-family: "Montserrat", monospace; font-size: var(--fs-sm); font-weight: 700;
   color: var(--red); text-decoration: underline; text-underline-offset: 2px;
 }
 .trace-sample:hover { color: var(--red-deep); }
@@ -99,9 +99,9 @@
 .trace-result-icon svg { width: 20px; height: 20px; }
 .is-verified .trace-result-icon { background: rgba(24,169,87,.12); color: var(--ok); }
 .is-error .trace-result-icon { background: rgba(220,38,38,.12); color: var(--out); }
-.trace-result-status { display: block; font-size: 1.05rem; font-weight: 700; color: var(--text); }
+.trace-result-status { display: block; font-size: var(--fs-lg); font-weight: 700; color: var(--text); }
 .trace-result-code {
-  display: block; font-family: "Montserrat", monospace; font-size: .8rem;
+  display: block; font-family: "Montserrat", monospace; font-size: var(--fs-sm);
   font-weight: 600; color: var(--text-muted); letter-spacing: .04em; margin-top: 2px;
 }
 
@@ -111,10 +111,10 @@
 }
 .trace-result-grid div { display: flex; flex-direction: column; gap: 4px; }
 .trace-result-grid b {
-  font-size: .68rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
   color: var(--text-muted);
 }
-.trace-result-grid span { font-size: .92rem; color: var(--text); line-height: 1.5; }
+.trace-result-grid span { font-size: var(--fs-md); color: var(--text); line-height: 1.5; }
 .trace-qa-pass { color: var(--ok); font-weight: 600; }
 
 .trace-result-certs {
@@ -122,15 +122,15 @@
   padding-top: 18px; border-top: 1px solid var(--border);
 }
 .trace-result-certs b {
-  font-size: .68rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
   color: var(--text-muted); margin-right: 4px;
 }
 .trace-cert-chip {
   padding: 5px 12px; border-radius: var(--r-pill);
   background: var(--gold-dim); border: 1px solid var(--gold-line);
-  font-size: .72rem; font-weight: 700; color: var(--text);
+  font-size: var(--fs-xs); font-weight: 700; color: var(--text);
 }
-.trace-result-note { font-size: .9rem; color: var(--text-muted); line-height: 1.7; margin: 0; }
+.trace-result-note { font-size: var(--fs-base); color: var(--text-muted); line-height: 1.7; margin: 0; }
 
 @media (max-width: 560px) {
   .trace-result-grid { grid-template-columns: 1fr; }

@@ -92,10 +92,17 @@
       </button>
     </div>
   </div>
+  <!-- TWO DASHBOARDS, ONE SECTION.
+       renderDashboard() decides which panels to show from the permissions the
+       signed-in user holds — see isInventoryDashboard() in engine.js for the
+       exact rule. The panels that belong to only one of the two carry an id and
+       are hidden by class, rather than living in a second module: the greeting,
+       the tile grid, the notifications panel and the stock panel are the same
+       thing for both readers and would otherwise exist twice. -->
   <div class="stat-grid" id="dash-stats"></div>
   <div class="dash-grid">
     <div>
-      <div class="panel" style="margin-bottom: 20px">
+      <div class="panel" id="dash-sales-panel" style="margin-bottom: 20px">
         <div class="panel-header">
           <span class="panel-title">Sales This Week</span>
           <div style="display: flex; align-items: center; gap: 10px">
@@ -166,9 +173,13 @@
           ></svg>
         </div>
       </div>
+      <!-- "Stock Levels" for a manager, "Stock Overview" for an inventory
+           user, who has no sales chart above it and reads this as the main
+           graph on the page. Same bars, same data — renderDashboard() sets the
+           title, because the heading is the only part that differs. -->
       <div class="panel">
         <div class="panel-header">
-          <span class="panel-title">Stock Levels</span>
+          <span class="panel-title" id="dash-stock-title">Stock Levels</span>
         </div>
         <div class="stock-bars" id="dash-stock-bars"></div>
       </div>
@@ -181,7 +192,39 @@
       <div class="notif-list" id="dash-notifs"></div>
     </div>
   </div>
-  <div class="panel" style="margin-top: 20px">
+  <!-- PRODUCT RANKINGS — the inventory reader's version of Recent
+       Transactions. Top five by UNITS sold this week, beside what is left on
+       the shelf, because the question this reader has is "what is selling fast
+       and do we have enough of it" and neither half answers it alone.
+
+       Filled from api/reports/top-products.php, which ranks the same rows the
+       Sales Report's Best Sellers panel ranks (Revenue::productTotals) and
+       resolves "this week" with the same Dates::range() — so the two screens
+       cannot disagree about the period or about what sold in it. No money
+       appears in that endpoint's response; it is readable with inventory
+       permissions and carries nothing that needs sales.report. -->
+  <div class="panel hide" id="dash-rank-panel" style="margin-top: 20px">
+    <div class="panel-header">
+      <span class="panel-title">Product Rankings</span>
+      <span class="lp-hint" id="dash-rank-note"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width: 52px">#</th>
+            <th>Product</th>
+            <th class="num">Units sold</th>
+            <th class="num">Stock on hand</th>
+            <th>Stock level</th>
+          </tr>
+        </thead>
+        <tbody id="dash-rankings"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel" id="dash-recent-panel" style="margin-top: 20px">
     <div class="panel-header">
       <span class="panel-title">Recent Transactions</span>
       <!-- Carries the gate of the module it jumps to. Without data-perm this

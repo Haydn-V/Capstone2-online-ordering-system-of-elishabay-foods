@@ -38,7 +38,7 @@
 .mp-breadcrumb {
   display: flex; align-items: center; gap: 8px;
   font-family: "Montserrat", sans-serif;
-  font-size: .66rem; font-weight: 600;
+  font-size: var(--fs-2xs); font-weight: 600;
   letter-spacing: .12em; text-transform: uppercase;
   color: var(--text-muted); margin-bottom: 14px;
 }
@@ -57,7 +57,7 @@
 }
 .mp-title .accent { color: var(--gold); }
 .mp-sub {
-  font-size: .88rem; color: var(--text-muted);
+  font-size: var(--fs-base); color: var(--text-muted);
   margin-top: 6px; line-height: 1.55;
 }
 .mp-breadcrumb { margin-bottom: 10px; }
@@ -74,7 +74,7 @@
 .mp-tab {
   padding: 9px 20px;
   font-family: "Montserrat", sans-serif;
-  font-size: .75rem; font-weight: 600;
+  font-size: var(--fs-xs); font-weight: 600;
   letter-spacing: .08em; text-transform: uppercase;
   border: none; background: none; cursor: pointer;
   border-radius: calc(var(--r-lg) - 2px);
@@ -106,19 +106,19 @@
 }
 .order-id {
   font-family: "Montserrat", sans-serif;
-  font-size: .68rem; font-weight: 700;
+  font-size: var(--fs-2xs); font-weight: 700;
   letter-spacing: .1em; text-transform: uppercase;
   color: var(--text-muted);
 }
 .order-id strong { color: var(--gold); }
 .order-date {
-  font-size: .78rem; color: var(--text-muted);
+  font-size: var(--fs-sm); color: var(--text-muted);
 }
 .order-status {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 4px 12px; border-radius: var(--r-pill);
   font-family: "Montserrat", sans-serif;
-  font-size: .64rem; font-weight: 700;
+  font-size: var(--fs-3xs); font-weight: 700;
   letter-spacing: .08em; text-transform: uppercase;
 }
 /* Driven off the status tokens, so the fill is derived from the same colour as
@@ -149,18 +149,18 @@
   border: 1px solid var(--border);
   object-fit: cover; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  font-size: .72rem; color: var(--text-muted); overflow: hidden;
+  font-size: var(--fs-xs); color: var(--text-muted); overflow: hidden;
 }
 .order-item-info { flex: 1; }
 .order-item-name {
-  font-weight: 600; font-size: .9rem; color: var(--text);
+  font-weight: 600; font-size: var(--fs-base); color: var(--text);
   margin-bottom: 2px;
 }
-.order-item-qty { font-size: .8rem; color: var(--text-muted); }
+.order-item-qty { font-size: var(--fs-sm); color: var(--text-muted); }
 .order-item-price {
   font-weight: 700; color: var(--text);
   font-family: "Montserrat", sans-serif;
-  font-size: .88rem;
+  font-size: var(--fs-base);
 }
 
 .order-card-foot {
@@ -170,17 +170,17 @@
   border-top: 1px solid var(--border);
   flex-wrap: wrap; gap: 10px;
 }
-.order-total-label { font-size: .8rem; color: var(--text-muted); }
+.order-total-label { font-size: var(--fs-sm); color: var(--text-muted); }
 .order-total-val {
   font-family: "Montserrat", sans-serif;
-  font-weight: 700; font-size: 1rem;
+  font-weight: 700; font-size: var(--fs-md);
   color: var(--text);
 }
 .order-actions { display: flex; gap: 8px; }
 .btn-order-action {
   padding: 7px 16px; border-radius: var(--r-pill);
   font-family: "Montserrat", sans-serif;
-  font-size: .7rem; font-weight: 700;
+  font-size: var(--fs-2xs); font-weight: 700;
   letter-spacing: .06em; text-transform: uppercase;
   cursor: pointer; border: 1.5px solid var(--border);
   background: none; color: var(--text);
@@ -202,8 +202,8 @@
   border-radius: var(--r-xl);
 }
 .orders-empty svg { opacity: .25; margin-bottom: 16px; }
-.orders-empty h3 { font-size: 1.1rem; color: var(--text); margin-bottom: 8px; }
-.orders-empty p { font-size: .88rem; color: var(--text-muted); max-width: 30ch; margin: 0 auto 20px; }
+.orders-empty h3 { font-size: var(--fs-lg); color: var(--text); margin-bottom: 8px; }
+.orders-empty p { font-size: var(--fs-base); color: var(--text-muted); max-width: 30ch; margin: 0 auto 20px; }
 
 /* ── Auth guard overlay ── */
 .mp-guard {
@@ -216,7 +216,7 @@
   font-size: clamp(1.6rem,3.5vw,2.4rem);
   color: var(--text); margin-bottom: 10px;
 }
-.mp-guard p { color: var(--text-muted); font-size: .9rem; margin-bottom: 24px; }
+.mp-guard p { color: var(--text-muted); font-size: var(--fs-base); margin-bottom: 24px; }
 
 /* ── Profile form ── */
 .profile-grid {
@@ -245,16 +245,16 @@
 }
 .profile-name {
   font-family: "Playfair Display SC",serif;
-  font-size: 1.05rem; font-weight: 700; color: var(--text);
+  font-size: var(--fs-lg); font-weight: 700; color: var(--text);
   margin-bottom: 4px;
 }
-.profile-email { font-size: .8rem; color: var(--text-muted); }
+.profile-email { font-size: var(--fs-sm); color: var(--text-muted); }
 .profile-tag {
   display: inline-block; margin-top: 12px;
   padding: 4px 12px; border-radius: var(--r-pill);
   background: rgba(232,163,23,.12); color: var(--gold);
   font-family: "Montserrat",sans-serif;
-  font-size: .64rem; font-weight: 700;
+  font-size: var(--fs-3xs); font-weight: 700;
   letter-spacing: .08em; text-transform: uppercase;
 }
 .profile-sidebar-links {
@@ -264,7 +264,7 @@
 .profile-sidebar-link {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 14px; border-radius: var(--r-md);
-  font-size: .88rem; color: var(--text-muted);
+  font-size: var(--fs-base); color: var(--text-muted);
   cursor: pointer; border: none; background: none;
   transition: all var(--t) var(--ease); text-align: left; width: 100%;
 }
@@ -284,7 +284,7 @@
 }
 .profile-card-title {
   font-family: "Montserrat",sans-serif;
-  font-size: .7rem; font-weight: 700;
+  font-size: var(--fs-2xs); font-weight: 700;
   letter-spacing: .15em; text-transform: uppercase;
   color: var(--text-muted); margin-bottom: 20px;
   padding-bottom: 14px; border-bottom: 1px solid var(--border);
@@ -296,7 +296,7 @@
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label {
   font-family: "Montserrat",sans-serif;
-  font-size: .68rem; font-weight: 600;
+  font-size: var(--fs-2xs); font-weight: 600;
   letter-spacing: .1em; text-transform: uppercase;
   color: var(--text-muted);
 }
@@ -306,7 +306,7 @@
   border: 1.5px solid var(--border);
   border-radius: var(--r-md);
   font-family: "Karla",sans-serif;
-  font-size: .92rem; color: var(--text);
+  font-size: var(--fs-md); color: var(--text);
   transition: border-color var(--t);
   outline: none;
 }
@@ -316,8 +316,8 @@
   background: var(--bg-tint);
 }
 .field .control.error { border-color: var(--red); }
-.field-hint { font-size: .76rem; color: var(--text-muted); }
-.field-error { font-size: .76rem; color: var(--red); min-height: 18px; }
+.field-hint { font-size: var(--fs-xs); color: var(--text-muted); }
+.field-error { font-size: var(--fs-xs); color: var(--red); min-height: 18px; }
 
 .profile-form-actions {
   display: flex; gap: 10px; justify-content: flex-end;
@@ -395,7 +395,7 @@
 }
 .mpas-name {
   font-family: "Playfair Display SC",serif;
-  font-size: 1.02rem; font-weight: 700; color: var(--text);
+  font-size: var(--fs-lg); font-weight: 700; color: var(--text);
   line-height: 1.2; margin-bottom: 6px;
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -405,7 +405,7 @@
   background: var(--bg-tint); color: var(--text-muted);
   border: 1px solid var(--border);
   font-family: "Montserrat",sans-serif;
-  font-size: .58rem; font-weight: 700;
+  font-size: var(--fs-4xs); font-weight: 700;
   letter-spacing: .1em; text-transform: uppercase;
   margin-bottom: 22px;
 }
@@ -420,7 +420,7 @@
   display: flex; align-items: center; gap: 11px;
   padding: 11px 14px; border-radius: var(--r-md);
   font-family: "Montserrat",sans-serif;
-  font-size: .78rem; font-weight: 600;
+  font-size: var(--fs-sm); font-weight: 600;
   letter-spacing: .03em;
   color: var(--text-muted);
   text-decoration: none;
@@ -458,11 +458,11 @@
 }
 .mpas-foot-label {
   font-family: "Montserrat",sans-serif;
-  font-size: .58rem; font-weight: 700;
+  font-size: var(--fs-4xs); font-weight: 700;
   letter-spacing: .1em; text-transform: uppercase;
   color: var(--text-muted); display: block; margin-bottom: 6px;
 }
-.mpas-foot-body { font-size: .76rem; line-height: 1.55; color: var(--text-muted); }
+.mpas-foot-body { font-size: var(--fs-xs); line-height: 1.55; color: var(--text-muted); }
 .mpas-foot-body a { color: var(--gold); font-weight: 600; }
 .mpas-foot-body a:hover { text-decoration: underline; }
 
@@ -482,7 +482,7 @@
     border-right-width: 1px; border-right-color: var(--border);
     border-top: 2px solid var(--gold-line);
   }
-  .mpas-avatar { margin-bottom: 0; width: 54px; height: 54px; font-size: 1.2rem; box-shadow: 0 0 0 3px var(--surface); }
+  .mpas-avatar { margin-bottom: 0; width: 54px; height: 54px; font-size: var(--fs-xl); box-shadow: 0 0 0 3px var(--surface); }
   .mpas-name { margin-bottom: 2px; }
   .mpas-tag { margin-bottom: 0; }
   .mpas-nav { flex-direction: row; flex-wrap: wrap; border-top: none; border-left: 1px solid var(--border); padding-top: 0; padding-left: 16px; margin-left: auto; }
@@ -494,7 +494,7 @@
   .profile-form-grid { grid-template-columns: 1fr; }
   .profile-form-grid .field.full { grid-column: auto; }
   .mp-tabs { flex-wrap: wrap; width: 100%; }
-  .mp-tab { flex: 1; text-align: center; padding: 9px 10px; font-size: .66rem; }
+  .mp-tab { flex: 1; text-align: center; padding: 9px 10px; font-size: var(--fs-2xs); }
   .order-card-head { flex-direction: column; align-items: flex-start; }
 }
 
@@ -508,7 +508,7 @@
   border-left: 3px solid var(--gold, #c9a227);
   background: rgba(201, 162, 39, .07);
   border-radius: 0 6px 6px 0;
-  font-size: .86rem;
+  font-size: var(--fs-base);
   line-height: 1.5;
 }
 .order-note small { color: var(--text-muted); display: inline-block; margin-top: 3px; }
@@ -526,7 +526,7 @@
   padding: 14px 16px;
   border-radius: 10px;
   margin-bottom: 18px;
-  font-size: .9rem;
+  font-size: var(--fs-base);
   line-height: 1.55;
   border-left: 4px solid;
 }
@@ -546,25 +546,25 @@
   background: var(--surface, #fff);
   display: flex; flex-direction: column; gap: 4px;
 }
-.pay-stat-label { font-size: .74rem; text-transform: uppercase; letter-spacing: .09em; color: var(--text-muted); font-weight: 700; }
-.pay-stat-val   { font-size: 1.6rem; font-weight: 700; font-variant-numeric: lining-nums tabular-nums; }
+.pay-stat-label { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .09em; color: var(--text-muted); font-weight: 700; }
+.pay-stat-val   { font-size: var(--fs-3xl); font-weight: 700; font-variant-numeric: lining-nums tabular-nums; }
 .pay-stat-val.is-overdue { color: #c43d2a; }
-.pay-stat small { font-size: .76rem; color: var(--text-muted); }
+.pay-stat small { font-size: var(--fs-xs); color: var(--text-muted); }
 
 /* Wide on a phone: scrolls inside its own box rather than pushing the page
    sideways. */
 .table-wrap { overflow-x: auto; }
-.pay-table { width: 100%; border-collapse: collapse; font-size: .9rem; min-width: 640px; }
+.pay-table { width: 100%; border-collapse: collapse; font-size: var(--fs-base); min-width: 640px; }
 .pay-table th {
   text-align: left; padding: 10px 12px;
-  font-size: .72rem; text-transform: uppercase; letter-spacing: .08em;
+  font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .08em;
   color: var(--text-muted); border-bottom: 1px solid var(--border, #e6e1d8);
 }
 .pay-table td { padding: 12px; border-bottom: 1px solid var(--border, #e6e1d8); vertical-align: top; }
 .pay-table tr.state-paid td { opacity: .62; }
-.pay-table .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
+.pay-table .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--fs-sm); }
 .pay-table .is-overdue { color: #c43d2a; font-weight: 600; }
-.pay-days { display: block; font-size: .74rem; color: var(--text-muted); margin-top: 2px; }
+.pay-days { display: block; font-size: var(--fs-xs); color: var(--text-muted); margin-top: 2px; }
 
 .order-status.status-overdue   { background: rgba(196, 61, 42, .12);  color: #c43d2a; }
 .order-status.status-due-soon  { background: rgba(201, 162, 39, .14); color: #8a6f1a; }
@@ -657,7 +657,7 @@
 .db-stat-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .db-stat-label {
   font-family: "Montserrat", sans-serif;
-  font-size: .61rem; font-weight: 700;
+  font-size: var(--fs-3xs); font-weight: 700;
   letter-spacing: .12em; text-transform: uppercase;
   color: var(--text-muted);
 }
@@ -670,7 +670,7 @@
      refresh does not shift the label under it. */
   font-variant-numeric: tabular-nums;
 }
-.db-stat-hint { font-size: .71rem; color: var(--text-muted); line-height: 1.45; }
+.db-stat-hint { font-size: var(--fs-2xs); color: var(--text-muted); line-height: 1.45; }
 
 /* The five identities. Four come straight from the status palette, so a tile
    and its matching pill are the same colour; Total Outstanding is gold because
@@ -737,7 +737,7 @@
 }
 .db-panel-title {
   font-family: "Montserrat", sans-serif;
-  font-size: .72rem; font-weight: 700;
+  font-size: var(--fs-xs); font-weight: 700;
   letter-spacing: .13em; text-transform: uppercase;
   color: var(--text); margin: 0;
   display: flex; align-items: center; gap: 9px;
@@ -750,7 +750,7 @@
 }
 .db-panel-link {
   font-family: "Montserrat", sans-serif;
-  font-size: .64rem; font-weight: 700;
+  font-size: var(--fs-3xs); font-weight: 700;
   letter-spacing: .09em; text-transform: uppercase;
   color: var(--text-muted); white-space: nowrap;
   padding: 4px 9px; border-radius: var(--r-pill);
@@ -766,10 +766,10 @@
 }
 .db-track-id {
   font-family: "Montserrat", sans-serif;
-  font-weight: 700; font-size: .92rem; color: var(--gold);
+  font-weight: 700; font-size: var(--fs-md); color: var(--gold);
 }
 .db-track-id:hover { text-decoration: underline; }
-.db-track-meta { font-size: .78rem; color: var(--text-muted); margin-top: 3px; }
+.db-track-meta { font-size: var(--fs-sm); color: var(--text-muted); margin-top: 3px; }
 
 /* The step track. A row of dots joined by the line that runs BEHIND them —
    drawn on the <li> as a left border on the connector pseudo-element rather
@@ -810,7 +810,7 @@
 }
 .db-step-label {
   font-family: "Montserrat", sans-serif;
-  font-size: .64rem; font-weight: 600;
+  font-size: var(--fs-3xs); font-weight: 600;
   letter-spacing: .04em;
   color: var(--text-muted);
 }
@@ -821,7 +821,7 @@
   margin-top: 18px; padding: 11px 14px;
   border: 1px solid var(--border); border-radius: var(--r-md);
   background: var(--surface-2);
-  font-size: .8rem; line-height: 1.5; color: var(--text-muted);
+  font-size: var(--fs-sm); line-height: 1.5; color: var(--text-muted);
 }
 .db-note strong { color: var(--text); }
 .db-note .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .02em; }
@@ -845,11 +845,11 @@
 .db-list-row + .db-list-row { border-top: 1px solid var(--border); border-radius: var(--r-md); }
 .db-list-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .db-list-main strong {
-  font-size: .86rem; color: var(--text);
+  font-size: var(--fs-base); color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .db-list-sub {
-  font-size: .74rem; color: var(--text-muted);
+  font-size: var(--fs-xs); color: var(--text-muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .db-list-side {
@@ -858,14 +858,14 @@
 }
 .db-amt {
   font-family: "Montserrat", sans-serif;
-  font-weight: 700; font-size: .88rem;
+  font-weight: 700; font-size: var(--fs-base);
   font-variant-numeric: tabular-nums; color: var(--text);
 }
 .db-pill {
   display: inline-flex; align-items: center;
   padding: 3px 10px; border-radius: var(--r-pill);
   font-family: "Montserrat", sans-serif;
-  font-size: .6rem; font-weight: 700;
+  font-size: var(--fs-3xs); font-weight: 700;
   letter-spacing: .08em; text-transform: uppercase;
 }
 .db-pill-ok   { background: color-mix(in srgb, var(--ok) 12%, transparent);   color: var(--ok); }
@@ -879,11 +879,11 @@
 .db-empty {
   display: flex; flex-direction: column; align-items: center;
   padding: 30px 10px; text-align: center;
-  color: var(--text-muted); font-size: .82rem; line-height: 1.6;
+  color: var(--text-muted); font-size: var(--fs-sm); line-height: 1.6;
 }
 .db-empty p { margin: 0 0 4px; }
 .db-empty strong {
-  color: var(--text); font-size: .92rem;
+  color: var(--text); font-size: var(--fs-md);
   display: block; margin-bottom: 2px;
 }
 .db-empty .btn { margin-top: 16px; }
@@ -912,7 +912,7 @@
      90px box. */
   .db-stats-plain,
   .db-stats-credit { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .db-stat-value { font-size: 1.55rem; }
+  .db-stat-value { font-size: var(--fs-3xl); }
   .db-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "track" "pay" "recent"; }
 }
 @media (max-width: 560px) {
@@ -957,7 +957,7 @@
 /* Held / not published. The WORD carries it; the colour only tints
    the border, so this survives being read aloud or in greyscale. */
 .rate-state {
-  font-size: .68rem; font-weight: 700; letter-spacing: .03em;
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .03em;
   text-transform: uppercase; color: var(--text);
   padding: 2px 8px; border-radius: 999px;
   border: 1px solid var(--border); background: var(--bg-tint);
@@ -966,7 +966,7 @@
 .rate-state-rejected { border-color: color-mix(in srgb, var(--red) 45%, var(--border)); }
 
 .btn-rate {
-  font: inherit; font-size: .78rem; font-weight: 700;
+  font: inherit; font-size: var(--fs-sm); font-weight: 700;
   color: var(--text); background: var(--bg-tint);
   border: 1px solid var(--border); border-radius: var(--r-sm);
   padding: 6px 12px; cursor: pointer;
@@ -983,7 +983,7 @@
    a screen reader announces all come from the radios themselves. */
 .rate-stars-wrap { border: 0; padding: 0; margin: 0 0 16px; }
 .rate-stars-wrap legend {
-  font-size: .78rem; font-weight: 700; letter-spacing: .04em;
+  font-size: var(--fs-sm); font-weight: 700; letter-spacing: .04em;
   text-transform: uppercase; color: var(--text-muted); padding: 0 0 6px;
 }
 .rate-stars { display: inline-flex; gap: 2px; }
@@ -1013,11 +1013,11 @@
   .rate-star:hover { transform: none; }
 }
 
-.rate-intro { font-size: .88rem; line-height: 1.6; margin-bottom: 14px; color: var(--text-muted); }
-.rate-intro strong { color: var(--text); font-size: 1rem; }
+.rate-intro { font-size: var(--fs-base); line-height: 1.6; margin-bottom: 14px; color: var(--text-muted); }
+.rate-intro strong { color: var(--text); font-size: var(--fs-md); }
 
 .rate-note {
-  font-size: .82rem; line-height: 1.55; padding: 10px 13px; margin-bottom: 14px;
+  font-size: var(--fs-sm); line-height: 1.55; padding: 10px 13px; margin-bottom: 14px;
   border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-tint);
 }
 .rate-note-pending  { border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
@@ -1025,20 +1025,20 @@
 
 .rate-field { margin-bottom: 14px; }
 .rate-field label {
-  display: block; font-size: .78rem; font-weight: 700; letter-spacing: .04em;
+  display: block; font-size: var(--fs-sm); font-weight: 700; letter-spacing: .04em;
   text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px;
 }
 .rate-optional { font-weight: 500; text-transform: none; letter-spacing: 0; }
 .rate-field textarea {
-  width: 100%; font: inherit; font-size: .9rem; line-height: 1.55;
+  width: 100%; font: inherit; font-size: var(--fs-base); line-height: 1.55;
   color: var(--text); background: var(--surface);
   border: 1px solid var(--border); border-radius: var(--r-sm);
   padding: 10px 12px; resize: vertical;
 }
 .rate-field textarea:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; border-color: var(--gold); }
 
-.rate-hint { font-size: .76rem; color: var(--text-muted); margin-top: 6px; }
-.rate-err  { font-size: .82rem; color: var(--red); font-weight: 600; min-height: 1.2em; margin-bottom: 8px; }
+.rate-hint { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 6px; }
+.rate-err  { font-size: var(--fs-sm); color: var(--red); font-weight: 600; min-height: 1.2em; margin-bottom: 8px; }
 
 @media (max-width: 560px) {
   .order-item-rate { justify-content: flex-start; }
@@ -1049,20 +1049,20 @@
   padding: 16px 18px; margin-bottom: 14px; }
 .pay-acct.state-paid { opacity: .8; }
 .pay-acct-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
-.pay-acct-ref { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .86rem; font-weight: 600; }
-.pay-acct-sub { font-size: .8rem; color: var(--text-muted); margin-top: 2px; }
+.pay-acct-ref { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--fs-base); font-weight: 600; }
+.pay-acct-sub { font-size: var(--fs-sm); color: var(--text-muted); margin-top: 2px; }
 .pay-acct-chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .pay-progress { height: 8px; border-radius: 99px; background: var(--surface-2, #f1ede6); overflow: hidden; margin: 6px 0 12px; }
 .pay-progress span { display: block; height: 100%; background: #2f7d4f; border-radius: inherit; }
 .pay-figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 0 0 12px; }
 .pay-figs div { display: flex; flex-direction: column; gap: 2px; }
-.pay-figs dt { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
-.pay-figs dd { margin: 0; font-size: .95rem; }
+.pay-figs dt { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
+.pay-figs dd { margin: 0; font-size: var(--fs-md); }
 .pay-form { margin-top: 12px; padding: 14px; border: 1px dashed var(--border-lift, #d8d1c4); border-radius: 12px; }
 .pay-form-methods { margin-bottom: 12px; }
 .pay-form-actions { display: flex; gap: 10px; margin-top: 6px; }
 .pay-history { margin-top: 14px; }
-.pay-history-title { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: 6px; }
+.pay-history-title { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: 6px; }
 .pay-history-table { min-width: 560px; }
 .pay-row-rejected td { opacity: .75; }
 .order-status.status-paid    { background: rgba(47, 125, 79, .12); color: #2f7d4f; }

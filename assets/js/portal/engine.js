@@ -1934,7 +1934,52 @@ function statCard(o){
   return `<div class="stat-card${linked}" ${style}>${faceHtml}${subHtml}${delta}</div>`;
 }
 
+/* WHO GETS THE INVENTORY DASHBOARD.
+
+   THE RULE:  (inventory.report OR inventory.manage)  AND NOT sales.report
+
+   By permission, never by role name. Roles are editable from Roles &
+   Permissions — they can be renamed, have permissions taken away, and be
+   created from scratch — so `role === "Inventory Staff"` would be a dashboard
+   that breaks the first time somebody makes a second stock role or renames the
+   one that exists. The same objection applies to a hardcoded list of role
+   names, which is the same thing spelled longer.
+
+   Read it as: this person's job is stock, and revenue is not their screen. The
+   management dashboard leads with Total Revenue, Today's Sales and Recent
+   Transactions, all of which sit behind sales.report — someone without it gets
+   a page whose headline figures are either hidden or un-openable.
+
+   The NOT is what keeps Super Admin, Admin and anyone else who holds both from
+   losing the revenue view: holding sales.report means the money IS their
+   screen, whatever else they also hold. */
+function isInventoryDashboard(){
+  return (hasPerm("inventory.report") || hasPerm("inventory.manage")) && !hasPerm("sales.report");
+}
+
+/* The notification types that are an inventory matter. Keyed to the type, not
+   to the permission: visibleNotifications() has already dropped anything this
+   user may not see, but "may see" is a wider set than "is their job" —
+   Inventory Staff holds audit.view, and an audit entry is not a stock alert.
+   Same vocabulary as NOTIF_PERM in orders.js. */
+const INVENTORY_NOTIF_TYPES = ["inventory", "expiry", "batch-qa"];
+
 function renderDashboard(){
+  /* Which of the two dashboards this is. Decided once, here, and every panel
+     below follows it — so there is one answer on the page rather than four
+     independent ones that can disagree. */
+  const invView = isInventoryDashboard();
+  const showPanel = (sel, on) => { const el = $(sel); if(el) el.classList.toggle("hide", !on); };
+  showPanel("#dash-sales-panel",  !invView);
+  showPanel("#dash-recent-panel", !invView);
+  showPanel("#dash-rank-panel",    invView);
+  /* The grid needs to know too. Hiding the sales panel takes the left column's
+     height with it, and the two list heights in portal.css are tuned to the
+     column heights of the version that HAS it — see .notif-list there. */
+  $(".dash-grid")?.classList.toggle("dash-grid--inventory", invView);
+  const stockTitle = $("#dash-stock-title");
+  if(stockTitle) stockTitle.textContent = invView ? "Stock Overview" : "Stock Levels";
+
   /* ── welcome banner ── */
   const now = new Date();
   const hour = now.getHours();
@@ -2010,92 +2055,161 @@ function renderDashboard(){
       ? { mod: "inventory", tab: null, perm: "inventory.report" }
       : null;
 
-  $("#dash-stats").innerHTML = [
-    statCard({
-      accent: "var(--gold-ink)", accentBg: "var(--gold-dim)",
-      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01"/><path d="M18 12h.01"/></svg>`,
-      label: "Total Revenue", value: peso(totalSales),
-      sub: `${ORDERS.length} total transactions`,
-      delta: deltaBadge(thisMonthRev, lastMonthRev, "vs last month"),
-      link: { mod: "sales", perm: "sales.report",
-              aria: `Total Revenue: ${peso(totalSales)}. Open the Sales Report.` },
-    }),
+  /* ── the inventory reader's four tiles ──────────────────────────────
+     Critical Stock and Out of Stock are the same shortcuts the management
+     dashboard carries: the same destination, chosen by the same permission,
+     and the same ONE-SHOT intent — NAV_ENTRY resets the destination's filter on
+     every arrival and applies the intent for that render only, so opening the
+     Inventory Report from anywhere else afterwards finds it unfiltered. That is
+     what stops a tile leaving its filter behind.
 
-    statCard({
-      accent: "var(--ok-ink)", accentBg: "rgba(24,169,87,.12)",
-      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>`,
-      label: "Today's Sales", value: peso(todaySales),
-      sub: `<span class="stat-trend up">\u2191 ${todayTx.length} orders</span>`,
-      delta: deltaBadge(todaySales, yesterdaySales, "vs yesterday"),
-      /* The range is a one-shot: the report opens on Today this time and
-         returns to its own default on any later visit. */
-      link: { mod: "sales", perm: "sales.report", intent: { range: "today" },
-              aria: `Today's Sales: ${peso(todaySales)}. Open the Sales Report for today.` },
-    }),
+     Total Products and Total Stock on Hand are not filters, so they go to the
+     same screen unfiltered rather than inventing a band for themselves. */
+  if(invView){
+    const warnStock  = liveProducts.filter(p=>bandOf(p)==="warn").length;
+    const archived   = PRODUCTS.length - liveProducts.length;
+    const totalStock = liveProducts.reduce((n,p)=> n + (+p.stock || 0), 0);
 
-    statCard({
-      accent: "var(--crit)", accentBg: "rgba(234,88,12,.1)",
-      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
-      label: "Critical Stock", value: lowStock,
-      sub: `${outStock} product(s) out of stock`,
-      link: stockDest && { ...stockDest, intent: { level: "crit" },
-              aria: `Critical Stock: ${lowStock}. Show the products at critical stock level.` },
-      subLink: stockDest && { ...stockDest, intent: { level: "out" },
-              aria: `${outStock} product(s) out of stock. Show the products that are out of stock.` },
-    }),
+    $("#dash-stats").innerHTML = [
+      statCard({
+        accent: "var(--crit)", accentBg: "rgba(234,88,12,.1)",
+        icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+        label: "Critical Stock", value: lowStock,
+        sub: `${warnStock} more at warning level`,
+        link: stockDest && { ...stockDest, intent: { level: "crit" },
+                aria: `Critical Stock: ${lowStock}. Show the products at critical stock level.` },
+        subLink: stockDest && { ...stockDest, intent: { level: "warn" },
+                aria: `${warnStock} more at warning level. Show the products at warning stock level.` },
+      }),
 
-    statCard({
-      accent: "var(--info)", accentBg: "rgba(59,130,246,.1)",
-      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
-      label: "Customers", value: activeCustomers,
-      sub: `${retailers} retailer(s)`,
-      link: { mod: "users", tab: "customers", perm: "users.manage",
-              aria: `Customers: ${activeCustomers}. Open Customer Accounts.` },
-      /* The sub-line names retailers specifically, so it filters to them —
-         again as a one-shot, so the tab is unfiltered by any other route. */
-      subLink: { mod: "users", tab: "customers", perm: "users.manage",
-              intent: { status: "retailer" },
-              aria: `${retailers} retailer(s). Show retailer accounts.` },
-    }),
-  ].join("");
+      statCard({
+        accent: "var(--info)", accentBg: "rgba(59,130,246,.1)",
+        icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`,
+        label: "Total Products", value: liveProducts.length,
+        /* The archived line is a fact about the catalogue, not a shortcut: the
+           Archive tab is its own screen with its own permission, and a tile
+           that filtered to it would be offering a filter this screen has no
+           state for. */
+        sub: archived ? `${archived} archived` : "none archived",
+        link: stockDest && { ...stockDest,
+                aria: `Total Products: ${liveProducts.length}. Open the stock list.` },
+      }),
 
-  /* The cards are rebuilt on every visit, so their listeners are too. */
-  wireGoto($("#dash-stats"));
+      statCard({
+        accent: "var(--ok-ink)", accentBg: "rgba(24,169,87,.12)",
+        icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
+        label: "Total Stock on Hand", value: totalStock.toLocaleString(),
+        sub: `across ${liveProducts.length} product${liveProducts.length === 1 ? "" : "s"}`,
+        link: stockDest && { ...stockDest,
+                aria: `Total Stock on Hand: ${totalStock} units. Open the stock list.` },
+      }),
 
-  /* sparkline — daily sales for past 7 days */
-  const days = [];
-  const labels = [];
-  for(let i=6;i>=0;i--){
-    const d = dAgo(i);
-    const total = sumRevenue(ORDERS.filter(tx=>tx.date===d)) + receivedBetween(d, d);
-    days.push(total);
-    labels.push(new Date(d+"T00:00:00").toLocaleDateString("en-PH",{weekday:"short"}));
+      statCard({
+        accent: "var(--out-ink)", accentBg: "rgba(220,38,38,.10)",
+        icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>`,
+        label: "Out of Stock", value: outStock,
+        sub: outStock ? "nothing on the shelf for these" : "every product has stock",
+        link: stockDest && { ...stockDest, intent: { level: "out" },
+                aria: `Out of Stock: ${outStock}. Show the products that are out of stock.` },
+      }),
+    ].join("");
+
+    wireGoto($("#dash-stats"));
+  } else {
+
+    $("#dash-stats").innerHTML = [
+      statCard({
+        accent: "var(--gold-ink)", accentBg: "var(--gold-dim)",
+        icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01"/><path d="M18 12h.01"/></svg>`,
+        label: "Total Revenue", value: peso(totalSales),
+        sub: `${ORDERS.length} total transactions`,
+        delta: deltaBadge(thisMonthRev, lastMonthRev, "vs last month"),
+        link: { mod: "sales", perm: "sales.report",
+                aria: `Total Revenue: ${peso(totalSales)}. Open the Sales Report.` },
+      }),
+
+      statCard({
+        accent: "var(--ok-ink)", accentBg: "rgba(24,169,87,.12)",
+        icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>`,
+        label: "Today's Sales", value: peso(todaySales),
+        sub: `<span class="stat-trend up">\u2191 ${todayTx.length} orders</span>`,
+        delta: deltaBadge(todaySales, yesterdaySales, "vs yesterday"),
+        /* The range is a one-shot: the report opens on Today this time and
+           returns to its own default on any later visit. */
+        link: { mod: "sales", perm: "sales.report", intent: { range: "today" },
+                aria: `Today's Sales: ${peso(todaySales)}. Open the Sales Report for today.` },
+      }),
+
+      statCard({
+        accent: "var(--crit)", accentBg: "rgba(234,88,12,.1)",
+        icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+        label: "Critical Stock", value: lowStock,
+        sub: `${outStock} product(s) out of stock`,
+        link: stockDest && { ...stockDest, intent: { level: "crit" },
+                aria: `Critical Stock: ${lowStock}. Show the products at critical stock level.` },
+        subLink: stockDest && { ...stockDest, intent: { level: "out" },
+                aria: `${outStock} product(s) out of stock. Show the products that are out of stock.` },
+      }),
+
+      statCard({
+        accent: "var(--info)", accentBg: "rgba(59,130,246,.1)",
+        icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+        label: "Customers", value: activeCustomers,
+        sub: `${retailers} retailer(s)`,
+        link: { mod: "users", tab: "customers", perm: "users.manage",
+                aria: `Customers: ${activeCustomers}. Open Customer Accounts.` },
+        /* The sub-line names retailers specifically, so it filters to them —
+           again as a one-shot, so the tab is unfiltered by any other route. */
+        subLink: { mod: "users", tab: "customers", perm: "users.manage",
+                intent: { status: "retailer" },
+                aria: `${retailers} retailer(s). Show retailer accounts.` },
+      }),
+    ].join("");
+
+    /* The cards are rebuilt on every visit, so their listeners are too. */
+    wireGoto($("#dash-stats"));
   }
-  const weekTotal = days.reduce((a,b)=>a+b,0);
-  $("#dash-week-total").textContent = peso(weekTotal);
 
-  if(!adminState.chartType) adminState.chartType = "line";
+  /* sparkline — daily sales for past 7 days.
+     Skipped entirely on the inventory dashboard: its panel is hidden, the
+     figures are revenue, and drawing into a hidden SVG is work done to be
+     looked at by nobody. */
+  if(!invView){
+    const days = [];
+    const labels = [];
+    for(let i=6;i>=0;i--){
+      const d = dAgo(i);
+      const total = sumRevenue(ORDERS.filter(tx=>tx.date===d)) + receivedBetween(d, d);
+      days.push(total);
+      labels.push(new Date(d+"T00:00:00").toLocaleDateString("en-PH",{weekday:"short"}));
+    }
+    const weekTotal = days.reduce((a,b)=>a+b,0);
+    const weekEl = $("#dash-week-total");
+    if(weekEl) weekEl.textContent = peso(weekTotal);
 
-  function redrawDashChart(){
-    const svgEl = $("#sparkline-sales");
-    const type = adminState.chartType;
-    if(type === "bar")   drawBarChart(svgEl, days, { labels, color:"var(--gold)" });
-    else if(type==="area") drawSparkline(svgEl, days, { labels, color:"var(--gold)", smooth:true, lineWidth:2 });
-    else                 drawSparkline(svgEl, days, { labels, color:"var(--gold)" });
-  }
+    if(!adminState.chartType) adminState.chartType = "line";
 
-  requestAnimationFrame(redrawDashChart);
-  observeChart($("#sparkline-sales"), redrawDashChart);
-
-  /* wire chart toggle */
-  $$("[data-chart]").forEach(btn=>{
-    btn.classList.toggle("active", btn.dataset.chart === adminState.chartType);
-    btn.onclick = ()=>{
-      adminState.chartType = btn.dataset.chart;
-      $$("[data-chart]").forEach(b=> b.classList.toggle("active", b.dataset.chart===adminState.chartType));
-      requestAnimationFrame(redrawDashChart);
+    const redrawDashChart = () => {
+      const svgEl = $("#sparkline-sales");
+      const type = adminState.chartType;
+      if(type === "bar")   drawBarChart(svgEl, days, { labels, color:"var(--gold)" });
+      else if(type==="area") drawSparkline(svgEl, days, { labels, color:"var(--gold)", smooth:true, lineWidth:2 });
+      else                 drawSparkline(svgEl, days, { labels, color:"var(--gold)" });
     };
-  });
+
+    requestAnimationFrame(redrawDashChart);
+    observeChart($("#sparkline-sales"), redrawDashChart);
+
+    /* wire chart toggle */
+    $$("[data-chart]").forEach(btn=>{
+      btn.classList.toggle("active", btn.dataset.chart === adminState.chartType);
+      btn.onclick = ()=>{
+        adminState.chartType = btn.dataset.chart;
+        $$("[data-chart]").forEach(b=> b.classList.toggle("active", b.dataset.chart===adminState.chartType));
+        requestAnimationFrame(redrawDashChart);
+      };
+    });
+  }
 
   /* stock bars */
   const stockEl = $("#dash-stock-bars");
@@ -2144,13 +2258,26 @@ function renderDashboard(){
 
      It now reads the same rows, through the same permission scope, in the
      same order, with the same level labels as the bell and the module. */
-  const dashNotifs = (typeof sortByUrgency === "function" && typeof visibleNotifications === "function")
-    ? sortByUrgency(visibleNotifications()).slice(0, 8)
+  /* ON THE INVENTORY DASHBOARD, INVENTORY MATTERS ONLY.
+
+     visibleNotifications() has already dropped everything this user has no
+     permission to see, and that is not the same filter. Inventory Staff holds
+     audit.view, so the audit feed reached this panel — a list headed "System
+     Notifications" on a stock screen, carrying entries about who changed a
+     price. The bell and the Notifications module keep the whole permitted feed;
+     it is only this panel, on this dashboard, that narrows.
+
+     THE COUNT NARROWS WITH IT. A badge counting rows the list does not show is
+     the same defect as a badge counting rows nobody can act on. */
+  const dashFeed = (typeof visibleNotifications === "function")
+    ? visibleNotifications().filter(n => !invView || INVENTORY_NOTIF_TYPES.includes(n.type))
     : [];
 
-  const dashUnread = (typeof visibleNotifications === "function")
-    ? visibleNotifications().filter(n=>!n.read).length
-    : 0;
+  const dashNotifs = (typeof sortByUrgency === "function")
+    ? sortByUrgency(dashFeed).slice(0, 8)
+    : dashFeed.slice(0, 8);
+
+  const dashUnread = dashFeed.filter(n=>!n.read).length;
 
   /* The unread count, not the total. The badge is red; a red badge reading
      "17" beside a list that is entirely handled history is an alarm about
@@ -2178,6 +2305,12 @@ function renderDashboard(){
      other screen. */
   if(typeof initNotifBadge === "function") initNotifBadge();
 
+  /* Product Rankings replace Recent Transactions on the inventory dashboard. */
+  if(invView){
+    renderDashRankings();
+    return;
+  }
+
   /* recent transactions */
   const recentTx = [...ORDERS].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
   const recentEl = $("#dash-recent-tx");
@@ -2192,6 +2325,66 @@ function renderDashboard(){
       <td class="muted">${fmtDate(tx.date)}</td>
     </tr>`;
   }).join("") || `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">No transactions yet.</td></tr>`;
+}
+
+/* PRODUCT RANKINGS — what sold most this week, beside what is left of it.
+
+   ASKED OF THE SERVER, not summed from ORDERS. The browser holds the orders it
+   has been given, which is every order at forty rows and a page of them the
+   moment the list is paged — the same trap the Sales Report was pulled out of.
+   api/reports/top-products.php aggregates in SQL, ranks by units through
+   Revenue::productTotals (the method the Sales Report's Best Sellers uses, so
+   the two cannot disagree about what sold), and resolves "this week" with
+   Dates::range — Monday to today, which is what the Sales Report's week button
+   means too.
+
+   THE STOCK COLUMN IS THE MEASURED BAND, not a raw count. "142 units" answers
+   nothing on its own: a fast seller with 142 and four days of cover is
+   Critical, and the whole point of putting units sold next to stock is to see
+   that. Same bands, same labels, same badges as the Inventory Report. */
+function renderDashRankings(){
+  const body = $("#dash-rankings");
+  const note = $("#dash-rank-note");
+  if(!body) return;
+
+  const wholeRow = html =>
+    `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">${html}</td></tr>`;
+
+  body.innerHTML = wholeRow("Loading…");
+
+  EbApi.get("reports/top-products.php", { range: "week", limit: 5 })
+    .then(({ data, meta }) => {
+      const r = meta && meta.range;
+      if(note){
+        note.textContent = r && r.from
+          ? `by units sold · ${fmtDate(r.from)} – ${fmtDate(r.to)}`
+          : "by units sold this week";
+      }
+      if(!data || !data.length){
+        /* A period with nothing in it is a fact. An empty table with headers
+           reads as a broken query — the same reason the Sales Report's own
+           empty state says so in words. */
+        body.innerHTML = wholeRow("Nothing has sold yet this week.");
+        return;
+      }
+      body.innerHTML = data.map((p, i) => {
+        const st = stockInfo({ inventory: { level: p.stockLevel, levelReason: null, daysCover: p.daysCover },
+                               stock: p.stock });
+        const why = p.daysCover === null || p.daysCover === undefined
+          ? "" : ` title="About ${p.daysCover} day(s) of cover at the current rate."`;
+        return `<tr>
+          <td class="num-cell muted">${i + 1}</td>
+          <td><strong>${escHtml(p.name)}</strong></td>
+          <td class="num-cell">${(+p.units || 0).toLocaleString()}</td>
+          <td class="num-cell">${(+p.stock || 0).toLocaleString()}</td>
+          <td><span class="badge ${st.cls}"${why}>${escHtml(st.label)}</span></td>
+        </tr>`;
+      }).join("");
+    })
+    .catch(err => {
+      if(note) note.textContent = "";
+      body.innerHTML = wholeRow("Could not load the rankings: " + escHtml(err.message));
+    });
 }
 
 /* ============================================================
@@ -3094,7 +3287,13 @@ function renderBestSellerRows(){
           <div class="lp-tile-sold"><b>${p.sold.toLocaleString()}</b> sold</div>
           <div class="lp-tile-meta">
             ${peso(p.revenue)} · ${ratingText(p)} ·
-            <span class="pill ${st.cls}">${st.label}</span>
+            <!-- .badge, like every other stock pill in the portal. This said
+                 class="pill", and no .pill rule exists anywhere: the colour
+                 classes (badge-ok, badge-out…) only set a background and a text
+                 colour, while the SHAPE — padding, rounded ends, weight — lives on
+                 .badge. So the tile got the colour with no shape, which is the
+                 "cut-off rectangle". Nothing was clipping it; nothing was shaping it. -->
+            <span class="badge ${st.cls}">${st.label}</span>
           </div>
         </div>
 
@@ -4400,36 +4599,10 @@ function renderTopProducts(rows, from, to){
   </table></div>`;
 }
 
-/* The payment-method split, rendered in the same pass for the same reason:
-   it was already in the response and nothing showed it. Share of revenue is
-   computed here rather than asked of the server — the total is right there in
-   the same payload, so a second query would be a second chance to disagree. */
-function renderByMethod(rows, totals){
-  const body = $("#by-method-body");
-  if(!body) return;
-
-  if(!rows || !rows.length){
-    body.innerHTML = `<div class="alert-empty">
-      <strong>No payments in this period</strong>
-      Nothing was taken between those dates.
-    </div>`;
-    return;
-  }
-
-  const total = rows.reduce((n,r)=> n + r.revenue, 0) || 1;
-  body.innerHTML = `<div class="table-wrap"><table class="data-table">
-    <thead><tr>
-      <th>Method</th><th class="num">Orders</th>
-      <th class="num">Revenue</th><th class="num">Share</th>
-    </tr></thead>
-    <tbody>${rows.map(r=>`<tr>
-      <td><span class="badge ${methodBadgeClass(r.method)}">${escHtml(payMethodLabel ? payMethodLabel(r.method) : r.method)}</span></td>
-      <td class="num-cell">${r.orders.toLocaleString()}</td>
-      <td class="num-cell"><strong>${peso(r.revenue)}</strong></td>
-      <td class="num-cell muted">${Math.round((r.revenue/total)*100)}%</td>
-    </tr>`).join("")}</tbody>
-  </table></div>`;
-}
+/* renderByMethod() stood here, drawing the "Payment Methods in Period" panel.
+   The panel is gone from portal/views/sales.html and the two GROUP BY queries
+   that fed it are gone from api/reports/sales.php, so there is no `byMethod`
+   in the response to render any more. */
 
 /* Where the Net figures in the Sales Report came from, stated rather than
    asked to be trusted: what was received on Net accounts in the period, and
@@ -4485,11 +4658,10 @@ function renderSales(range){
         set("#sales-total-val", peso(data.totals.revenue));
         set("#sales-orders-val", data.totals.orders);
         set("#sales-avg-val", peso(data.totals.average));
-        /* Both of these arrived in every response since the endpoint was
-           written and neither was ever read. Rendered here, in the same pass,
-           so they cannot fall out of step with the totals above them. */
+        /* This arrived in every response since the endpoint was written and
+           was never read. Rendered here, in the same pass, so it cannot fall
+           out of step with the totals above it. */
         renderTopProducts(data.topProducts, start, end);
-        renderByMethod(data.byMethod, data.totals);
         renderCreditNote(data.credit);
       })
       .catch(err => console.warn("[sales]", err.message))
@@ -4628,7 +4800,19 @@ function renderSales(range){
   };
 
   if(cmpToggle) cmpToggle.onchange = ()=>{
-    if(cmpSelect) cmpSelect.style.display = cmpToggle.checked ? "block" : "none";
+    /* Disabled, not hidden. The selector used to be display:none until the
+       box was ticked, so the row re-flowed — and its width changed — on every
+       click. It now stays put and greys out, which also leaves it visible
+       that there is a period to choose once this is switched on.
+
+       EbSelect mirrors the native <select> into its own trigger through a
+       MutationObserver, and that observer does not watch ATTRIBUTES — so
+       `disabled` has to be pushed across by hand. Without the sync the custom
+       trigger stays clickable over a disabled select. */
+    if(cmpSelect){
+      cmpSelect.disabled = !cmpToggle.checked;
+      if(window.EbSelect && EbSelect.sync) EbSelect.sync(cmpSelect);
+    }
     renderSales(adminState.salesRange);
   };
   if(cmpSelect) cmpSelect.onchange = ()=> renderSales(adminState.salesRange);

@@ -151,6 +151,26 @@ final class Response
         return $_POST ?: [];
     }
 
+    /** Set by cacheFor(); null means the default, no-store. */
+    private static ?int $cacheSeconds = null;
+
+    /**
+     * Let THIS response be cached by the browser for `$seconds`.
+     *
+     * Everything else stays `no-store`, and that default is right: nearly every
+     * response here is somebody's cart, orders or session. The exception is
+     * public reference data that changes every few years — the PSGC location
+     * lists — where re-fetching the same province's cities on every page is
+     * pure waste. Opt-in per response, never a global switch, so an endpoint
+     * that returns personal data cannot end up cached by forgetting something.
+     *
+     * Applied to successful responses only; an error is never cached.
+     */
+    public static function cacheFor(int $seconds): void
+    {
+        self::$cacheSeconds = max(0, $seconds);
+    }
+
     private static function send(array $body, int $status): never
     {
         /* Discard anything already buffered. A stray warning printed before
@@ -163,7 +183,9 @@ final class Response
         http_response_code($status);
         header('Content-Type: application/json; charset=utf-8');
         header('X-Content-Type-Options: nosniff');
-        header('Cache-Control: no-store');
+        header($status < 400 && self::$cacheSeconds
+            ? 'Cache-Control: public, max-age=' . self::$cacheSeconds
+            : 'Cache-Control: no-store');
 
         echo json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         exit;

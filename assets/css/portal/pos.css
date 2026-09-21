@@ -3,11 +3,35 @@
    Extends: admin.css
    ================================================================= */
 
+/* ONE HEIGHT, WHATEVER THE TAB IS SHOWING.
+
+   Two things were wrong, and they compounded.
+
+   `align-items: start` let each column be only as tall as its own contents, so
+   the cart column stopped where its footer stopped and the rest of the panel
+   below it was empty — the white space under Total and Proceed to Payment.
+   `stretch` makes both columns fill the row, which puts the footer on the
+   panel's bottom edge where it belongs.
+
+   And the row's height came from the products grid, so it changed with the
+   filter: All is fifteen tiles and three rows, Deboned is six and one. Total
+   and Proceed to Payment moved down the screen every time a tab was pressed.
+   A till's pay button should be in the same place every time it is reached
+   for. The panel now takes the window's height less the chrome above and
+   below it, and the product grid scrolls inside its own column instead of
+   growing the page.
+
+   --pos-chrome is measured, not guessed: topbar 64 + content padding 22/28 +
+   the module header and its margin, ~157. It is a custom property so a change
+   to that header is one number here rather than a new layout bug. */
 .walkin-split {
+  --pos-chrome: 268px;
   display: grid;
   grid-template-columns: 1fr 340px;
   gap: 0;
-  align-items: start;
+  align-items: stretch;
+  height: calc(100vh - var(--pos-chrome));
+  min-height: 520px;
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   overflow: hidden;
@@ -19,7 +43,11 @@
 .products-col {
   border-right: 1px solid var(--border);
   padding: 16px;
-  min-height: 500px;
+  /* min-height: 0 is what lets a grid item scroll. Grid items default to
+     min-height: auto, which is their content's height — the column would grow
+     to fit every tile and overflow the panel instead of scrolling. */
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .products-toolbar {
@@ -38,7 +66,7 @@
 .cat-btn {
   padding: 5px 14px;
   border-radius: var(--r-pill);
-  font-size: .72rem;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: .06em;
   text-transform: uppercase;
@@ -94,13 +122,13 @@
 .tile-body {
   padding: 10px 13px 13px;
 }
-.tile-cat  { font-size: .62rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
-.tile-name { font-size: .88rem; font-weight: 700; color: var(--text); line-height: 1.3; margin-bottom: 10px; }
+.tile-cat  { font-size: var(--fs-3xs); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
+.tile-name { font-size: var(--fs-base); font-weight: 700; color: var(--text); line-height: 1.3; margin-bottom: 10px; }
 .tile-footer { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
-.tile-price { font-family: var(--font-number); font-size: 1.1rem; font-weight: 800; color: var(--gold-ink); font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.01em; }
+.tile-price { font-family: var(--font-number); font-size: var(--fs-lg); font-weight: 800; color: var(--gold-ink); font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.01em; }
 .tile-in-cart {
   display: flex; align-items: center; gap: 4px;
-  font-size: .68rem; font-weight: 700; color: var(--gold-ink);
+  font-size: var(--fs-2xs); font-weight: 700; color: var(--gold-ink);
   background: var(--gold-dim); border-radius: var(--r-pill);
   padding: 2px 8px; margin-top: 6px;
 }
@@ -111,7 +139,9 @@
 .cart-col {
   display: flex;
   flex-direction: column;
-  min-height: 500px;
+  /* Same reason as .products-col: without this the column is as tall as its
+     items and .cart-items cannot scroll. The panel sets the height now. */
+  min-height: 0;
 }
 
 .cart-header {
@@ -122,13 +152,16 @@
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-.cart-title { font-size: 1rem; font-weight: 700; font-family: var(--font-ui); margin: 0; }
+.cart-title { font-size: var(--fs-md); font-weight: 700; font-family: var(--font-ui); margin: 0; }
 
 .cart-items {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 8px 0;
-  max-height: 460px;
+  /* The 460px cap is gone. It was holding the list back from the footer while
+     the column had no height of its own; now the column does, and the list
+     takes whatever is left between the header and the footer. */
 }
 
 .cart-empty {
@@ -142,22 +175,41 @@
   text-align: center;
 }
 .cart-empty svg { width: 40px; height: 40px; opacity: .3; }
-.cart-empty p   { font-size: .86rem; }
+.cart-empty p   { font-size: var(--fs-base); }
 
+/* Thumbnail down the left across both rows, the product on top, its controls
+   beneath. See the comment in renderCart() for why it is not one row. */
 .cart-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  column-gap: 10px; row-gap: 8px;
   align-items: center;
-  gap: 10px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   transition: background var(--t);
 }
+.cart-item-controls { display: flex; align-items: center; gap: 10px; }
+/* Pushes the line total and the remove button to the right edge, so the
+   figures line up down the list however wide the stepper is. */
+.cart-item-controls .cart-item-total { margin-left: auto; }
 .cart-item:last-child { border-bottom: none; }
 .cart-item:hover { background: var(--bg-soft); }
 
+/* 40px square, the smallest that still reads as a picture of a jar at this
+   size. flex: none so it never gives up width to a long product name. */
+.cart-item-thumb {
+  grid-row: 1 / span 2; align-self: start;
+  width: 40px; height: 40px;
+  border-radius: var(--r-sm); overflow: hidden;
+  object-fit: cover; background: var(--bg-soft);
+  border: 1px solid var(--border);
+}
+.cart-item-thumb-ph { display: flex; align-items: center; justify-content: center; }
+.cart-item-thumb-ph svg { width: 18px; height: 18px; opacity: .45; }
+
 .cart-item-info { flex: 1; min-width: 0; }
-.cart-item-name { font-size: .84rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cart-item-unit { font-size: .74rem; color: var(--text-muted); }
+.cart-item-name { font-size: var(--fs-base); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cart-item-unit { font-size: var(--fs-xs); color: var(--text-muted); }
 
 .qty-stepper {
   display: flex;
@@ -172,20 +224,66 @@
   width: 28px; height: 28px;
   display: flex; align-items: center; justify-content: center;
   background: transparent; border: none; cursor: pointer;
-  font-size: .95rem; font-weight: 700; color: var(--text-muted);
+  font-size: var(--fs-md); font-weight: 700; color: var(--text-muted);
   transition: background var(--t), color var(--t);
 }
 .qty-btn:hover { background: var(--gold-dim); color: var(--gold-ink); }
 .qty-val {
   width: 30px; text-align: center;
-  font-size: .84rem; font-weight: 700; color: var(--text);
+  font-size: var(--fs-base); font-weight: 700; color: var(--text);
   border-left: 1.5px solid var(--border-lift);
   border-right: 1.5px solid var(--border-lift);
   line-height: 28px;
   user-select: none;
 }
 
-.cart-item-total  { font-size: .84rem; font-weight: 700; min-width: 52px; text-align: right; color: var(--text); flex-shrink: 0; }
+/* WALK-IN ORDER — the quantity popup's stepper.
+   (The pill above is the one in the cart list; this is the big one in the
+   modal that opens when a product tile is tapped.)
+
+   Three controls that have to read as one: two round buttons of identical
+   size, the same distance from the field on both sides, and a field wide
+   enough for the number it will hold.
+
+   What actually made the row look lopsided was the field, not the margins.
+   It was 70px WITH the browser's spinner arrows inside it: the arrows take
+   ~17px off the right and are not mirrored on the left, so the digits sat
+   left of centre in a box that was itself narrower than the buttons beside
+   it — and a three-digit quantity, which a case order easily is, scrolled.
+   The − and + buttons already are the spinner, so the native one goes, and
+   the field is sized for four digits with tabular figures, which keeps the
+   number the same width as it counts past 99.
+
+   Sizes live here rather than in style="" attributes because these are
+   buttons: they need :hover and :focus-visible, and an inline style cannot
+   carry either. */
+.qm-label { display: block; text-align: center; }
+.qm-stepper {
+  display: flex; align-items: center; justify-content: center;
+  gap: 14px; margin-top: 8px;
+}
+.qm-step {
+  flex: 0 0 auto;
+  width: 40px; height: 40px; padding: 0;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--fs-xl); line-height: 1;
+}
+.qm-qty {
+  width: 88px; height: 40px; padding: 0 8px;
+  text-align: center;
+  font-family: var(--font-number);
+  font-size: var(--fs-xl); font-weight: 700;
+  font-variant-numeric: lining-nums tabular-nums;
+  border: 1.5px solid var(--border-lift);
+  border-radius: var(--r-md);
+  background: var(--surface); color: var(--text);
+  -moz-appearance: textfield;
+}
+.qm-qty::-webkit-outer-spin-button,
+.qm-qty::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+.cart-item-total  { font-size: var(--fs-base); font-weight: 700; min-width: 52px; text-align: right; color: var(--text); flex-shrink: 0; }
 .cart-item-remove { color: var(--text-muted); flex-shrink: 0; transition: color var(--t); padding: 4px; border: none; background: none; cursor: pointer; display: flex; }
 .cart-item-remove:hover { color: var(--out-ink); }
 .cart-item-remove svg { width: 15px; height: 15px; }
@@ -200,15 +298,15 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: .88rem;
+  font-size: var(--fs-base);
 }
-.cart-total { font-family: var(--font-number); font-size: 1.4rem; font-weight: 800; color: var(--gold-ink); font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.01em; }
+.cart-total { font-family: var(--font-number); font-size: var(--fs-2xl); font-weight: 800; color: var(--gold-ink); font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.01em; }
 
 .cart-badge {
   display: inline-flex; align-items: center; justify-content: center;
   background: var(--red); color: #fff;
   border-radius: var(--r-pill);
-  font-size: .65rem; font-weight: 700;
+  font-size: var(--fs-3xs); font-weight: 700;
   min-width: 18px; height: 18px; padding: 0 5px;
   margin-left: 2px;
 }
@@ -242,7 +340,7 @@
 }
 .order-type-btn {
   flex: 1; padding: 9px 16px;
-  font-family: var(--font-ui); font-size: .78rem; font-weight: 700;
+  font-family: var(--font-ui); font-size: var(--fs-sm); font-weight: 700;
   letter-spacing: .05em; text-transform: uppercase;
   border: none; background: transparent; color: var(--text-muted);
   cursor: pointer; transition: all var(--t);
@@ -261,7 +359,7 @@
   padding: 12px 8px; border-radius: var(--r-md);
   border: 2px solid var(--border-lift); background: transparent;
   cursor: pointer; transition: all var(--t);
-  font-family: var(--font-ui); font-size: .72rem;
+  font-family: var(--font-ui); font-size: var(--fs-xs);
   font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
   color: var(--text-muted); text-align: center;
 }
@@ -275,22 +373,22 @@
   padding: 10px 0; border-bottom: 1px solid var(--border);
 }
 .review-item:last-child { border-bottom: none; }
-.review-item-name  { flex: 1; font-size: .88rem; font-weight: 600; }
-.review-item-unit  { font-size: .78rem; color: var(--text-muted); }
-.review-item-total { font-weight: 700; min-width: 64px; text-align: right; font-size: .92rem; }
+.review-item-name  { flex: 1; font-size: var(--fs-base); font-weight: 600; }
+.review-item-unit  { font-size: var(--fs-sm); color: var(--text-muted); }
+.review-item-total { font-weight: 700; min-width: 64px; text-align: right; font-size: var(--fs-md); }
 
 .billing-row {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 6px 0; font-size: .88rem;
+  padding: 6px 0; font-size: var(--fs-base);
 }
 .billing-row.total-row {
   border-top: 2px solid var(--border);
   margin-top: 6px; padding-top: 12px;
-  font-size: 1rem; font-weight: 700;
+  font-size: var(--fs-md); font-weight: 700;
 }
 .billing-total-val {
   font-family: var(--font-number);
-  font-size: 1.5rem; font-weight: 800; color: var(--gold-ink);
+  font-size: var(--fs-3xl); font-weight: 800; color: var(--gold-ink);
   font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.01em;
 }
 
@@ -300,7 +398,7 @@
   border-radius: var(--r-md);
   padding: 10px 14px;
   display: flex; justify-content: space-between; align-items: center;
-  font-size: .88rem; font-weight: 700;
+  font-size: var(--fs-base); font-weight: 700;
   color: var(--ok-ink); margin-top: 8px;
 }
 
@@ -311,15 +409,15 @@
   max-width: 340px;
   margin: 0 auto;
   font-family: var(--font-body);
-  font-size: .88rem;
+  font-size: var(--fs-base);
 }
 .receipt-header {
   text-align: center; padding-bottom: 14px;
   border-bottom: 1px dashed var(--border-lift); margin-bottom: 14px;
 }
-.receipt-brand  { font-family: var(--font-display); font-size: 1.3rem; font-weight: 700; color: var(--text); }
-.receipt-sub    { font-size: .7rem; color: var(--text-muted); letter-spacing: .06em; margin-top: 2px; }
-.receipt-txn    { font-size: .7rem; font-weight: 700; font-family: var(--font-mono); margin-top: 8px; color: var(--text-muted); }
+.receipt-brand  { font-family: var(--font-display); font-size: var(--fs-xl); font-weight: 700; color: var(--text); }
+.receipt-sub    { font-size: var(--fs-2xs); color: var(--text-muted); letter-spacing: .06em; margin-top: 2px; }
+.receipt-txn    { font-size: var(--fs-2xs); font-weight: 700; font-family: var(--font-mono); margin-top: 8px; color: var(--text-muted); }
 .receipt-line   { display: flex; justify-content: space-between; padding: 3px 0; }
 .receipt-line.item-line { border-bottom: none; color: var(--text); }
 .receipt-line.item-line .l { flex: 1; }
@@ -327,21 +425,26 @@
 .receipt-divider { border: none; border-top: 1px dashed var(--border-lift); margin: 10px 0; }
 .receipt-total-row {
   display: flex; justify-content: space-between;
-  font-weight: 800; font-size: 1rem;
+  font-weight: 800; font-size: var(--fs-md);
   border-top: 2px solid var(--border); padding-top: 10px; margin-top: 4px;
 }
 .receipt-footer {
   text-align: center; margin-top: 14px; padding-top: 12px;
   border-top: 1px dashed var(--border-lift);
-  font-size: .74rem; color: var(--text-muted); line-height: 1.7;
+  font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.7;
 }
 
 /* =================================================================
    RESPONSIVE
    ================================================================= */
 @media (max-width: 860px) {
-  .walkin-split { grid-template-columns: 1fr; }
-  .products-col { border-right: none; border-bottom: 1px solid var(--border); }
+  /* Stacked, so the two columns can no longer share a height — the panel
+     grows with the page again and the cart sits under the products rather
+     than beside them. The fixed height and the internal scrolling are for the
+     side-by-side layout only; keeping them here would trap the product grid
+     in a short box with the cart below the fold. */
+  .walkin-split { grid-template-columns: 1fr; height: auto; min-height: 0; }
+  .products-col { border-right: none; border-bottom: 1px solid var(--border); overflow-y: visible; }
   .cart-col { min-height: unset; }
   .cart-items { max-height: 260px; }
 }

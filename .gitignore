@@ -37,6 +37,13 @@ uploads/*
 uploads/*/*
 !uploads/*/.gitkeep
 
+# The PSA's PSGC spreadsheet, as downloaded — the INPUT to tools/psgc-convert.php.
+# A multi-megabyte third-party binary that anyone can download again, so it does
+# not belong in history. What IS committed is db/seed-ph-locations.sql, the
+# output, and its header records the source file's name and SHA-256 — so the
+# exact publication it came from stays traceable without carrying it.
+db/psgc/
+
 # OS noise
 Thumbs.db
 desktop.ini

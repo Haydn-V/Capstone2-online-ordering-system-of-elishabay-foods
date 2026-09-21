@@ -12,11 +12,11 @@
   box-shadow: var(--shadow-sm); min-width: 108px;
 }
 .mini-stat-label {
-  font-family: var(--font-ui); font-size: .6rem; font-weight: 700;
+  font-family: var(--font-ui); font-size: var(--fs-3xs); font-weight: 700;
   letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted);
 }
 .mini-stat-val {
-  font-family: var(--font-number); font-size: 1.2rem; font-weight: 800;
+  font-family: var(--font-number); font-size: var(--fs-xl); font-weight: 800;
   color: var(--text); line-height: 1.15; letter-spacing: -.01em;
   font-variant-numeric: lining-nums tabular-nums;
 }
@@ -109,14 +109,14 @@
 .notif-row-top {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
 }
-.notif-row-msg { font-size: .88rem; color: var(--text); line-height: 1.4; }
+.notif-row-msg { font-size: var(--fs-base); color: var(--text); line-height: 1.4; }
 .notif-row.unread .notif-row-msg { font-weight: 700; }
 .notif-unread-dot {
   width: 7px; height: 7px; border-radius: 50%; background: var(--gold);
   flex-shrink: 0; margin-top: 6px;
 }
 .notif-row-meta { display: flex; align-items: center; gap: 12px; margin-top: 5px; flex-wrap: wrap; }
-.notif-row-time { font-size: .74rem; color: var(--text-muted); }
+.notif-row-time { font-size: var(--fs-xs); color: var(--text-muted); }
 
 /* ── URGENCY LEVEL — the same pill in all three places ─────────────────
    The bell dropdown, the dashboard's System Notifications panel and this
@@ -134,7 +134,7 @@
 .notif-level {
   display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
   padding: 2px 9px; border-radius: var(--r-pill);
-  font-size: .66rem; font-weight: 800; letter-spacing: .04em;
+  font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .04em;
   text-transform: uppercase; white-space: nowrap;
   /* THE WORD IS --text, NOT THE LEVEL COLOUR, AND THAT IS THE POINT.
 
@@ -160,7 +160,7 @@
 .notif-level-critical { --level-ink: var(--out-ink);    --level-bg: rgba(220,38,38,.10); }
 .notif-level-warning  { --level-ink: var(--warn-ink);   --level-bg: rgba(232,163,23,.14); }
 .notif-level-info     { --level-ink: var(--border-lift); --level-bg: var(--bg-tint); }
-.notif-row-action { font-size: .76rem; font-weight: 700; color: var(--gold-ink); cursor: pointer; }
+.notif-row-action { font-size: var(--fs-xs); font-weight: 700; color: var(--gold-ink); cursor: pointer; }
 .notif-row-action:hover { text-decoration: underline; }
 
 /* =================================================================
@@ -182,18 +182,18 @@
   margin-bottom: 12px; flex-wrap: wrap;
 }
 .order-card-id {
-  font-family: var(--font-mono); font-size: .82rem; font-weight: 700;
+  font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: 700;
   color: var(--text-muted); background: var(--bg-soft);
   padding: 3px 8px; border-radius: var(--r-sm);
 }
-.order-card-customer { font-size: .95rem; font-weight: 700; flex: 1; }
-.order-card-date     { font-size: .78rem; color: var(--text-muted); }
+.order-card-customer { font-size: var(--fs-md); font-weight: 700; flex: 1; }
+.order-card-date     { font-size: var(--fs-sm); color: var(--text-muted); }
 
 .order-card-items {
   display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;
 }
 .order-item-chip {
-  font-size: .74rem; font-weight: 600;
+  font-size: var(--fs-xs); font-weight: 600;
   background: var(--bg-soft); border: 1px solid var(--border);
   border-radius: var(--r-pill); padding: 3px 10px;
   color: var(--text);
@@ -205,10 +205,10 @@
 }
 .order-card-total {
   font-family: var(--font-number);
-  font-size: 1.2rem; font-weight: 800; color: var(--gold-ink);
+  font-size: var(--fs-xl); font-weight: 800; color: var(--gold-ink);
   font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.01em;
 }
-.order-card-method { font-size: .78rem; color: var(--text-muted); flex: 1; }
+.order-card-method { font-size: var(--fs-sm); color: var(--text-muted); flex: 1; }
 .order-card-actions { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
 
 /* =================================================================
@@ -238,12 +238,12 @@
 }
 @media (max-width: 760px) { .pv-section + .pv-section { border-left: none; border-top: 1px solid var(--border); } }
 .pv-section-label {
-  font-size: .68rem; font-weight: 700; letter-spacing: .12em;
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .12em;
   text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px;
 }
 .pv-row {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 5px 0; font-size: .86rem;
+  padding: 5px 0; font-size: var(--fs-base);
 }
 .pv-row-label { color: var(--text-muted); }
 .pv-row-val   { font-weight: 700; }
@@ -256,14 +256,14 @@
   margin-top: 10px; display: flex; flex-direction: column; gap: 8px;
 }
 .proof-ref {
-  font-family: var(--font-mono); font-size: .86rem; font-weight: 700;
+  font-family: var(--font-mono); font-size: var(--fs-base); font-weight: 700;
   color: var(--text); background: var(--bg); border: 1px solid var(--border);
   border-radius: var(--r-sm); padding: 6px 10px;
   word-break: break-all;
 }
 .proof-status {
   display: flex; align-items: center; gap: 6px;
-  font-size: .8rem; font-weight: 700;
+  font-size: var(--fs-sm); font-weight: 700;
 }
 .proof-status.uploaded   { color: var(--ok-ink); }
 .proof-status.not-uploaded { color: var(--out-ink); }
@@ -287,7 +287,7 @@
   border: 2px solid var(--border-lift);
   background: transparent; cursor: pointer;
   font-family: var(--font-ui);
-  font-size: .72rem; font-weight: 700;
+  font-size: var(--fs-xs); font-weight: 700;
   letter-spacing: .04em; text-transform: uppercase;
   color: var(--text-muted); transition: all var(--t);
 }
@@ -305,14 +305,14 @@
    ================================================================= */
 .order-detail-section { margin-bottom: 18px; }
 .order-detail-heading {
-  font-size: .68rem; font-weight: 700; letter-spacing: .12em;
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .12em;
   text-transform: uppercase; color: var(--text-muted);
   margin-bottom: 8px; padding-bottom: 6px;
   border-bottom: 1px solid var(--border);
 }
 .detail-row {
   display: flex; justify-content: space-between; align-items: flex-start;
-  gap: 10px; padding: 5px 0; font-size: .86rem;
+  gap: 10px; padding: 5px 0; font-size: var(--fs-base);
 }
 .detail-row-label { color: var(--text-muted); flex-shrink: 0; }
 .detail-row-val   { font-weight: 600; text-align: right; }
@@ -320,7 +320,7 @@
 .order-items-list { display: flex; flex-direction: column; gap: 6px; }
 .order-item-row {
   display: flex; align-items: center; gap: 10px;
-  font-size: .86rem; padding: 6px 0;
+  font-size: var(--fs-base); padding: 6px 0;
   border-bottom: 1px solid var(--border);
 }
 .order-item-row:last-child { border-bottom: none; }
@@ -328,7 +328,7 @@
 .order-item-qty  { color: var(--text-muted); min-width: 36px; text-align: center; }
 .order-item-sub  { font-weight: 700; min-width: 70px; text-align: right; }
 
-.receipt-addr { font-size: .78rem; color: var(--text-muted); margin-top: 4px; text-align: left; }
+.receipt-addr { font-size: var(--fs-sm); color: var(--text-muted); margin-top: 4px; text-align: left; }
 
 /* =================================================================
    RETURN MODULE
@@ -345,7 +345,7 @@
 }
 .return-step {
   display: flex; align-items: center; gap: 6px;
-  font-size: .7rem; font-weight: 700; letter-spacing: .06em;
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .06em;
   text-transform: uppercase; color: var(--text-muted);
   white-space: nowrap;
 }
@@ -355,7 +355,7 @@
 .step-num {
   width: 22px; height: 22px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: .7rem; font-weight: 800;
+  font-size: var(--fs-2xs); font-weight: 800;
   border: 2px solid currentColor; flex-shrink: 0;
   background: transparent;
 }
@@ -389,7 +389,7 @@
   display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
 }
 .return-reason {
-  font-size: .84rem; color: var(--text-muted);
+  font-size: var(--fs-base); color: var(--text-muted);
   background: var(--bg-soft); border-radius: var(--r-md);
   padding: 8px 12px; border-left: 3px solid var(--border-lift);
   margin-top: 8px;
@@ -405,5 +405,5 @@
   color: var(--text-muted); gap: 12px;
 }
 .orders-empty svg { width: 48px; height: 48px; opacity: .25; }
-.orders-empty h3  { font-size: 1rem; font-weight: 700; color: var(--text); margin: 0; }
-.orders-empty p   { font-size: .86rem; margin: 0; max-width: 300px; }
+.orders-empty h3  { font-size: var(--fs-md); font-weight: 700; color: var(--text); margin: 0; }
+.orders-empty p   { font-size: var(--fs-base); margin: 0; max-width: 300px; }

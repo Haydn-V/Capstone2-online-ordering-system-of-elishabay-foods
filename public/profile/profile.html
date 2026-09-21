@@ -204,29 +204,14 @@
               <div class="profile-card" id="section-address">
                 <div class="profile-card-title">Delivery Address</div>
                 <form id="form-address" novalidate>
-                  <div class="profile-form-grid">
-                    <div class="field full">
-                      <label for="pf-street">Street / Barangay</label>
-                      <input class="control" id="pf-street" type="text" placeholder="148 Brgy. Mangin" />
-                      <span class="field-error" id="err-street"></span>
-                    </div>
-                    <div class="field">
-                      <label for="pf-city">City / Municipality</label>
-                      <input class="control" id="pf-city" type="text" placeholder="Dagupan City" />
-                    </div>
-                    <div class="field">
-                      <label for="pf-province">Province</label>
-                      <input class="control" id="pf-province" type="text" placeholder="Pangasinan" />
-                    </div>
-                    <div class="field">
-                      <label for="pf-zip">ZIP Code</label>
-                      <input class="control" id="pf-zip" type="text" placeholder="2400" maxlength="4" />
-                    </div>
-                    <div class="field">
-                      <label for="pf-region">Region</label>
-                      <input class="control" id="pf-region" type="text" placeholder="Region I" />
-                    </div>
-                  </div>
+                  <!-- The shared address picker (assets/js/public/address-picker.js),
+                       rendered into this host by the script below. It replaced five
+                       free-text boxes — region, province and city typed by hand —
+                       which were a fourth, independent writer of the very columns
+                       checkout and Create Account now fill from PSGC codes. Left
+                       as text, editing a profile would have saved a city NAME that
+                       no longer matched the saved city CODE. -->
+                  <div id="pf-addr-host"></div>
                   <div class="profile-form-actions">
                     <button type="button" class="btn btn-ghost" id="btn-addr-cancel">Cancel</button>
                     <button type="submit" class="btn btn-gold">Save Address</button>
@@ -285,6 +270,7 @@
 
     <script type="module" src="../../assets/js/core/index.js"></script>
     <script defer src="../../assets/js/public/modal-shell.js"></script>
+    <script defer src="../../assets/js/public/address-picker.js"></script>
     <script defer src="../../assets/js/public/site.js"></script>
     <script defer src="../../assets/js/public/profile-shell.js"></script>
     <script>
@@ -504,7 +490,23 @@
          customer could "save" their address every day and the database would
          never hear about it — and it is the reason the checkout had nothing to
          prefill from. */
-      const ADDR_FIELDS = ["street","city","province","zip","region"];
+      /* THE ADDRESS PANEL IS THE SHARED PICKER.
+
+         OPTIONAL here — clearing every field and saving removes the saved
+         address, which is a legitimate thing to want — but anything started
+         must be finished, exactly as shop/profile.php enforces. */
+      let savedAddress = null;
+      let pfAddr = null;
+
+      /* Build the picker fresh and prefill it from what is SAVED. Used on load
+         and by Cancel: the picker's own prefill never overwrites a choice, so
+         restoring means starting from an empty picker, not writing over one. */
+      function renderAddress() {
+        const host = document.getElementById("pf-addr-host");
+        host.innerHTML = EbAddress.markup("pf", { variant: "field", required: false });
+        pfAddr = EbAddress.mount(host, "pf");
+        if (savedAddress && savedAddress.hasAny) pfAddr.prefill(savedAddress);
+      }
 
       async function loadProfile() {
         try {
@@ -515,10 +517,8 @@
              field now — behind a code — so it has to show what is stored, or a
              save posts an empty address and is refused. */
           document.getElementById("pf-email").value = data.email || "";
-          ADDR_FIELDS.forEach(f => {
-            const el = document.getElementById("pf-" + f);
-            if (el) el.value = data.address[f] || "";
-          });
+          savedAddress = data.address;
+          renderAddress();
           const parts = (data.name || "").split(" ");
           const fn = document.getElementById("pf-fname"), ln = document.getElementById("pf-lname");
           if (fn && !fn.value) fn.value = parts[0] || "";
@@ -533,21 +533,14 @@
 
       document.getElementById("form-address").addEventListener("submit", async e => {
         e.preventDefault();
-        const street = document.getElementById("pf-street").value.trim();
-        if (!street) { document.getElementById("err-street").textContent = "Street address required"; return; }
-        document.getElementById("err-street").textContent = "";
-
-        const address = {};
-        ADDR_FIELDS.forEach(f => { address[f] = document.getElementById("pf-" + f).value.trim(); });
+        if (!pfAddr || !pfAddr.validate(false)) return;
         try {
-          await EbApi.post("shop/profile.php", { address });
-          showToast("Address saved.", "success");
+          const { data } = await EbApi.post("shop/profile.php", { address: pfAddr.value() });
+          savedAddress = data.address;
+          showToast(data.address.hasAny ? "Address saved." : "Address removed.", "success");
         } catch (err) {
           if (err.isValidation) {
-            Object.entries(err.fields).forEach(([f, msg]) => {
-              const box = document.getElementById("err-" + f);
-              if (box) box.textContent = msg; else showToast(msg, "info");
-            });
+            if (!pfAddr.showErrors(err.fields)) showToast(err.message, "info");
           } else {
             showToast("Could not save your address: " + err.message, "info");
           }
@@ -556,7 +549,7 @@
       /* Cancel restores what is SAVED rather than blanking every field. Wiping
          the form was indistinguishable from "delete my address", and there was
          no way back from it. */
-      document.getElementById("btn-addr-cancel").addEventListener("click", loadProfile);
+      document.getElementById("btn-addr-cancel").addEventListener("click", renderAddress);
 
       /* Security form */
       document.getElementById("form-security").addEventListener("submit", async e => {

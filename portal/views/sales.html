@@ -63,19 +63,34 @@
         Apply
       </button>
     </div>
+    <!-- COMPARE WITH — a switch, and a selector that greys out rather than
+         disappears.
+
+         The 15px checkbox was a keyboard control in name only: nothing about
+         it read as on or off at a glance, and the period selector beside it
+         was display:none until it was ticked, so the row changed width and
+         everything after it moved every time. Now the selector is always
+         there and simply disabled while the switch is off — the layout holds
+         still, and it is visible that there is a period to choose.
+
+         The switch is the portal's own (.switch, used by the role editor): a
+         real <input type="checkbox"> under a track and a thumb, so Tab and
+         Space work with no key handling of ours, and the thumb's POSITION —
+         not just the colour of the track — says which way it is set.
+         role="switch" is what a screen reader announces it as. -->
     <div class="compare-row" id="compare-row">
       <label class="compare-label">
-        <input
-          type="checkbox"
-          id="compare-toggle"
-          style="accent-color: var(--gold); width: 15px; height: 15px"
-        />
+        <span class="switch">
+          <input type="checkbox" role="switch" id="compare-toggle" />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+        </span>
         Compare with
       </label>
       <select
         class="control"
         id="compare-select"
-        style="display: none"
+        aria-label="Comparison period"
+        disabled
       >
         <option value="prev">Previous Period</option>
         <option value="yesterday">Yesterday</option>
@@ -199,8 +214,8 @@
   <!-- BEST SELLERS FOR THE SELECTED RANGE.
 
        api/reports/sales.php has always computed this and nothing ever read it;
-       the same is true of the payment-method split below. Both are rendered by
-       renderSales() from the response that was already arriving.
+       it is rendered by renderSales() from the response that was already
+       arriving.
 
        The two labels below are load-bearing, not decoration:
 
@@ -223,16 +238,11 @@
     <div id="top-products-body"></div>
   </div>
 
-  <div class="panel" style="margin-top: 20px">
-    <div class="panel-header">
-      <span class="panel-title"
-        style="font-size: 1rem; font-weight: 700; font-family: var(--font-ui)"
-        >Payment Methods in Period</span
-      >
-      <span class="lp-hint" id="by-method-note">share of orders and revenue</span>
-    </div>
-    <div id="by-method-body"></div>
-  </div>
+  <!-- The "Payment Methods in Period" panel stood here. It is gone, and so is
+       the pair of GROUP BY queries that fed it in api/reports/sales.php: the
+       Transactions table on this same screen already carries a Method column,
+       and Payment Schemes is where the money-by-scheme question is actually
+       answered. -->
 </section>
   </body>
 </html>
