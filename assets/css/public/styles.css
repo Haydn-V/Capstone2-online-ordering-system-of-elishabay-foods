@@ -1071,13 +1071,16 @@ ul,ol { margin: 0; padding: 0; list-style: none; }
   box-shadow: 0 24px 64px rgba(30,20,8,.18), 0 8px 24px rgba(232,163,23,.12);
 }
 
-/* Carousel cards run larger than the shop grid */
+/* Carousel cards run larger than the shop grid — the same photo card,
+   scaled up. .pc-desc/.pc-body/.pc-meta/.stars were sized here for pieces
+   the card no longer has (see the PRODUCT CARD section); .pc-meta and
+   .stars still exist, just in openProductDetail()'s modal now, which is
+   never a descendant of .bsc-slide. */
 .bsc-slide .pc-name  { font-size: 1.72rem; }
-.bsc-slide .pc-desc  { font-size: var(--fs-md); }
-.bsc-slide .pc-body  { padding: 20px 22px 22px; gap: 10px; }
 .bsc-slide .price    { font-size: var(--fs-2xl); }
-.bsc-slide .pc-meta  { font-size: var(--fs-base); }
-.bsc-slide .stars svg { width: 15px; height: 15px; }
+.bsc-slide .pc-cat    { font-size: var(--fs-2xs); }
+.bsc-slide .pc-rating-badge { font-size: var(--fs-sm); padding: 5px 11px; }
+.bsc-slide .pc-rating-badge svg { width: 13px; height: 13px; }
 .bsc-slide .btn-add  { padding: 12px 18px; font-size: var(--fs-base); }
 .bsc-slide .img-holder .ph-icon { width: 54px; height: 54px; }
 
@@ -1127,7 +1130,18 @@ ul,ol { margin: 0; padding: 0; list-style: none; }
 .trace-promo .btn-gold { position: relative; z-index: 1; }
 
 /* =================================================================
-   11. PRODUCT CARD — warm editorial
+   11. PRODUCT CARD — photo-first
+
+   The reference for this section is a food-delivery card: the photo IS the
+   card, name/price/rating sit on top of it, and a compact bar below carries
+   the buy action. See the long comment on createProductCard() in site.js
+   for which of the reference's fields are real here and which were dropped
+   for having no data behind them (favorite, spice tag, serves count,
+   delivery time), and where the stepper this card used to carry went.
+
+   .stars / .stars-none / .pc-meta stay defined here even though the card no
+   longer uses them — openProductDetail()'s modal still does, and duplicating
+   them there would be the same rule stated twice.
    ================================================================= */
 .product-card {
   position: relative; overflow: hidden; display: flex; flex-direction: column;
@@ -1154,11 +1168,27 @@ ul,ol { margin: 0; padding: 0; list-style: none; }
   padding: 5px 12px 5px 10px; border-radius: 0 var(--r-pill) var(--r-pill) 0;
   box-shadow: var(--shadow-sm); display: flex; gap: 5px; align-items: center;
 }
+/* On this card only, the flag moves to the top-right corner it shares with
+   nothing: name and price now live top-left, on the photo itself, exactly
+   where the ribbon used to hang. It is the one corner the reference left
+   empty once the favorite heart it held was dropped for having no wishlist
+   behind it. z-index above .pc-overlay so it is never the thing that loses
+   a stacking fight on a long product name. */
+.product-card .ribbon {
+  left: auto; right: -4px;
+  border-radius: var(--r-pill) 0 0 var(--r-pill);
+  padding: 5px 10px 5px 12px;
+  z-index: 3;
+}
 
+/* THE WHOLE CARD IS THE PHOTO NOW, not a photo above a text body. 3/4 is
+   close to what the reference itself measures, and it is what gives the row
+   view's matrix (shop.css) a card that reads as a photo with a caption
+   rather than a caption with a photo pinned above it. */
 .pc-media {
-  position: relative; aspect-ratio: 4/3.2;
+  position: relative; aspect-ratio: 3/4;
   background: linear-gradient(160deg,var(--bg-tint),var(--surface-2));
-  display: grid; place-items: center; overflow: hidden; cursor: pointer;
+  overflow: hidden; cursor: pointer;
 }
 .pc-media .img-holder {
   width: 100%; height: 100%; position: absolute; inset: 0;
@@ -1168,26 +1198,100 @@ ul,ol { margin: 0; padding: 0; list-style: none; }
 .product-card:hover .pc-media .img-holder { transform: scale(1.06); }
 .img-holder .ph-icon  { width: 44px; height: 44px; opacity: .3; color: var(--text-muted); }
 .img-holder .ph-label { font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); opacity: .55; }
-.pc-quickview {
-  position: absolute; inset: auto 0 0 0; padding: 10px;
-  background: linear-gradient(transparent,rgba(30,20,8,.12));
-  opacity: 0; transform: translateY(8px);
-  display: flex; justify-content: center;
-  transition: all var(--t) var(--ease);
+/* NO REAL PHOTO IS STILL A DARK CARD. The placeholder gradient above is pale
+   on purpose everywhere else it is used (the cart thumbnail, the product
+   modal) — but white overlay text needs something dark under it regardless
+   of whether there is a real photo, and a pale placeholder under white text
+   is unreadable. Scoped to this card so the cart thumb and the modal, which
+   overlay nothing, keep the light placeholder that suits them. */
+.product-card .pc-media .img-holder:not(.has-photo) {
+  background: linear-gradient(165deg, var(--ink-soft), var(--ink-card));
 }
-.pc-media:hover .pc-quickview { opacity: 1; transform: translateY(0); }
-.pc-quickview span {
-  background: var(--surface); color: var(--text);
-  font-size: var(--fs-xs); font-weight: 600; padding: 6px 14px;
-  border-radius: var(--r-pill); box-shadow: var(--shadow-md);
-  display: flex; gap: 5px; align-items: center;
-}
+.product-card .pc-media .img-holder:not(.has-photo) .ph-icon,
+.product-card .pc-media .img-holder:not(.has-photo) .ph-label { color: var(--cream-dim); opacity: .6; }
 
-.pc-body { padding: 16px 17px 18px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
-.pc-cat  { font-family: "Montserrat",sans-serif; font-size: var(--fs-3xs); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--gold); }
-.pc-name { font-family: "Cormorant Garamond",serif; font-size: var(--fs-2xl); font-weight: 600; line-height: 1.05; cursor: pointer; }
-.pc-name:hover { color: var(--red); }
-.pc-desc { font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* The gradient that makes white text legible over an arbitrary photo. Two
+   stops, not one: a photo can be light at the top and dark at the bottom or
+   the reverse, so the name/price block gets its own dark wash from the top
+   and the rating/sold line gets one from the bottom, meeting in a lighter
+   middle where there is usually just food. */
+.pc-scrim {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background:
+    linear-gradient(to bottom, color-mix(in srgb, var(--ink) 55%, transparent) 0%, transparent 32%),
+    linear-gradient(to top,    color-mix(in srgb, var(--ink) 78%, transparent) 0%, transparent 45%);
+}
+.pc-overlay {
+  position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  display: flex; flex-direction: column; justify-content: space-between;
+  padding: 14px 16px;
+}
+.pc-overlay-top { display: flex; flex-direction: column; gap: 2px; }
+.pc-overlay .pc-cat {
+  font-family: "Montserrat",sans-serif; font-size: var(--fs-3xs); font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--cream-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* The ribbon is the only thing on this line's row — name and price sit on
+   lines of their own below it, clear of the ribbon vertically — so only the
+   category needs to give up width for it, and only on a card that HAS one. */
+.product-card:has(.ribbon) .pc-overlay .pc-cat { max-width: calc(100% - 96px); }
+.pc-overlay .pc-name {
+  font-family: "Cormorant Garamond",serif; font-size: var(--fs-2xl); font-weight: 600;
+  line-height: 1.08; color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,.35); /* the scrim carries most of the contrast; this is for a busy patch of photo */
+}
+.pc-overlay .price {
+  font-family: "Montserrat",sans-serif; font-weight: 700; font-size: var(--fs-xl); color: #fff;
+  margin-top: 2px;
+}
+.pc-overlay .price .cur { font-size: var(--fs-sm); color: rgba(255,255,255,.75); margin-right: 1px; }
+.pc-overlay-bottom { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* THE STOCK PILL LIVES HERE NOW — it used to sit in .pc-foot beside the Add
+   button, where its length is whatever the server's label happens to be
+   ("Out of Stock" next to "In Stock · 160 available") and that row is plain
+   flow: whichever card's label was longest wrapped onto two lines and made
+   that ONE card's bar, and so the whole card, taller than the rest of the
+   row. .pc-overlay-bottom sits inside .pc-overlay, which is
+   position:absolute over a fixed aspect-ratio photo — so if this label
+   wraps here, it changes nothing about the card's height, only how much of
+   the photo the label covers. min-width: 0 is what lets a flex child
+   ellipsis at all; without it the pill refuses to shrink past its own text
+   and the rule below does nothing. */
+.pc-overlay-bottom .stock-pill {
+  min-width: 0; max-width: 100%; flex-shrink: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  /* A SOLID CHIP, not text-on-scrim. The four status colours are tuned for
+     .stock-pill's original home, a light card surface — measured against
+     this card's own photo they can drop under 3:1, because a photo (unlike
+     a surface token) is not a colour this file controls: a bright patch of
+     tablecloth measured here at rgb(254,244,211), and --crit's orange read
+     at 3.2:1 against it even with the scrim's darkening. Same fix as the
+     rating badge above: a fixed dark chip means the contrast is whatever it
+     is against var(--ink-card), never against whatever the product photo
+     happens to be. */
+  background: var(--ink-card);
+  padding: 4px 9px; border-radius: var(--r-pill);
+  box-shadow: var(--shadow-sm);
+}
+/* The rating badge is short and is never the thing giving up room — the
+   stock pill shrinks around it, not the other way. */
+.pc-rating-badge { flex-shrink: 0; }
+/* One star, not five — see the comment on ratingBadge() in site.js for why
+   this is not starRating() reused. Gold fill, dark text: this is the one
+   piece of the overlay that is a filled chip rather than text on the scrim,
+   because it is the one number a shopper compares card to card and it needs
+   to read before the eye settles on the rest of the card. */
+.pc-rating-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--gold); color: var(--ink-card);
+  font-size: var(--fs-xs); font-weight: 700;
+  padding: 4px 9px; border-radius: var(--r-pill);
+  box-shadow: var(--shadow-sm);
+}
+.pc-rating-badge svg { width: 12px; height: 12px; }
+.pc-rating-badge span { font-weight: 500; opacity: .75; }
+
 .pc-meta { display: flex; align-items: center; justify-content: space-between; font-size: var(--fs-xs); color: var(--text-muted); }
 .stars { display: inline-flex; align-items: center; gap: 2px; color: var(--gold); }
 .stars svg { width: 13px; height: 13px; }
@@ -1201,7 +1305,24 @@ ul,ol { margin: 0; padding: 0; list-style: none; }
    4.9 this replaced. Muted and italic so it reads as an absence rather than a
    value — and it says so in words, not by colour alone. */
 .stars-none { font-size: var(--fs-xs); font-style: italic; color: var(--text-muted); }
-.pc-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 6px; }
+
+/* THE BAR BELOW THE PHOTO — real stock status on the left (the same
+   .stock-pill every other stock reading on this site uses, not a
+   fabricated "Availability" caption), the buy action on the right. Solid,
+   not another scrim: this is off the photo, so it is card chrome and reads
+   with the card's own light/dark theme rather than staying photo-dark the
+   way the overlay above does. */
+.pc-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+/* "N sold" is what moved down here from the overlay — always a number and
+   the word "sold", never a server sentence of unpredictable length, so it
+   never wraps and never grows the bar. nowrap is a guarantee, not a hint:
+   the whole point of putting it here is a bar that is the same height on
+   every card in a row regardless of which product is in it. */
+.pc-sold { font-size: var(--fs-sm); font-weight: 600; color: var(--text-muted); white-space: nowrap; }
 .price { font-family: "Montserrat",sans-serif; font-weight: 700; font-size: var(--fs-xl); color: var(--text); }
 .price .cur { font-size: var(--fs-sm); color: var(--text-muted); margin-right: 1px; }
 .stock-pill { font-size: var(--fs-2xs); font-weight: 700; }
@@ -1209,12 +1330,20 @@ ul,ol { margin: 0; padding: 0; list-style: none; }
 .stock-warn { color: var(--warn); }
 .stock-crit { color: var(--crit); }
 .stock-out  { color: var(--out); }
-.pc-add { display: flex; gap: 8px; align-items: center; }
-.btn-add { padding: 10px 14px; font-size: var(--fs-sm); }
-/* Names the reason the stepper stops where it does. Only rendered when the
-   shelf is what is capping it, so it never appears as unexplained fine print
-   on a fully-stocked product. */
-.qty-cap { display: block; margin-top: 6px; font-size: var(--fs-2xs); color: var(--text-muted); }
+/* --out measured 4.83:1 on this card's ORIGINAL light surface (the product
+   modal still uses it there, unchanged) — the site's own bar for this text.
+   On the dark chip above it drops to 3.6:1: --out is dark-saturated enough
+   that it cannot reach 4.5:1 against any near-black background, the chip
+   included, so darkening the chip further could not have fixed this one.
+   Lightened toward white, from the same token rather than a new literal,
+   until it clears the same bar it already clears everywhere else. */
+.pc-overlay-bottom .stock-out { color: color-mix(in srgb, var(--out) 78%, white); }
+.btn-add { padding: 9px 16px; font-size: var(--fs-sm); flex-shrink: 0; }
+/* Names the reason the (modal's) stepper stops where it does. Only rendered
+   when the shelf is what is capping it, so it never appears as unexplained
+   fine print on a fully-stocked product. Sits below .pc-foot now, its own
+   line, since the card no longer has a stepper of its own to sit under. */
+.qty-cap { display: block; padding: 0 14px 10px; font-size: var(--fs-2xs); color: var(--text-muted); }
 
 /* =================================================================
    12. ABOUT — always-dark cinematic section
@@ -1506,16 +1635,44 @@ ul,ol { margin: 0; padding: 0; list-style: none; }
 .drawer {
   position:fixed;top:0;right:0;height:100%;width:min(420px,100%);
   z-index:calc(var(--z-drawer) + 1);
-  background:var(--bg);box-shadow:var(--shadow-ink);
+  /* var(--bg), the site's cream page colour, is right for a page — a large
+     background a card sits on top of. The drawer IS the surface here, not a
+     page underneath one, so a warm tint on it read as slightly dim next to
+     the crisp white product photos and cart line the request asked to see
+     more clearly. --surface is what a card itself is built from everywhere
+     else on the site (.product-card, .cart-line below); using it here makes
+     the whole panel one flat white ground, with the outline and shadow on
+     each cart line doing the separating instead of a colour difference. */
+  background:var(--surface);box-shadow:var(--shadow-ink);
   transform:translateX(100%);transition:transform var(--t-slow) var(--ease);
   display:flex;flex-direction:column;
 }
 .drawer.open { transform:translateX(0); }
 .drawer-head { display:flex;align-items:center;justify-content:space-between;padding:20px 22px;border-bottom:1px solid var(--border); }
-.drawer-head h3 { font-size: var(--fs-3xl); }
+.drawer-head h3 { font-size: var(--fs-3xl); -webkit-text-stroke: .5px currentColor; }
 .drawer-body { flex:1;overflow-y:auto;padding:18px 22px;display:flex;flex-direction:column;gap:14px; }
 .drawer-foot { padding:20px 22px;border-top:1px solid var(--border);background:var(--surface); }
-.cart-line { display:flex;gap:13px;align-items:center; }
+/* AN ELEGANT BUT VISIBLE OUTLINE, PLUS DEPTH — the two things asked for are
+   one change: a bordered, shadowed card is what tells two products apart on
+   a flat white drawer where they used to just be items in a list with
+   nothing between them but a gap. --border-lift (not the fainter --border
+   .product-card itself uses) is the weight this site already reaches for
+   when a boundary needs to actually read against a light surface — it is
+   what .search-box, .chip and .sort-select all use for the same reason.
+   The resting shadow is what "depth" means here: not a hover effect, a
+   baseline lift so each line sits slightly above the drawer rather than
+   flush with it. No hover transform — .product-card's own hover lift is not
+   guarded by prefers-reduced-motion elsewhere in this file, and adding a
+   second unguarded one here was not part of what was asked; the border and
+   shadow do brighten on hover, which is a static-property transition this
+   codebase treats as safe without a guard (see .chip, .search-box). */
+.cart-line {
+  display:flex;gap:13px;align-items:center;
+  padding:14px; border:1.5px solid var(--border-lift); border-radius:var(--r-lg);
+  background:var(--surface); box-shadow:var(--shadow-sm);
+  transition:border-color var(--t),box-shadow var(--t);
+}
+.cart-line:hover { border-color:var(--gold-line); box-shadow:var(--shadow-md); }
 .cart-line .thumb { width:62px;height:62px;border-radius:var(--r-md);background:linear-gradient(160deg,var(--bg-tint),var(--surface-2));display:flex;align-items:center;justify-content:center;flex:none;overflow:hidden; }
 /* The thumb is a fixed 62x62 box with overflow:hidden, and .img-holder has no
    intrinsic size of its own — .pc-media and .pd-media each give it one, and
@@ -1528,8 +1685,18 @@ ul,ol { margin: 0; padding: 0; list-style: none; }
 .cart-line .thumb .img-holder { width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px; }
 .cart-line .thumb .ph-icon { width:26px;height:26px;color:var(--text-muted);opacity:.35; }
 .cart-line .cl-info { flex:1;min-width:0; }
-.cart-line .cl-info b { font-family:"Cormorant Garamond",serif;font-size: var(--fs-lg);font-weight:600;display:block;line-height:1.1; }
-.cart-line .cl-info .cl-price { font-size: var(--fs-sm);color:var(--text-muted); }
+/* 700, not 600 — the heaviest weight Cormorant Garamond actually loads at
+   (the font link in shop.html stops at 700), so this is the real ceiling,
+   not an arbitrary bump. */
+.cart-line .cl-info b { font-family:"Cormorant Garamond",serif;font-size: var(--fs-lg);font-weight:700;display:block;line-height:1.1;-webkit-text-stroke: .5px currentColor; }
+.cart-line .cl-unit { display:block; font-size: var(--fs-sm); color:var(--text-muted); font-weight:600; margin-top:2px; }
+/* THE TOTAL SITS BESIDE THE STEPPER NOW, not in its own row above it — the
+   number changes every time the +/- buttons are pressed, so putting it next
+   to the control that changes it reads as cause and effect: adjust the
+   quantity, watch the number beside your thumb update. .cl-total is still
+   .price, the exact class the product card's own price uses (Montserrat
+   700, --fs-xl) — moving it did not change what it is, only where. */
+.cart-line .cl-qty-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:8px; }
 .cart-line .stepper { transform:scale(.85);transform-origin:left; }
 .cl-remove { color:var(--text-muted);padding:6px;border-radius:8px;cursor:pointer; }
 /* The only svg sizing rule in this stylesheet is `.btn svg`, and .cl-remove is
@@ -1851,22 +2018,32 @@ select.auth-input {
    shopper cannot change from here, and the part they are agreeing to. Gold
    hairline and a lifted surface rather than the flat grey box it was.
 
-   Three columns: what it is, how many at what price, what that comes to. The
-   middle column is the one the old two-column layout left the reader to work
-   out by dividing. */
+   Three FACTS, two ROWS: what it is, how many at what price, what that comes
+   to. qty×price sits directly under its own name rather than in a middle
+   column shared with every other line — a three-column spread put it on the
+   same baseline as the name but visually nearer the amount, which is the
+   number it explains the least. */
 .co-summary {
   background:var(--surface); border:1px solid var(--gold-line);
   border-radius:var(--r-md); padding:16px 18px; box-shadow:var(--shadow-sm);
 }
+/* TWO COLUMNS, TWO ROWS ON THE LEFT ONE — not three columns spread across
+   the row. The three-column version put name, qty×price and amount on one
+   baseline, which lined the amount up under nothing in particular and left
+   qty×price stranded in the middle, nearer the total than the item it was
+   pricing. Stacking qty×price directly under its own name is the same
+   change the 560px breakpoint used to make alone; it reads better at every
+   width, not only a narrow one, so it is the rule now and that breakpoint
+   override is gone. */
 .co-summary .li {
-  display:grid; grid-template-columns:minmax(0,1fr) auto auto;
-  align-items:baseline; gap:6px 14px;
+  display:grid; grid-template-columns:minmax(0,1fr) auto;
+  align-items:baseline; column-gap:14px; row-gap:2px;
   font-size: var(--fs-base); padding:6px 0;
 }
 .co-summary .li + .li { border-top:1px solid var(--border); }
-.co-summary .li-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text); }
-.co-summary .li-qty  { font-size: var(--fs-sm); color:var(--text-muted); font-variant-numeric:tabular-nums; }
-.co-summary .li-amt  { font-family:"Montserrat",sans-serif; font-weight:600; font-variant-numeric:tabular-nums; text-align:right; }
+.co-summary .li-name { grid-column:1; grid-row:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text); }
+.co-summary .li-qty  { grid-column:1; grid-row:2; font-size: var(--fs-sm); color:var(--text-muted); font-variant-numeric:tabular-nums; }
+.co-summary .li-amt  { grid-column:2; grid-row:1 / span 2; align-self:center; font-family:"Montserrat",sans-serif; font-weight:600; font-variant-numeric:tabular-nums; text-align:right; }
 .co-summary .li.tot {
   font-weight:700; font-size: var(--fs-lg); color:var(--text);
   border-top:1px dashed var(--border-lift); padding-top:11px; margin-top:5px;
@@ -1989,9 +2166,6 @@ select.auth-input {
   /* One tile per row: the grid above becomes a single column. */
   .toggle-group.co-pay { grid-template-columns:1fr; }
   .toggle-group.co-pay .tg { flex-direction:row; justify-content:space-between; text-align:left; gap:10px; }
-  .co-summary .li { grid-template-columns:minmax(0,1fr) auto; }
-  .co-summary .li-qty { grid-column:1; grid-row:2; }
-  .co-summary .li-amt { grid-column:2; grid-row:1 / span 2; align-self:center; }
   .co-footer { margin-inline:-20px; padding-inline:20px; }
 }
 /* =================================================================

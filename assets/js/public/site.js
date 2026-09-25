@@ -464,6 +464,20 @@ function starRating(r, count){
   return html;
 }
 
+/* The photo card's floating rating badge — one star, not five, because five
+   small stars stop being legible at the size a badge sitting on top of a
+   photo can spare. Same honest-zero rule as starRating() above (a product
+   with no reviews gets no badge, not an empty one), written separately
+   rather than reused because starRating()'s five-star row is a different
+   shape of answer to the same question, built for the space .pc-meta has
+   rather than the space this has. */
+function ratingBadge(p){
+  const n = Number(p.reviewCount);
+  if(!Number.isFinite(n) || n <= 0) return "";
+  const label = `Rated ${p.rating.toFixed(1)} out of 5, from ${n} review${n === 1 ? "" : "s"}`;
+  return `<span class="pc-rating-badge" aria-label="${label}">${icon("star")}<b>${p.rating.toFixed(1)}</b><span aria-hidden="true">(${n})</span></span>`;
+}
+
 /* =================================================================
    RENDER: product card factory (used by Shop + Best Sellers)
    -----------------------------------------------------------------
@@ -481,6 +495,57 @@ function starRating(r, count){
    the stored path against the application root, so neither half of the
    mistake can return.
    ================================================================= */
+/* PHOTO-FIRST CARD — the request's reference image, built from what the
+   catalogue actually has rather than the fields the reference happened to
+   show. Four of its pieces have no product underneath them here: a
+   favorite/heart toggle (no wishlist feature exists), a spice-level tag, a
+   "serves N" count, and a delivery-time estimate. Rather than invent values
+   for those — which is how this codebase ended up with a seeded 4.9-star
+   rating nobody had earned, see starRating() above — this keeps the
+   reference's LAYOUT (a full-bleed photo carrying the name, price and
+   rating; a compact bar below it for status and the buy action) and fills
+   it with what is real: category, price, rating (honest-zero, never
+   fabricated), units sold, stock status, Add to cart.
+
+   STOCK STATUS LIVES ON THE PHOTO, "N sold" LIVES IN THE BAR — the reverse
+   of the first version. Stock labels are server text of very different
+   lengths ("Out of Stock" against "In Stock · 160 available", see
+   Inventory::shopLabel()), and the bar is flow layout: whichever card in a
+   row got the longer label wrapped its bar onto two lines and grew taller
+   than its neighbours, which is the "some cards have more space at the
+   bottom" a shopper actually reported. "N sold" never has that problem — it
+   is always a number and a word. Swapping them moves the unpredictable
+   string onto the overlay, which is position:absolute inside a fixed
+   aspect-ratio photo, so wrapping there costs nothing: the photo's height
+   does not depend on what is drawn over it, only the bar's height did.
+
+   NO qtyCapHint() HERE EITHER, for the same complaint from a second
+   direction. It used to print "Max 9 — all we have left" under the Add
+   button on scarce products, and Inventory::shopLabel() ALWAYS folds the
+   count into the label itself once stock is low enough to trigger the hint
+   ("Only 9 left", "Low stock · 6 left") — so the hint was never telling a
+   shopper the count, just repeating the one .stock-pill already showed, the
+   exact "same number twice" its own original comment said to avoid. It also
+   only appeared on SOME cards, which is a second content-driven height in a
+   grid row: a shop grid stretches every card in a row to match the tallest
+   one (CSS Grid's default align-items), so the one scarce product in a row
+   grew and everything beside it grew an equal, empty amount to match — the
+   dead space under an ordinary card's Add button that prompted this fix.
+   Dropping the hint removes a real duplicate and the one piece of the card
+   whose presence depended on the PRODUCT rather than the LAYOUT. The modal's
+   own copy (openProductDetail(), further down) is untouched: one card in a
+   dialog has no row of neighbours to stretch, so it was never the bug here —
+   though it is worth knowing the same redundancy exists there too.
+
+   THE STEPPER IS GONE. The reference has no quantity picker on the card —
+   its Add button is a single action — and every other card on this site
+   let a shopper choose a quantity before adding. Rather than silently drop
+   that ability, it moved: the card's Add button adds one (the delegated
+   handler already falls back to qty=1 when no stepper is found, see the
+   click listener below), and openProductDetail()'s modal still carries its
+   own stepper for anyone who wants more than one before checking out. A
+   description one line down is a design compromise, not a config the two
+   surfaces disagree on. */
 function createProductCard(p, {ribbon=false}={}){
   const s = stockInfo(p);
   const out = !productAvailable(p);
@@ -488,34 +553,27 @@ function createProductCard(p, {ribbon=false}={}){
   el.className = "card product-card";
   el.dataset.id = p.id;
   el.innerHTML = `
-    ${ribbon && p.best ? `<span class="ribbon">${icon("star")} Best Seller</span>` : ""}
     <div class="pc-media" data-detail="${escAttr(p.id)}" role="button" tabindex="0" aria-label="View ${escAttr(p.name)} details">
       ${jarSVG(p.tint, p.name, 'jar', imageUrl(p))}
-      <div class="pc-quickview"><span>${icon("search")} Quick view</span></div>
+      <div class="pc-scrim" aria-hidden="true"></div>
+      ${ribbon && p.best ? `<span class="ribbon">${icon("star")} Best Seller</span>` : ""}
+      <div class="pc-overlay">
+        <div class="pc-overlay-top">
+          <span class="pc-cat">${esc(p.cat)}</span>
+          <h3 class="pc-name">${esc(p.name)}</h3>
+          <span class="price"><span class="cur">${CONFIG.currency}</span>${p.price}</span>
+        </div>
+        <div class="pc-overlay-bottom">
+          ${ratingBadge(p)}
+          <span class="stock-pill ${s.cls}">${s.label}</span>
+        </div>
+      </div>
     </div>
-    <div class="pc-body">
-      <span class="pc-cat">${esc(p.cat)}</span>
-      <h3 class="pc-name" data-detail="${escAttr(p.id)}">${esc(p.name)}</h3>
-      <p class="pc-desc">${esc(p.desc)}</p>
-      <div class="pc-meta">
-        ${starRating(p.rating, p.reviewCount)}
-        <span>${p.sold.toLocaleString()} sold</span>
-      </div>
-      <div class="pc-foot">
-        <span class="price"><span class="cur">${CONFIG.currency}</span>${p.price}</span>
-        <span class="stock-pill ${s.cls}">${s.label}</span>
-      </div>
-      <div class="pc-add">
-        ${out ? "" : `<div class="stepper" data-stepper>
-            <button type="button" data-step="-1" aria-label="Decrease quantity">${ICONS.minus}</button>
-            <input type="number" value="1" min="1" max="${productMax(p)}" ${qtyCapAttrs(p)} />
-            <button type="button" data-step="1" aria-label="Increase quantity">${ICONS.plus}</button>
-          </div>`}
-        <button class="btn btn-primary btn-add" data-add="${escAttr(p.id)}" ${out?"disabled":""} style="flex:1">
-          ${out ? "Sold Out" : icon("cart")+" Add"}
-        </button>
-      </div>
-      ${out ? "" : qtyCapHint(p)}
+    <div class="pc-foot">
+      <span class="pc-sold">${p.sold.toLocaleString()} sold</span>
+      <button class="btn btn-primary btn-add" data-add="${escAttr(p.id)}" ${out?"disabled":""}>
+        ${out ? "Sold Out" : icon("bag")+" Add to Order"}
+      </button>
     </div>`;
   return el;
 }
@@ -605,6 +663,54 @@ function renderProducts(){
     return;
   }
   list.forEach(p => grid.appendChild(createProductCard(p, {ribbon:true})));
+}
+
+/* Grid ⇄ row toggle for the shop's product list — a per-viewer convenience
+   the adviser asked for on top of the normal page scroll, not a replacement
+   for it: nothing here touches how the PAGE scrolls, only how the product
+   list itself does once the shopper opts into "row".
+
+   The class lives on #product-grid, which renderProducts() empties and
+   refills on every filter/sort/search but never replaces, so a chosen view
+   survives a re-render without this function needing to run again. */
+function wireShopView(){
+  const grid    = $("#product-grid");
+  const gridBtn = $("#view-grid-btn");
+  const rowBtn  = $("#view-row-btn");
+  if(!grid || !gridBtn || !rowBtn) return;
+
+  function setView(view){
+    const isRow = view === "row";
+    grid.classList.toggle("view-row", isRow);
+    gridBtn.classList.toggle("active", !isRow);
+    rowBtn.classList.toggle("active", isRow);
+    gridBtn.setAttribute("aria-pressed", String(!isRow));
+    rowBtn.setAttribute("aria-pressed", String(isRow));
+    try { localStorage.setItem("eb-shop-view", view); } catch(_){}
+  }
+
+  let saved = "grid";
+  try { saved = localStorage.getItem("eb-shop-view") === "row" ? "row" : "grid"; } catch(_){}
+  setView(saved);
+
+  gridBtn.addEventListener("click", ()=> setView("grid"));
+  rowBtn.addEventListener("click", ()=> setView("row"));
+
+  /* THIS is the "sideways scroll wheel" the request asked for. An ordinary
+     mouse wheel only ever reports a vertical delta — a trackpad or a wheel
+     with a tilt function can already pan sideways on its own, but a plain
+     wheel cannot, and without this a "sideways-scrolling" row would do
+     nothing for the shopper who asked for it. It only fires in row mode:
+     in grid mode the same wheel event is left alone and the page scrolls
+     normally, which is the "do not remove the normal scrolling" half of the
+     request. Guarded by deltaX so a gesture that IS already horizontal
+     (trackpad, tilt-wheel) is not doubled. */
+  grid.addEventListener("wheel", (e)=>{
+    if(!grid.classList.contains("view-row")) return;
+    if(Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+    e.preventDefault();
+    grid.scrollLeft += e.deltaY;
+  }, { passive:false });
 }
 
 /* best sellers — 3-D fan carousel */
@@ -1200,11 +1306,14 @@ function renderCart(){
       <div class="thumb">${jarSVG(p.tint, p.name, 'jar', imageUrl(p))}</div>
       <div class="cl-info">
         <b>${esc(p.name)}</b>
-        <span class="cl-price">${peso(p.price)} each · <b style="color:var(--text)">${peso(p.price*item.qty)}</b></span>
-        <div class="stepper" data-cart-stepper="${escAttr(p.id)}" style="margin-top:6px">
-          <button type="button" data-cstep="-1" aria-label="Decrease">${ICONS.minus}</button>
-          <input type="number" value="${item.qty}" min="1" max="${productMax(p)}" aria-label="Quantity of ${escAttr(p.name)}" />
-          <button type="button" data-cstep="1" aria-label="Increase">${ICONS.plus}</button>
+        <span class="cl-unit">${peso(p.price)} each</span>
+        <div class="cl-qty-row">
+          <div class="stepper" data-cart-stepper="${escAttr(p.id)}">
+            <button type="button" data-cstep="-1" aria-label="Decrease">${ICONS.minus}</button>
+            <input type="number" value="${item.qty}" min="1" max="${productMax(p)}" aria-label="Quantity of ${escAttr(p.name)}" />
+            <button type="button" data-cstep="1" aria-label="Increase">${ICONS.plus}</button>
+          </div>
+          <span class="price cl-total"><span class="cur">${CONFIG.currency}</span>${(p.price*item.qty).toLocaleString("en-PH")}</span>
         </div>
       </div>
       <button class="cl-remove" data-remove="${escAttr(p.id)}" aria-label="Remove ${escAttr(p.name)}">${ICONS.trash}</button>`;
@@ -3487,6 +3596,9 @@ function init(){
 
   // sort
   $("#sort-select")?.addEventListener("change", e=>{ state.filter.sort=e.target.value; renderProducts(); });
+
+  // grid / sideways-scroll toggle (shop page only — both buttons are null elsewhere)
+  wireShopView();
 
   // category chips
   $("#cat-chips")?.addEventListener("click", e=>{

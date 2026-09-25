@@ -134,6 +134,23 @@
         <div class="shop-main">
           <div class="shop-main-header">
             <p class="product-count" id="product-count" aria-live="polite">Loading products…</p>
+            <!-- Grid stays the default and is what a shopper gets with no
+                 action on their part. Row is opt-in and remembered per
+                 browser (see wireShopView() in site.js), never forced — the
+                 request was an OPTION alongside the normal up-and-down
+                 scroll, not a replacement for it. Icons differ between the
+                 two buttons on purpose, not just the fill, so which mode is
+                 on does not depend on reading a colour. -->
+            <div class="view-toggle" role="group" aria-label="Product list layout">
+              <button type="button" class="view-toggle-btn" id="view-grid-btn" data-view="grid" aria-pressed="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                Grid
+              </button>
+              <button type="button" class="view-toggle-btn" id="view-row-btn" data-view="row" aria-pressed="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="6" height="14" rx="1"/><rect x="10.5" y="5" width="6" height="14" rx="1"/><path d="M19 9l3 3-3 3M22 12h-4"/></svg>
+                Scroll sideways
+              </button>
+            </div>
           </div>
           <div class="product-grid" id="product-grid"></div>
         </div>
