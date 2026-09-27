@@ -38,6 +38,12 @@ require_once __DIR__ . '/Reviews.php';
    registration, the profile and the retailer application — one copy of the
    rule that a barangay must belong to the city it is posted with. */
 require_once __DIR__ . '/Address.php';
+/* Customer return requests (migration 016) — window, lines, completion stamp. */
+require_once __DIR__ . '/Returns.php';
+/* The customer's own bell (migration 018). */
+require_once __DIR__ . '/CustomerNotify.php';
+require_once __DIR__ . '/CustomerName.php';
+require_once __DIR__ . '/Signup.php';
 
 $__cfg = Database::config();
 

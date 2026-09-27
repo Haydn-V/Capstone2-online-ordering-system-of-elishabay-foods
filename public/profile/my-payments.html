@@ -9,6 +9,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="../../assets/css/public/styles.css" />
     <link rel="stylesheet" href="../../assets/css/public/profile.css" />
+      <!-- Theme before first paint: Light / Dark / System (no flash). -->
+    <script src="../../assets/js/theme.js"></script>
+    <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   </head>
   <body>
 
@@ -16,11 +19,7 @@
     <header class="nav scrolled" id="nav">
       <div class="nav-inner">
         <a href="../index.html" class="brand" aria-label="Elisha Bay home">
-          <svg class="mark" id="brand-mark" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <circle cx="22" cy="22" r="21" fill="rgba(232,163,23,0.08)"/>
-            <ellipse cx="20" cy="22" rx="12" ry="8" stroke="#e8a317" stroke-width="1.8" fill="rgba(232,163,23,0.07)"/>
-            <path d="M37 17L32 22L37 27" stroke="#e8a317" stroke-width="1.8" stroke-linecap="butt" stroke-linejoin="round"/>
-          </svg>
+          <img class="brand-logo" src="../../assets/img/logo.webp" alt="Elisha Bay — Every mouthful is delightful!" width="495" height="386" decoding="async">
           <span class="name">Elisha&nbsp;Bay<small>Juris Bay Foods</small></span>
         </a>
 
@@ -485,7 +484,7 @@
 
     /* Waits for the server's answer, not for a flag. See the note on the same
        guard in my-orders.html. */
-    window.addEventListener("load", () => {
+    window.addEventListener("DOMContentLoaded", () => {   /* not "load": that waited for every image */
       /* The guard, the sidebar and the sign-out button are the shell's now —
          all three were duplicated across the four account pages. See
          assets/js/public/profile-shell.js. */

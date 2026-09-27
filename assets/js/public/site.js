@@ -104,8 +104,9 @@ let FAQS_LOADED = false;
 /* =================================================================
    APP STATE  (single object — backend plugs in here)
    ================================================================= */
-const _savedTheme = (() => { try { return localStorage.getItem("eb-theme") || "light"; } catch(_){ return "light"; } })();
-document.documentElement.setAttribute("data-theme", _savedTheme);
+/* The theme is set by assets/js/theme.js (loaded in <head>): Light, Dark, or
+   System default. This only reads what it chose. */
+const _savedTheme = document.documentElement.getAttribute("data-theme") || "light";
 
 /* Deliberately NOT restored from localStorage.
 
@@ -1045,10 +1046,131 @@ function openModal(title, bodyHTML, {wide=false, onOpen}={}){
   $("#modal")?.classList.toggle("wide", wide);
   scrim.classList.add("open");
   document.body.style.overflow = "hidden";
+  $("#modal")?.classList.remove("is-auth");   /* auth's onOpen adds it back */
   if(onOpen) onOpen(body);
   const f = body.querySelector("input,select,textarea,button");
   if(f) setTimeout(()=>f.focus(), 60);
 }
+/* ── Sign-up STEP 2: email verification ─────────────────────────
+   Shown in place of the Create Account form once shop/register.php has
+   emailed a code. The account is created only by register-verify.php,
+   after the code matches. "Edit details" goes back to the (still filled)
+   form; nothing was saved, so there is nothing to undo. */
+function showSignupOtp(root, info){
+  const panel = root.querySelector('#ap-register');
+  const form  = root.querySelector('#reg-form');
+  if(!panel || !form) return;
+  panel.querySelector('#otp-step')?.remove();
+  form.style.display = "none";
+  const head = panel.querySelector('.auth-panel-head');
+  if(head) head.style.display = "none";
+
+  const box = document.createElement('div');
+  box.id = 'otp-step'; box.className = 'otp-step';
+  box.innerHTML = `
+    <div class="otp-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div>
+    <h3 class="otp-title">Verify your email</h3>
+    <p class="otp-sub">We sent a 6-digit code to <b>${esc(info.email || "your email")}</b>. Enter it below to create your account.</p>
+    <div class="otp-boxes" role="group" aria-label="Verification code">
+      ${Array.from({length:6}, (_, i) => `<input class="otp-box" inputmode="numeric" autocomplete="${i === 0 ? "one-time-code" : "off"}" maxlength="1" aria-label="Digit ${i + 1}">`).join("")}
+    </div>
+    <span class="field-error otp-err" id="otp-err"></span>
+    ${info.devCode ? `<p class="otp-dev">Test mode — email sending is not set up on this server. Your code is <b>${esc(info.devCode)}</b>.</p>`
+      : !info.mailLive ? `<p class="otp-dev otp-warn">Email sending is not set up on this server yet, so no code was sent. Please contact us to finish creating your account.</p>`
+      : info.emailed === false ? `<p class="otp-dev otp-warn">We couldn't send the email just now. Wait a minute and tap <b>Resend code</b>.</p>` : ""}
+    <button type="button" class="auth-submit" id="otp-go">Verify &amp; Create Account ${_authArrow}</button>
+    <div class="otp-links">
+      <button type="button" class="otp-link" id="otp-resend" disabled>Resend code</button>
+      <span class="otp-timer" id="otp-timer"></span>
+      <span class="otp-dot">·</span>
+      <button type="button" class="otp-link" id="otp-back">Edit details</button>
+    </div>`;
+  panel.appendChild(box);
+
+  const boxes = [...box.querySelectorAll('.otp-box')];
+  const err = box.querySelector('#otp-err');
+  const go  = box.querySelector('#otp-go');
+  const resend = box.querySelector('#otp-resend');
+  const timerEl = box.querySelector('#otp-timer');
+  const code = () => boxes.map(b => b.value).join('');
+
+  boxes.forEach((b, i) => {
+    b.addEventListener('input', () => {
+      b.value = b.value.replace(/\D/g, '').slice(-1);
+      if(b.value && boxes[i + 1]) boxes[i + 1].focus();
+      err.textContent = '';
+      if(code().length === 6) submit();
+    });
+    b.addEventListener('keydown', e => {
+      if(e.key === 'Backspace' && !b.value && boxes[i - 1]){ boxes[i - 1].focus(); boxes[i - 1].value = ''; }
+      if(e.key === 'Enter') submit();
+    });
+    b.addEventListener('paste', e => {
+      const d = (e.clipboardData?.getData('text') || '').replace(/\D/g, '').slice(0, 6);
+      if(!d) return;
+      e.preventDefault();
+      boxes.forEach((x, n) => { x.value = d[n] || ''; });
+      (boxes[d.length] || boxes[5]).focus();
+      if(d.length === 6) submit();
+    });
+  });
+
+  let tick = null;
+  const countdown = secs => {
+    clearInterval(tick);
+    resend.disabled = true;
+    const end = Date.now() + secs * 1000;
+    const draw = () => {
+      const left = Math.max(0, Math.ceil((end - Date.now()) / 1000));
+      timerEl.textContent = left ? `in ${left}s` : '';
+      if(!left){ resend.disabled = false; clearInterval(tick); }
+    };
+    draw(); tick = setInterval(draw, 1000);
+  };
+  countdown(info.resendIn || 60);
+
+  let busy = false;
+  async function submit(){
+    if(busy) return;
+    const c = code();
+    if(c.length !== 6){ err.textContent = 'Enter all 6 digits.'; return; }
+    busy = true; go.disabled = true; go.textContent = 'Verifying…';
+    try {
+      const { data } = await EbApi.post("shop/register-verify.php", { code: c });
+      clearInterval(tick);
+      signIn(data.customer);
+      /* signIn() already says "Welcome, name!". */
+      if(data.claimedExistingRecord) showToast("Welcome back — we found your previous orders.", "success");
+    } catch(e){
+      err.textContent = e.message;
+      boxes.forEach(x => { x.value = ''; }); boxes[0].focus();
+      if(e.status === 410){ setTimeout(back, 1200); }
+    } finally {
+      busy = false; go.disabled = false; go.innerHTML = `Verify &amp; Create Account ${_authArrow}`;
+    }
+  }
+  function back(){
+    clearInterval(tick);
+    box.remove(); form.style.display = ""; if(head) head.style.display = "";
+  }
+  go.addEventListener('click', submit);
+  box.querySelector('#otp-back').addEventListener('click', back);
+  resend.addEventListener('click', async () => {
+    resend.disabled = true;
+    try {
+      const { data } = await EbApi.post("shop/register-verify.php", { resend: true });
+      err.textContent = '';
+      showToast("A new code is on its way.", "info");
+      const dev = box.querySelector('.otp-dev b'); if(dev && data.devCode) dev.textContent = data.devCode;
+      countdown(data.resendIn || 60);
+    } catch(e){
+      err.textContent = e.message;
+      if(e.status === 410) setTimeout(back, 1200); else resend.disabled = false;
+    }
+  });
+  setTimeout(() => boxes[0].focus(), 60);
+}
+
 function closeModal(){
   /* Guarded for the same reason openModal() is. This one could be reached on a
      page with no modal at all — the Escape handler calls it unconditionally on
@@ -1056,7 +1178,12 @@ function closeModal(){
      Escape rather than only when something tried to open. */
   $("#modal-scrim")?.classList.remove("open");
   document.body.style.overflow = "";
-  $("#modal")?.classList.remove("is-auth");
+  /* Drop the auth look only after the fade-out. Removing it at once turned
+     the dark two-panel login into the plain white modal mid-fade — the
+     "white pop" on clicking outside. Skipped if something reopened. */
+  setTimeout(() => {
+    if(!$("#modal-scrim")?.classList.contains("open")) $("#modal")?.classList.remove("is-auth");
+  }, 400);
   if(lastFocus) lastFocus.focus();
 }
 
@@ -1229,6 +1356,30 @@ async function addToCart(id, qty=1){
     if(prevQty > 0){ const l = state.cart.find(i=>i.id===id); if(l) l.qty = prevQty; }
     else state.cart = state.cart.filter(i=>i.id!==id);
   });
+}
+/* Several lines at once (Reorder). One badge/drawer refresh and no per-line
+   toast; the caller says what happened. Each line is capped at the shelf,
+   and a line the server refuses is rolled back like addToCart's. */
+async function addManyToCart(lines){
+  let added = 0; const skipped = [];
+  const saves = [];
+  for(const {id, qty} of lines){
+    const p = getProduct(id);
+    if(!productAvailable(p)){ skipped.push(p ? p.name : id); continue; }
+    const line = state.cart.find(i=>i.id===id);
+    const prev = line ? line.qty : 0;
+    const next = Math.min(prev + qty, productMax(p));
+    if(next <= prev){ skipped.push(p.name); continue; }
+    if(line) line.qty = next; else state.cart.push({id, qty: next});
+    added++;
+    saves.push(saveCartLine(id, next, () => {
+      if(prev > 0){ const l = state.cart.find(i=>i.id===id); if(l) l.qty = prev; }
+      else state.cart = state.cart.filter(i=>i.id!==id);
+    }));
+  }
+  updateCartBadge(true); renderCart();
+  await Promise.all(saves);
+  return { added, skipped };
 }
 function setQty(id, qty){
   /* The floor stays at 1. This clamp is what protects the typed number input,
@@ -1560,6 +1711,17 @@ function openProductDetail(id){
 /* =================================================================
    CHECKOUT  (Delivery/Pickup · Cash/GCash/Bank · proof-of-payment mock)
    ================================================================= */
+/* "Edit" switch for a checkout section. Signed-in only: a guest has no saved
+   profile to lock, so their fields are always open. */
+function coEditSwitch(key){
+  if(!state.auth.loggedIn) return "";
+  return `<label class="co-edit" title="Turn on to change these details">
+    <input type="checkbox" role="switch" data-lock="${key}">
+    <span class="co-edit-track" aria-hidden="true"></span>
+    <span class="co-edit-text">Edit</span>
+  </label>`;
+}
+
 function openCheckout(){
   if(!state.cart.length) return;
   closeCart();
@@ -1610,16 +1772,21 @@ function openCheckout(){
              free-text box. Region → Province → City → Barangay, then the street
              and ZIP typed. Hidden for pickup, which stores no address at all. -->
         <div class="co-address" id="address-field">
-          <div class="co-subtitle" id="co-address-title">Delivery Address</div>
-          ${EbAddress.markup("co", { variant: "field", required: true })}
+          <div class="co-subtitle co-lock-head" id="co-address-title">Delivery Address ${coEditSwitch("addr")}</div>
+          <div class="co-lock-body" data-lock-body="addr">
+            ${EbAddress.markup("co", { variant: "field", required: true })}
+          </div>
         </div>
       </div>
 
       <!-- Contact -->
       <div class="co-section">
         <div class="co-title">Your Details</div>
-        <div class="field"><label for="co-name">Full Name</label><input class="control" id="co-name" type="text" placeholder="Juan dela Cruz" value="${escAttr(state.auth.loggedIn?state.auth.name:"")}"><span class="field-error" data-err></span></div>
-        <div class="field"><label for="co-contact">Contact Number</label><input class="control" id="co-contact" type="tel" placeholder="09xx xxx xxxx"><span class="field-error" data-err></span></div>
+        ${coEditSwitch("details")}
+        <div class="co-lock-body" data-lock-body="details">
+          <div class="field"><label for="co-name">Full Name *</label><input class="control" id="co-name" type="text" placeholder="Juan dela Cruz" value="${escAttr(state.auth.loggedIn?state.auth.name:"")}"><span class="field-error" data-err></span></div>
+          <div class="field"><label for="co-contact">Contact Number *</label><input class="control" id="co-contact" type="tel" placeholder="09xx xxx xxxx"><span class="field-error" data-err></span></div>
+        </div>
         <!-- The five inline style properties that used to be on this label are
              in .co-save now, and the checkbox is drawn rather than left as the
              browser default — it was the one control on this form with no
@@ -1655,9 +1822,9 @@ function openCheckout(){
           <!-- Filled by payQrHtml() for the method picked: the account to send to
                and its QR code, from Landing Page Maintenance. -->
           <div id="co-pay-qr"></div>
-          <div class="field"><label for="co-ref">Reference Number</label><input class="control" id="co-ref" type="text" placeholder="e.g. 1234 5678 90"><span class="field-error" data-err></span></div>
+          <div class="field"><label for="co-ref">Reference Number *</label><input class="control" id="co-ref" type="text" placeholder="e.g. 1234 5678 90"><span class="field-error" data-err></span></div>
           <div class="field" id="co-proof-field">
-            <label for="co-proof">Payment Screenshot</label>
+            <label for="co-proof">Payment Screenshot *</label>
             <!-- A REAL file input. What used to be here was a div with
                  role=button whose click handler flipped a boolean and printed
                  the hardcoded string "payment-proof.jpg attached (mock)". No
@@ -1770,7 +1937,28 @@ function openCheckout(){
          - request fails         logged, form untouched. A shopper cannot act
                                  on "profile service unavailable" */
     const prefilled = { contact: false, address: false };
+
+    /* EDIT SWITCHES. Signed in: address and details open locked (inert) on the
+       saved profile; the switch unlocks them. The save-to-profile box only
+       shows while something is unlocked — nothing locked can have changed. */
+    const setLock = (key, locked) => {
+      const body = root.querySelector(`[data-lock-body="${key}"]`);
+      const sw = root.querySelector(`[data-lock="${key}"]`);
+      if (!body || !sw) return;
+      body.inert = locked;
+      body.classList.toggle("co-locked", locked);
+      sw.checked = !locked;
+      const anyOpen = [...root.querySelectorAll("[data-lock]")].some(s => s.checked);
+      root.querySelector("#co-save-profile-wrap")?.classList.toggle("hide", !anyOpen);
+      if (!anyOpen) { const cb = root.querySelector("#co-save-profile"); if (cb) cb.checked = false; }
+    };
+    root.querySelectorAll("[data-lock]").forEach(sw =>
+      sw.addEventListener("change", () => setLock(sw.dataset.lock, !sw.checked)));
+    const unlockAll = () => { setLock("addr", false); setLock("details", false); };
+
     if (state.auth.loggedIn) {
+      setLock("addr", true);
+      setLock("details", true);
       (async () => {
         let profile;
         try {
@@ -1778,6 +1966,7 @@ function openCheckout(){
           profile = data;
         } catch (err) {
           console.warn("[checkout] could not load profile for prefill:", err.message);
+          unlockAll();   /* nothing saved to show — let them type */
           return;
         }
         /* The modal may already be closed by the time this resolves. */
@@ -1805,10 +1994,12 @@ function openCheckout(){
           root.querySelector("#co-name").value = profile.name;
         }
 
-        /* The save-back offer only appears once there is something a save
-           could change. Showing it to somebody with nothing to save is an
-           invitation to wonder what it does. */
-        root.querySelector("#co-save-profile-wrap")?.classList.remove("hide");
+        /* An incomplete saved profile can't be ordered with locked — open
+           whichever part is missing something. */
+        if (!addr.validate(true)) { addr.clearErrors(); setLock("addr", false); }
+        const n = root.querySelector("#co-name").value.trim();
+        const c = root.querySelector("#co-contact").value.trim();
+        if (!n || !/^[0-9 +\-]{7,}$/.test(c)) setLock("details", false);
       })();
     }
 
@@ -2080,7 +2271,7 @@ function openCheckout(){
         if(!root.querySelector("#co-ref").value.trim()) fail("#co-ref","Reference number required for "+payLabel(payment)+".");
         if(!proofPath){ fail("#co-proof","Attach a screenshot of your payment."); }
       }
-      if(!ok) return;
+      if(!ok){ unlockAll(); return; }   /* an error they can't reach is no help */
 
       /* THE ORDER IS NOW ACTUALLY PLACED.
 
@@ -2279,7 +2470,8 @@ const _authArrow = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 function openAuth(tab='login', hint=null){
   const hintHTML = (hint && typeof hint === 'string') ? `<div class="auth-cart-hint">${hint}</div>` : '';
   const eyeBtn = `<button type="button" class="auth-eye-btn" data-eye aria-label="Toggle password"><span data-eye-face>${ICONS.eye}</span></button>`;
-  const fishSVG = `<svg class="auth-fish-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M4 16C4 16 8 8 16 8C24 8 28 16 28 16C28 16 24 24 16 24C8 24 4 16 4 16Z" fill="rgba(255,255,255,0.15)"/><path d="M4 16C4 16 8 8 16 8C24 8 28 16 28 16" stroke="rgba(255,255,255,0.9)" stroke-width="1.8" stroke-linecap="round"/><path d="M4 16C4 16 8 24 16 24C24 24 28 16 28 16" stroke="rgba(232,163,23,0.85)" stroke-width="1.8" stroke-linecap="round"/><circle cx="21" cy="13" r="1.5" fill="rgba(255,255,255,0.9)"/><path d="M28 16L32 13M28 16L32 19" stroke="rgba(255,255,255,0.6)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  /* The brand logo, same image as the page header (assets/img/logo.webp). */
+  const fishSVG = `<img class="auth-logo-img" src="${EbFormat.imageUrl("/assets/img/logo.webp")}" alt="" width="495" height="386">`;
 
   const body = `
   <div class="auth-split">
@@ -2331,7 +2523,7 @@ function openAuth(tab='login', hint=null){
                interrupt constantly, so only the initial message speaks). -->
           <div class="auth-lock" id="lg-lock" role="alert" hidden></div>
           <div class="auth-field">
-            <label for="lg-email">Email Address</label>
+            <label for="lg-email">Email Address *</label>
             <div class="auth-input-group">
               <span class="auth-input-icon" aria-hidden="true">${ICONS.mail}</span>
               <input class="auth-input" id="lg-email" type="email" placeholder="you@email.com" autocomplete="email"/>
@@ -2339,7 +2531,7 @@ function openAuth(tab='login', hint=null){
             <span class="field-error" data-err></span>
           </div>
           <div class="auth-field">
-            <label for="lg-pass">Password</label>
+            <label for="lg-pass">Password *</label>
             <div class="auth-input-group">
               <span class="auth-input-icon" aria-hidden="true">${_lockIcon}</span>
               <input class="auth-input auth-input-pw" id="lg-pass" type="password" placeholder="••••••••" autocomplete="current-password"/>
@@ -2362,16 +2554,27 @@ function openAuth(tab='login', hint=null){
           <p>Create an account for faster ordering and delivery updates.</p>
         </div>
         <form id="reg-form" novalidate>
-          <div class="auth-field">
-            <label for="rg-name">Full Name</label>
-            <div class="auth-input-group">
-              <span class="auth-input-icon" aria-hidden="true">${ICONS.user}</span>
-              <input class="auth-input" id="rg-name" type="text" placeholder="Juan dela Cruz" autocomplete="name"/>
+          <!-- First + last name, stored separately (migration 019). -->
+          <div class="auth-2col">
+            <div class="auth-field">
+              <label for="rg-first">First Name *</label>
+              <div class="auth-input-group">
+                <span class="auth-input-icon" aria-hidden="true">${ICONS.user}</span>
+                <input class="auth-input" id="rg-first" type="text" placeholder="Juan" autocomplete="given-name"/>
+              </div>
+              <span class="field-error" data-err></span>
             </div>
-            <span class="field-error" data-err></span>
+            <div class="auth-field">
+              <label for="rg-last">Last Name *</label>
+              <div class="auth-input-group">
+                <span class="auth-input-icon" aria-hidden="true">${ICONS.user}</span>
+                <input class="auth-input" id="rg-last" type="text" placeholder="dela Cruz" autocomplete="family-name"/>
+              </div>
+              <span class="field-error" data-err></span>
+            </div>
           </div>
           <div class="auth-field">
-            <label for="rg-contact">Contact Number</label>
+            <label for="rg-contact">Contact Number *</label>
             <div class="auth-input-group">
               <span class="auth-input-icon" aria-hidden="true">${ICONS.phone}</span>
               <input class="auth-input" id="rg-contact" type="tel" placeholder="09xx xxx xxxx" autocomplete="tel"/>
@@ -2379,7 +2582,7 @@ function openAuth(tab='login', hint=null){
             <span class="field-error" data-err></span>
           </div>
           <div class="auth-field">
-            <label for="rg-email">Email Address</label>
+            <label for="rg-email">Email Address *</label>
             <div class="auth-input-group">
               <span class="auth-input-icon" aria-hidden="true">${ICONS.mail}</span>
               <input class="auth-input" id="rg-email" type="email" placeholder="you@email.com" autocomplete="email"/>
@@ -2396,7 +2599,7 @@ function openAuth(tab='login', hint=null){
             ${EbAddress.markup("rg", { variant: "auth", required: "location" })}
           </fieldset>
           <div class="auth-field">
-            <label for="rg-pass">Password</label>
+            <label for="rg-pass">Password *</label>
             <div class="auth-input-group">
               <span class="auth-input-icon" aria-hidden="true">${_lockIcon}</span>
               <input class="auth-input auth-input-pw" id="rg-pass" type="password" placeholder="At least 8 characters" autocomplete="new-password"/>
@@ -2407,7 +2610,7 @@ function openAuth(tab='login', hint=null){
             <span class="field-error" data-err></span>
           </div>
           <div class="auth-field">
-            <label for="rg-confirm">Confirm Password</label>
+            <label for="rg-confirm">Confirm Password *</label>
             <div class="auth-input-group">
               <span class="auth-input-icon" aria-hidden="true">${_lockIcon}</span>
               <input class="auth-input auth-input-pw" id="rg-confirm" type="password" placeholder="Re-enter password" autocomplete="new-password"/>
@@ -2415,7 +2618,7 @@ function openAuth(tab='login', hint=null){
             </div>
             <span class="field-error" data-err></span>
           </div>
-          <button type="submit" class="auth-submit">Create Account ${_authArrow}</button>
+          <button type="submit" class="auth-submit">Continue ${_authArrow}</button>
         </form>
       </div>
 
@@ -2613,12 +2816,14 @@ function openAuth(tab='login', hint=null){
       let ok=true;
       root.querySelectorAll('#reg-form [data-err]').forEach(x=>x.textContent='');
       const fail=(sel,msg)=>{ root.querySelector(sel).closest('.auth-field').querySelector('[data-err]').textContent=msg; ok=false; };
-      const name    = root.querySelector('#rg-name').value.trim();
+      const first   = root.querySelector('#rg-first').value.trim();
+      const last    = root.querySelector('#rg-last').value.trim();
       const contact = root.querySelector('#rg-contact').value.trim();
       const email   = root.querySelector('#rg-email').value.trim();
       const pw      = root.querySelector('#rg-pass').value;
       const cf      = root.querySelector('#rg-confirm').value;
-      if(!name)    fail('#rg-name','Name is required.');
+      if(!first)   fail('#rg-first','First name is required.');
+      if(!last)    fail('#rg-last','Last name is required.');
       if(!/^[0-9 +\-]{7,}$/.test(contact)) fail('#rg-contact','Enter a valid contact number.');
       if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail('#rg-email','Enter a valid email.');
       /* Region through barangay, as the server's Address::LOCATION requires. */
@@ -2633,14 +2838,16 @@ function openAuth(tab='login', hint=null){
 
          An email matching a seeded customer claims that record instead of
          creating a duplicate, so their existing order history follows them. */
+      /* STEP 1 of 2: the server validates and emails a code. No account exists
+         until the code is confirmed (showSignupOtp → shop/register-verify.php). */
+      const submitBtn = root.querySelector('#reg-form .auth-submit');
+      const label = submitBtn.innerHTML;
+      submitBtn.disabled = true; submitBtn.textContent = "Sending code…";
       try {
         const { data } = await EbApi.post("shop/register.php", {
-          name, email, password: pw, contact, address: rgAddr ? rgAddr.value() : null,
+          first_name: first, last_name: last, email, password: pw, contact, address: rgAddr ? rgAddr.value() : null,
         });
-        signIn(data.customer);
-        if(data.claimedExistingRecord){
-          showToast("Welcome back — we found your previous orders.", "success");
-        }
+        showSignupOtp(root, data);
       } catch(err){
         if(err.isValidation){
           /* addr_* keys are the picker's; it marks its own fields. Handing them
@@ -2648,10 +2855,12 @@ function openAuth(tab='login', hint=null){
              and throw inside the error handler. */
           rgAddr?.showErrors(err.fields);
           Object.entries(err.fields).filter(([f]) => !f.startsWith('addr_')).forEach(([f,msg]) =>
-            fail('#rg-' + (f === 'password' ? 'pass' : f === 'name' ? 'name' : f), msg));
+            fail('#rg-' + (f === 'password' ? 'pass' : f === 'first_name' || f === 'name' ? 'first' : f === 'last_name' ? 'last' : f), msg));
         } else {
           fail('#rg-email', err.message);
         }
+      } finally {
+        submitBtn.disabled = false; submitBtn.innerHTML = label;
       }
     });
 
@@ -2840,11 +3049,133 @@ function whenAuthReady(){
   });
 }
 
+/* =================================================================
+   CUSTOMER NOTIFICATIONS — the bell (api/shop/notifications.php)
+   -----------------------------------------------------------------
+   Only while a customer is signed in. Staff change an order's status,
+   verify a payment or move a return along → a row lands in the
+   customer's feed (api/core/CustomerNotify.php) → the badge counts it.
+   Checked on load, when the panel opens, and every minute while the
+   tab is visible.
+   ================================================================= */
+let _bellTimer = null;
+let _bellData = { items: [], unread: 0 };
+
+function renderBell(){
+  const slot = $("#account-slot");
+  if(!slot) return;
+  let bell = $("#nav-bell");
+  if(!state.auth.loggedIn){
+    bell?.remove();
+    clearInterval(_bellTimer); _bellTimer = null;
+    return;
+  }
+  if(!bell){
+    bell = document.createElement("div");
+    bell.id = "nav-bell";
+    bell.className = "nav-bell";
+    bell.innerHTML = `
+      <button class="icon-btn nav-bell-btn" id="nav-bell-btn" aria-label="Notifications" aria-haspopup="true" aria-expanded="false">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="nav-bell-badge" id="nav-bell-badge" hidden>0</span>
+      </button>
+      <div class="bell-pop" id="bell-pop" role="dialog" aria-label="Notifications">
+        <div class="bell-head">
+          <b>Notifications</b>
+          <button type="button" class="bell-readall" id="bell-readall">Mark all read</button>
+        </div>
+        <div class="bell-list" id="bell-list"><div class="bell-empty">Loading…</div></div>
+        <a class="bell-all" href="${EbFormat.imageUrl("/public/profile/history.html#notifications")}">View all in History</a>
+      </div>`;
+    slot.parentNode.insertBefore(bell, slot);
+
+    const btn = $("#nav-bell-btn"), pop = $("#bell-pop");
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      const o = pop.classList.toggle("open");
+      btn.setAttribute("aria-expanded", o);
+      if(o) loadBell();
+    });
+    pop.addEventListener("click", e => e.stopPropagation());
+    document.addEventListener("click", () => { pop.classList.remove("open"); btn.setAttribute("aria-expanded", "false"); });
+    document.addEventListener("keydown", e => { if(e.key === "Escape") pop.classList.remove("open"); });
+    $("#bell-readall").addEventListener("click", async () => {
+      try { _bellData = (await EbApi.post("shop/notifications.php", { action: "read_all" })).data; drawBell(); } catch(_){}
+    });
+  }
+  loadBell();
+  if(!_bellTimer){
+    _bellTimer = setInterval(() => { if(document.visibilityState === "visible") loadBell(); }, 60000);
+  }
+}
+
+async function loadBell(){
+  try {
+    _bellData = (await EbApi.get("shop/notifications.php")).data;
+    drawBell();
+  } catch(err){
+    if(err.isAuth){ clearInterval(_bellTimer); _bellTimer = null; }
+  }
+}
+
+function bellAgo(ts, ageSeconds){
+  /* The server's own age for the row — never the browser clock against a
+     timestamp written in the database's timezone. */
+  const s = ageSeconds != null ? ageSeconds
+          : (Date.now() - new Date(String(ts).replace(" ", "T")).getTime()) / 1000;
+  if(s < 60) return "just now";
+  if(s < 3600) return Math.floor(s / 60) + " min ago";
+  if(s < 86400) return Math.floor(s / 3600) + " h ago";
+  if(s < 604800) return Math.floor(s / 86400) + " d ago";
+  return EbFormat.fmtDate(ts);
+}
+
+const BELL_ICON = {
+  order:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>',
+  payment: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>',
+  return:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
+};
+
+function drawBell(){
+  const badge = $("#nav-bell-badge"), list = $("#bell-list");
+  if(!badge || !list) return;
+  const n = _bellData.unread || 0;
+  badge.hidden = n === 0;
+  badge.textContent = n > 9 ? "9+" : String(n);
+  $("#nav-bell-btn")?.setAttribute("aria-label", n ? `Notifications, ${n} unread` : "Notifications");
+  $("#bell-readall").hidden = n === 0;
+
+  if(!_bellData.items.length){
+    list.innerHTML = `<div class="bell-empty">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      <p>You're all caught up.</p><small>We'll let you know when your order moves.</small></div>`;
+    return;
+  }
+  list.innerHTML = _bellData.items.map(it => `
+    <button type="button" class="bell-item bell-${esc(it.type)}${it.read ? "" : " unread"}" data-id="${it.id}" data-link="${esc(it.link || "")}">
+      <span class="bell-ic" aria-hidden="true">${BELL_ICON[it.type] || BELL_ICON.order}</span>
+      <span class="bell-body">
+        <b>${esc(it.title)}</b>
+        <span>${esc(it.message)}</span>
+        <small>${bellAgo(it.createdAt, it.ageSeconds)}</small>
+      </span>
+    </button>`).join("");
+  list.querySelectorAll(".bell-item").forEach(el => el.addEventListener("click", async () => {
+    if(el.classList.contains("unread")){
+      try { _bellData = (await EbApi.post("shop/notifications.php", { action: "read", id: Number(el.dataset.id) })).data; } catch(_){}
+    }
+    const link = el.dataset.link;
+    if(link) window.location.href = EbFormat.imageUrl("/public/" + link);
+    else drawBell();
+  }));
+}
+
 function renderAccount(){
   const slot = $("#account-slot");
   /* Preview mode removes the account surface entirely, so there is
      nothing to render into. */
   if(!slot) return;
+  renderBell();
   if(state.auth.loggedIn){
     const initials = state.auth.name.split(" ").map(s=>s[0]).slice(0,2).join("").toUpperCase();
     const firstName = state.auth.name.split(" ")[0];
@@ -2918,6 +3249,49 @@ function applyTheme(t){
 }
 
 /* =================================================================
+   PHONE FIELDS TAKE A PHONE NUMBER
+   -----------------------------------------------------------------
+   Every contact-number field on the storefront is type="tel" — the
+   registration form, the retailer application, checkout, the profile
+   page — and type="tel" only changes the phone keypad; a desktop
+   keyboard could still type "adasdas" into it. The server already
+   refused that (register.php, b2b/apply.php and checkout.php all check
+   /^[0-9 +\-()]{7,..}$/), but only after the shopper filled in the rest
+   of a long form and pressed submit.
+
+   This drops anything outside that SAME character set as it is typed,
+   pasted or autofilled — digits, space, + - ( ) — so the field cannot
+   hold a value the server is going to throw back. One delegated
+   listener rather than one per form, because the register and checkout
+   fields are built by JS after load and would otherwise need wiring
+   wherever they are rendered.
+
+   The caret is put back where the shopper was typing: a filter that
+   jumps the cursor to the end on every rejected key is worse than no
+   filter when someone is correcting the middle of a number. Skipped
+   mid-composition, because rewriting the value under an IME breaks
+   the composition; it runs again when composition ends. */
+const PHONE_REJECT = /[^0-9 +\-()]/g;
+function sanitizePhone(el){
+  const v = el.value;
+  const clean = v.replace(PHONE_REJECT, "");
+  if(clean === v) return;
+  const caret = el.selectionStart ?? v.length;
+  const kept = v.slice(0, caret).replace(PHONE_REJECT, "").length;
+  el.value = clean;
+  try { el.setSelectionRange(kept, kept); } catch(_){}
+}
+function wirePhoneInputs(){
+  const isTel = t => t instanceof HTMLInputElement && t.type === "tel";
+  document.addEventListener("input", e=>{
+    if(isTel(e.target) && !e.isComposing) sanitizePhone(e.target);
+  });
+  document.addEventListener("compositionend", e=>{
+    if(isTel(e.target)) sanitizePhone(e.target);
+  });
+}
+
+/* =================================================================
    Generic stepper delegation (cards + product detail)
    ================================================================= */
 function wireSteppers(){
@@ -2971,14 +3345,19 @@ function goToShop(){
   window.location.href = shopUrl();
 }
 /* ---- tubelight indicator ---- */
-function moveNavIndicator(linkEl){
+/* `instant` places it with no slide — used on page load, when the fonts land
+   and on resize. Animating those made the underline bounce in from the left
+   edge on every page change. */
+function moveNavIndicator(linkEl, instant){
   const ind = $("#nav-indicator");
   const nav = $("#navlinks");
   if(!ind || !nav || !linkEl) return;
   const cR = nav.getBoundingClientRect();
   const lR = linkEl.getBoundingClientRect();
-  ind.style.left = (lR.left - cR.left) + "px";
+  if(instant) ind.style.transition = "none";
+  ind.style.left = (lR.left - cR.left - nav.clientLeft) + "px";
   ind.style.width = lR.width + "px";
+  if(instant){ void ind.offsetWidth; ind.style.transition = ""; }
   $$(".nav-links a").forEach(a => a.classList.remove("active"));
   linkEl.classList.add("active");
 }
@@ -2986,7 +3365,10 @@ function initNavIndicator(){
   // On dedicated pages (shop.html etc.), a .page-active link is already marked —
   // just position the indicator there and skip scroll-spy.
   const pageActive = document.querySelector('.nav-links a.page-active');
-  if(pageActive){ moveNavIndicator(pageActive); return; }
+  const settle = () => { const a = document.querySelector('.nav-links a.active, .nav-links a.page-active'); if(a) moveNavIndicator(a, true); };
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(settle);
+  window.addEventListener("resize", settle, {passive:true});
+  if(pageActive){ moveNavIndicator(pageActive, true); return; }
 
   // find which section is in view and highlight the matching link
   // hrefs must match the actual <a href="..."> values in the nav
@@ -2999,7 +3381,7 @@ function initNavIndicator(){
   // default to Home
   const firstLink = document.querySelector('.nav-links a[href="index.html"]')
                     || document.querySelector(".nav-links a");
-  if(firstLink) moveNavIndicator(firstLink);
+  if(firstLink) moveNavIndicator(firstLink, true);
 
   // scroll-spy: pick the last section whose top is above 40% of viewport
   function updateActiveLink(){
@@ -3039,8 +3421,12 @@ function wirePageLinks(){
     a.addEventListener("click", e => {
       e.preventDefault();
       moveNavIndicator(a);
-      document.body.classList.add("page-exit");
-      setTimeout(() => { window.location.href = href; }, 360);
+      $("#navlinks")?.classList.remove("open");
+      /* Already on that page (Home on the landing, Shop on the shop): scroll to
+         the top instead of reloading the whole site. */
+      const here = location.pathname.split("/").pop() || "index.html";
+      if(href.split("#")[0] === here){ window.scrollTo({top:0, behavior:"smooth"}); return; }
+      window.location.href = href;   /* no exit animation: it only delayed the load */
     });
   });
 }
@@ -3423,9 +3809,15 @@ function applyLandingContent(){
    Preview keeps the page fully browsable — only the account surface
    is removed, so edits can still be checked in context.
    ----------------------------------------------------------------- */
+/* The flag also rides on window.name, which survives navigation inside the
+   iframe — clicking Shop or the logo loads a page without ?preview=1, and
+   that used to bring back the login button and cart. */
+const PREVIEW_NAME = "eb-preview";
 function isPreviewMode(){
-  try { return new URLSearchParams(location.search).get("preview") === "1"; }
-  catch(_){ return false; }
+  try {
+    if(new URLSearchParams(location.search).get("preview") === "1") return true;
+    return window.name.split("|")[0] === PREVIEW_NAME && window.top !== window;
+  } catch(_){ return false; }
 }
 
 /* Who is looking at this preview. The admin passes it on the URL; the
@@ -3437,6 +3829,8 @@ function previewIdentity(){
     const q    = new URLSearchParams(location.search);
     const role = q.get("as"), who = q.get("who");
     if(role) return who ? who + " · " + role : role;
+    const saved = window.name.split("|");
+    if(saved[0] === PREVIEW_NAME && saved[1]) return decodeURIComponent(saved[1]);
   } catch(_){}
   try {
     const staff = JSON.parse(sessionStorage.getItem("eb-staff") || "null");
@@ -3448,6 +3842,7 @@ function previewIdentity(){
 function applyPreviewMode(){
   if(!isPreviewMode()) return;
   document.documentElement.classList.add("eb-preview");
+  try { window.name = PREVIEW_NAME + "|" + encodeURIComponent(previewIdentity()); } catch(_){}
 
   /* Remove the account/cart surface entirely rather than hiding it, so
      nothing can be clicked or tabbed to. */
@@ -3495,10 +3890,7 @@ function init(){
   applyLandingContent();
   applyPreviewMode();
 
-  // brand marks — decorative fish icon, not a product photo holder
-  const markHTML = '<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:28px;height:28px" aria-hidden="true"><path d="M4 16C4 16 8 8 16 8C24 8 28 16 28 16C28 16 24 24 16 24C8 24 4 16 4 16Z" fill="var(--red)" opacity=".15"/><path d="M4 16C4 16 8 8 16 8C24 8 28 16 28 16" stroke="var(--red)" stroke-width="1.8" stroke-linecap="round"/><path d="M4 16C4 16 8 24 16 24C24 24 28 16 28 16" stroke="var(--gold)" stroke-width="1.8" stroke-linecap="round"/><circle cx="21" cy="13" r="1.5" fill="var(--red)"/><path d="M28 16L32 13M28 16L32 19" stroke="var(--red)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  if($("#brand-mark")) $("#brand-mark").innerHTML = markHTML;
-  if($("#footer-mark")) $("#footer-mark").innerHTML = markHTML;
+  /* The brand is the logo image in each page's header (assets/img/logo.webp). */
 
   // about jar — image placeholder with big-jar class styling
   const aboutJarEl = $("#about-jar");
@@ -3566,6 +3958,7 @@ function init(){
 
   /* ---- event wiring (delegated where possible) ---- */
   wireSteppers();
+  wirePhoneInputs();
   wireSmoothScroll();
   wirePageLinks();
   wireReveal();
@@ -3573,7 +3966,8 @@ function init(){
   wireParallax();
 
   // theme toggle
-  $("#theme-btn")?.addEventListener("click", ()=>applyTheme(state.theme==="light"?"dark":"light"));
+  /* #theme-btn opens the Light / Dark / System menu — assets/js/theme.js. */
+  window.addEventListener("eb-theme-change", e => { state.theme = e.detail.theme; });
 
   // cart open/close (pill cart + mobile cart)
   $("#cart-btn")?.addEventListener("click", openCart);

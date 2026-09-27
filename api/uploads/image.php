@@ -72,6 +72,9 @@ $PURPOSES = [
     'products'   => ['perm' => 'products.manage', 'who' => 'staff'],
     'content'    => ['perm' => 'landing.manage',  'who' => 'staff'],
     'references' => ['perm' => null,              'who' => 'customer'],
+    /* Staff's screenshot of a completed GCash / bank refund (Return Module),
+       shown to the customer as proof the money was sent. */
+    'refunds'    => ['perm' => 'orders.returns',  'who' => 'staff'],
     /* The GCash / bank QR codes customers scan to pay (Landing Page
        Maintenance). Filed with the other landing images, and encoded
        LOSSLESS: every other purpose here is a photo, where WebP q82 is

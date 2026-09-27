@@ -61,11 +61,12 @@ if ($order === null) {
     Response::notFound('Not found.');
 }
 
-if ($order['status'] !== 'delivered') {
+/* Shipping or delivered: the parcel can reach the customer before staff have
+   marked it delivered, and the customer is the one who knows it arrived. */
+if (!in_array($order['status'], ['shipping', 'delivered'], true)) {
     $advice = [
         'pending'   => 'This order has not been accepted yet, so there is nothing to confirm.',
         'accepted'  => 'This order has not shipped yet, so there is nothing to confirm.',
-        'shipping'  => 'This order is still on its way. You can confirm it once it has been marked delivered.',
         'completed' => 'You have already confirmed this order.',
         'cancelled' => 'This order was cancelled.',
         'on-hold'   => 'This order is on hold with our team. Contact us and we will sort it out.',
@@ -79,8 +80,8 @@ try {
     $pdo->beginTransaction();
 
     Database::run(
-        "UPDATE orders SET status = 'completed' WHERE id = ? AND status = 'delivered'",
-        [$order['id']]
+        "UPDATE orders SET status = 'completed', delivered_at = NULL WHERE id = ? AND status = ?",
+        [$order['id'], $order['status']]
     );
 
     /* Conditional on the status we read. The one-hour sweep
@@ -91,12 +92,13 @@ try {
         $pdo->rollBack();
         Response::conflict('Somebody else just changed this order. Reload and try again.');
     }
+    Returns::stampCompleted($order['id']);   /* starts the 24h return window */
 
     if (Database::hasTable('order_status_history')) {
         Database::run(
             'INSERT INTO order_status_history (order_id, from_status, to_status, changed_by, note)
              VALUES (?, ?, ?, NULL, ?)',
-            [$order['id'], 'delivered', 'completed', 'Confirmed received by customer.']
+            [$order['id'], $order['status'], 'completed', 'Confirmed received by customer.']
         );
     }
 

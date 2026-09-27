@@ -80,29 +80,49 @@ if (in_array($to, ['rejected', 'ineligible'], true)) {
     $reason = null;
 }
 
+/* The lines being returned: from the request (migration 016), or the single
+   product a pre-016 return carries. */
+$lines = Returns::itemsFor([$ret['id']])[$ret['id']] ?? [[
+    'productId' => $ret['product_id'], 'qty' => (int) $ret['qty'], 'subtotal' => null,
+]];
+
 $refundAmount = $ret['refund_amount'];
 $refundMethod = null;
+$refundReceipt = null;
 
 if ($to === 'processed') {
     /* Money is leaving the business here, so the amount and the method are
        both required and the amount is validated rather than accepted. */
     $paid = Validate::check($in)
         ->decimal('refund_amount', 'Refund amount', 0)
-        ->in('refund_method', ['cash', 'gcash', 'bank'], 'Refund method')
+        /* No cash refunds: the money goes to the account the customer gave,
+           and the receipt below is the customer's proof it was sent. */
+        ->in('refund_method', ['gcash', 'bank'], 'Refund method')
         ->values();
     $refundAmount = $paid['refund_amount'];
     $refundMethod = $paid['refund_method'];
 
+    if (Returns::refundReady()) {
+        $refundReceipt = trim((string) ($in['refund_receipt'] ?? ''));
+        if (!Returns::isUploadPath($refundReceipt, 'refunds')) {
+            Response::validation('Attach the transfer receipt.', [
+                'refund_receipt' => 'Upload a screenshot of the GCash or bank transfer.',
+            ]);
+        }
+    }
+
     /* A refund larger than the line was worth is either a typo or a leak. The
        original line price is what the customer actually paid. */
-    $linePaid = Database::scalar(
-        'SELECT oi.price_at_purchase * ? FROM order_items oi
-          WHERE oi.order_id = ? AND oi.product_id = ? LIMIT 1',
-        [$ret['qty'], $ret['order_id'], $ret['product_id']]
-    );
+    $linePaid = $lines[0]['subtotal'] !== null
+        ? array_sum(array_column($lines, 'subtotal'))
+        : Database::scalar(
+            'SELECT oi.price_at_purchase * ? FROM order_items oi
+              WHERE oi.order_id = ? AND oi.product_id = ? LIMIT 1',
+            [$ret['qty'], $ret['order_id'], $ret['product_id']]
+        );
     if ($linePaid !== false && $linePaid !== null && $refundAmount > (float) $linePaid + 0.01) {
         Response::conflict(sprintf(
-            'Refund of ₱%s exceeds what was paid for this line (₱%s).',
+            'Refund of ₱%s exceeds what was paid for the returned items (₱%s).',
             number_format($refundAmount, 2), number_format((float) $linePaid, 2)
         ));
     }
@@ -131,6 +151,9 @@ try {
         $pdo->rollBack();
         Response::conflict('Somebody else just changed this return. Reload and try again.');
     }
+    if ($refundReceipt !== null) {
+        Database::run('UPDATE product_returns SET refund_receipt = ? WHERE id = ?', [$refundReceipt, $ret['id']]);
+    }
 
     /* Physically returned goods go back on the shelf only once the refund is
        actually processed — not at approval, when the jar may still be with the
@@ -158,13 +181,15 @@ try {
 
            Money already got this right — reports/sales.php nets refunds out of
            revenue. Units did not. The two ledgers disagreed. */
-        Stock::reverseSale($ret['product_id'], (int) $ret['qty']);
-        Database::run(
-            'INSERT INTO inventory_adjustments (date, product_id, qty, type, reason, batch_code)
-             VALUES (CURDATE(), ?, ?, ?, ?, NULL)',
-            [$ret['product_id'], $ret['qty'], 'return',
-             sprintf('Customer return %s refunded (order %s).', $ret['id'], $ret['order_id'])]
-        );
+        foreach ($lines as $line) {   /* one per product on the request */
+            Stock::reverseSale($line['productId'], (int) $line['qty']);
+            Database::run(
+                'INSERT INTO inventory_adjustments (date, product_id, qty, type, reason, batch_code)
+                 VALUES (CURDATE(), ?, ?, ?, ?, NULL)',
+                [$line['productId'], $line['qty'], 'return',
+                 sprintf('Customer return %s refunded (order %s).', $ret['id'], $ret['order_id'])]
+            );
+        }
     }
 
     Database::run(
@@ -184,10 +209,14 @@ try {
     throw $e;
 }
 
+/* Tell the customer (their bell in the storefront header). After the commit:
+   a notification that fails must never undo the change itself. */
+CustomerNotify::returnStatus($ret['id'], $to, $reason ?? null);
+
 Response::ok([
     'id'          => $ret['id'],
     'from'        => $from,
     'status'      => $to,
     'allowedNext' => RETURN_FLOW[$to] ?? [],
-    'stockReturned' => $to === 'processed' ? (int) $ret['qty'] : 0,
+    'stockReturned' => $to === 'processed' ? array_sum(array_column($lines, 'qty')) : 0,
 ]);

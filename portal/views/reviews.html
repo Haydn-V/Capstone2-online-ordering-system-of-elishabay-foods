@@ -73,6 +73,19 @@
           aria-label="Search reviews"
         />
       </div>
+      <select class="filter-select" id="rev-sort" aria-label="Sort reviews">
+        <option value="newest">Newest first</option>
+        <option value="oldest">Oldest first (FIFO)</option>
+        <option value="high">Highest rating</option>
+        <option value="low">Lowest rating</option>
+        <option value="product">Product (A–Z)</option>
+        <option value="customer">Customer (A–Z)</option>
+      </select>
+      <select class="filter-select" id="rev-page-size" aria-label="Rows per page">
+        <option value="10">10 per page</option>
+        <option value="25">25 per page</option>
+        <option value="50">50 per page</option>
+      </select>
     </div>
   </div>
 

@@ -60,6 +60,29 @@ final class Orders
      * `$customerCol` is interpolated: pass a column name (`o.customer_id`) or a
      * `?` placeholder, never a value.
      */
+    /**
+     * The tracking stepper for an order: the journey in order, with the steps
+     * reached marked. 'on-hold' is a pause on the first step, not a step of its
+     * own; a cancelled order has reached none.
+     *
+     * @return list<array{key:string,done:bool,now:bool}>
+     */
+    public static function trackingSteps(string $status): array
+    {
+        $sequence = ['pending', 'accepted', 'shipping', 'delivered', 'completed'];
+        $current  = $status === 'on-hold' ? 'pending' : $status;
+        $reached  = array_search($current, $sequence, true);
+        $out = [];
+        foreach ($sequence as $i => $st) {
+            $out[] = [
+                'key'  => $st,
+                'done' => $reached !== false && $i < $reached,
+                'now'  => $reached !== false && $i === $reached,
+            ];
+        }
+        return $out;
+    }
+
     public static function buyerTinSql(string $customerCol): string
     {
         return "(SELECT a.bir_tin
@@ -146,6 +169,7 @@ final class Orders
                     continue;
                 }
                 $moved++;
+                Returns::stampCompleted($o['id']);   /* starts the 24h return window */
 
                 if (Database::hasTable('order_status_history')) {
                     Database::run(

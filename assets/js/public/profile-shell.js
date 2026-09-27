@@ -51,6 +51,11 @@
       icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>',
     },
     {
+      /* Past orders and refunds, and every notification including read ones. */
+      key: "history", href: "history.html", label: "History",
+      icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>',
+    },
+    {
       key: "profile", href: "profile.html", label: "My Profile",
       icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
     },
@@ -119,7 +124,16 @@
       </nav>
       <div class="mpas-foot">${foot}</div>`;
 
-    host.querySelector("#mpas-signout").addEventListener("click", () => {
+    wireSignout(host);
+    /* Snapshot for the next account page: it paints this at once instead of
+       a blank page while shop/me.php answers (see mount). */
+    try { sessionStorage.setItem(SNAP_KEY, host.innerHTML); } catch (_) {}
+  }
+
+  const SNAP_KEY = "eb-acct-sidebar";
+  function wireSignout(host) {
+    host.querySelector("#mpas-signout")?.addEventListener("click", () => {
+      try { sessionStorage.removeItem(SNAP_KEY); } catch (_) {}
       signOut();
       window.location.href = "../index.html";
     });
@@ -145,7 +159,29 @@
        arrive at "signed in" within a few milliseconds of each other. */
     let applied = null;
 
+    /* Optimistic first paint. If the previous account page was signed in,
+       show the page and its sidebar now (active link moved to this page),
+       and let the server's answer below confirm or take it back. This is
+       what removes the blank-then-pop on every page change. */
+    try {
+      const snap = sessionStorage.getItem(SNAP_KEY);
+      const host = document.getElementById("mp-sidebar");
+      if (snap && host && content()) {
+        host.innerHTML = snap;
+        const href = (NAV.find(n => n.key === activeKey) || {}).href;
+        host.querySelectorAll(".mpas-link").forEach(a => {
+          const on = a.getAttribute("href") === href;
+          a.classList.toggle("active", on);
+          on ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current");
+        });
+        wireSignout(host);
+        if (guard()) guard().style.display = "none";
+        content().style.display = "block";
+      }
+    } catch (_) {}
+
     const apply = (loggedIn) => {
+      if (!loggedIn) { try { sessionStorage.removeItem(SNAP_KEY); } catch (_) {} }
       if (guard())   { guard().style.display   = loggedIn ? "none" : "block"; }
       if (content()) { content().style.display = loggedIn ? "block" : "none"; }
 

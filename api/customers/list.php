@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * GET /api/customers/list.php?page=&limit=&search=&status=active|retailer|archived|all
+ * GET /api/customers/list.php?page=&limit=&search=&status=active|retailer|archived|all&sort=name|fifo|newest
  *
  * Requires users.manage — the Customer tab sits inside User Management.
  *
@@ -29,6 +29,15 @@ if ($search !== '') {
     array_push($params, $like, $like, $like);
 }
 
+/* Sort (whitelisted, never interpolated from input):
+     name   — A to Z (default)
+     fifo   — first joined, first listed (oldest account at the top)
+     newest — most recently joined first */
+$orderBy = [
+    'fifo'   => 'c.joined ASC, c.created_at ASC, c.id ASC',
+    'newest' => 'c.joined DESC, c.created_at DESC, c.id DESC',
+][(string) ($q['sort'] ?? '')] ?? 'c.name ASC';
+
 $status = (string) ($q['status'] ?? 'all');
 if (in_array($status, ['active', 'retailer', 'archived'], true)) {
     $where[] = 'c.status = ?';
@@ -52,7 +61,7 @@ $rows = Database::all(
             (SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.id) AS order_count,
             $spendSql AS lifetime_spend
      $sql
-     ORDER BY c.name ASC
+     ORDER BY " . $orderBy . "
      LIMIT {$paging['limit']} OFFSET {$paging['offset']}",
     array_merge($spendParams, $params)
 );

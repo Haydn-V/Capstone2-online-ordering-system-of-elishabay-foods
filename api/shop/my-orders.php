@@ -43,7 +43,8 @@ $rows = Database::all(
             " . Orders::buyerTinSql('o.customer_id') . " AS buyer_tin,
             " . Tax::selectColumns('o') . ",
             o.method, o.address, o.notes, o.pay_verified,
-            o.tracking_number, o.delivered_at
+            o.tracking_number, o.delivered_at" . (Returns::ready() ? ", o.completed_at,
+            o.completed_at >= NOW() - INTERVAL " . Returns::WINDOW_HOURS . " HOUR AS return_open" : "") . "
        FROM orders o
       WHERE o.customer_id = ?
       ORDER BY o.datetime DESC
@@ -72,7 +73,7 @@ if ($rows !== []) {
        page would otherwise fire twenty requests to render twenty buttons. */
     foreach (Database::all(
         "SELECT oi.order_id, oi.product_id, oi.qty, oi.price_at_purchase,
-                p.name, p.tint,
+                p.name, p.tint, p.image_url,
                 r.rating AS my_rating, r.comment AS my_comment, r.status AS my_status
            FROM order_items oi
            JOIN products p ON p.id = oi.product_id
@@ -88,6 +89,8 @@ if ($rows !== []) {
             'productId' => $it['product_id'],
             'name'  => $it['name'],
             'tint'  => $it['tint'],
+            /* The product photo for the order line (resolved client-side by imageUrl). */
+            'image' => $it['image_url'],
             'qty'   => (int) $it['qty'],
             'price' => (float) $it['price_at_purchase'],
             /* The customer's own review of this product, if any, so the button
@@ -136,7 +139,11 @@ Response::ok(array_map(static fn(array $o): array => [
        this is the number the customer takes to the courier's own site. */
     'trackingNumber' => $o['tracking_number'],
     'deliveredAt'    => $o['delivered_at'],
+    /* Inside the return window (api/shop/returns.php decides per unit). */
+    'completedAt'    => $o['completed_at'] ?? null,
+    'returnOpen'     => $o['status'] === 'completed' && !empty($o['return_open']),
     'cancelReason'   => $reasonByOrder[$o['id']] ?? null,
+    'steps'          => Orders::trackingSteps($o['status']),
     'items'       => $itemsByOrder[$o['id']] ?? [],
 ], $rows), [
     'page'  => $paging['page'],

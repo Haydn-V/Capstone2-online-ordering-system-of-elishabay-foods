@@ -197,6 +197,9 @@ try {
         $pdo->rollBack();
         Response::conflict('Somebody else just changed this order. Reload and try again.');
     }
+    if ($to === 'completed') {
+        Returns::stampCompleted($order['id']);   /* starts the 24h return window */
+    }
 
     /* ------------------------------------------------------------------
        Stock moves with the order, for online orders only.
@@ -302,6 +305,10 @@ try {
     if ($pdo->inTransaction()) { $pdo->rollBack(); }
     throw $e;
 }
+
+/* Tell the customer (their bell in the storefront header). After the commit:
+   a notification that fails must never undo the change itself. */
+CustomerNotify::orderStatus($order['id'], $to, $note);
 
 Response::ok([
     'id'      => $order['id'],

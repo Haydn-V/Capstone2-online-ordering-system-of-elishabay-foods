@@ -7,27 +7,8 @@
 /* Enforce hidden attribute against display overrides */
 [hidden] { display: none !important; }
 
-/* =================================================================
-   PREMIUM AUTO-HIDING SCROLLBARS — applies to every scrollable area
-   (sidebar, tables, modals, textareas, etc.) across the whole app.
-   Invisible at rest, fades in on hover, gold on direct hover.
-   ================================================================= */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-*:hover {
-  scrollbar-color: var(--gold-line) transparent;
-}
-*::-webkit-scrollbar { width: 7px; height: 7px; }
-*::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-corner { background: transparent; }
-*::-webkit-scrollbar-thumb {
-  background: transparent; border-radius: 99px;
-  transition: background var(--t) var(--ease);
-}
-*:hover::-webkit-scrollbar-thumb { background: var(--gold-line); }
-*::-webkit-scrollbar-thumb:hover { background: var(--gold); }
+/* Scrollbars: one style for the whole system, defined in assets/js/theme.js
+   (shared with the storefront). None here, so the two never fight. */
 
 /* =================================================================
    0. KEYFRAMES
@@ -329,6 +310,8 @@ ul,ol  { margin: 0; padding: 0; list-style: none; }
 .status-completed { background: rgba(24,169,87,.12);  color: #15803d; border: 1px solid rgba(24,169,87,.3); }
 .status-on-hold   { background: rgba(249,115,22,.1);  color: #c2410c; border: 1px solid rgba(249,115,22,.25); }
 .status-cancelled { background: rgba(214,40,40,.1);   color: var(--out-ink); border: 1px solid rgba(214,40,40,.2); }
+.status-validated { background: rgba(139,92,246,.1);  color: #7c3aed; border: 1px solid rgba(139,92,246,.25); }
+[data-theme="dark"] .status-validated { background: rgba(139,92,246,.2); color: #c4b5fd; }
 
 [data-theme="dark"] .status-pending   { background: rgba(232,163,23,.2); color: #e8a317; }
 [data-theme="dark"] .status-accepted  { background: rgba(59,130,246,.2); color: #93c5fd; }
@@ -547,6 +530,10 @@ textarea.control { resize: vertical; min-height: 90px; }
   transition: transform var(--t-slow) var(--ease);
   overflow-y: auto; overflow-x: hidden;
 }
+/* The sidebar scrolls (wheel, trackpad, touch, keyboard) with no visible
+   bar: any bar on this rounded card ran over its border or looked tacked on. */
+.sidebar { scrollbar-width: none; }
+.sidebar::-webkit-scrollbar { display: none; width: 0; height: 0; }
 
 .sidebar-nav { flex: 1; padding: 14px 12px; }
 
@@ -855,16 +842,7 @@ textarea.control { resize: vertical; min-height: 90px; }
 .nd-mark-all:hover { background: var(--gold-dim); border-color: var(--gold); }
 .nd-list {
   max-height: 380px; overflow-y: auto; background: var(--surface);
-  /* The app-wide auto-hiding scrollbar is defined on `*` at the top of this
-     file; naming it here as well makes the gold thumb show on hover of the
-     LIST rather than only on hover of the thumb itself, which on a 380px
-     panel is the difference between discoverable and not. */
-  scrollbar-width: thin; scrollbar-color: transparent transparent;
 }
-.nd-list:hover { scrollbar-color: var(--gold-line) transparent; }
-.nd-list::-webkit-scrollbar { width: 7px; }
-.nd-list::-webkit-scrollbar-thumb { background: transparent; border-radius: 99px; }
-.nd-list:hover::-webkit-scrollbar-thumb { background: var(--gold-line); }
 .nd-item {
   display: flex; align-items: flex-start; gap: 12px;
   padding: 14px 18px; border-bottom: 1px solid var(--border);
@@ -2118,6 +2096,7 @@ select.filter-select:focus { outline: none; border-color: var(--gold); box-shado
 }
 .modal-overlay.open .modal { transform: none; }
 .modal-lg { max-width: 720px; }
+.modal-xl { max-width: 1120px; }   /* e.g. Return detail: 7 steps on one row */
 
 /* THE TITLE IS CENTRED ON THE DIALOG, NOT ON WHAT IS LEFT OVER.
 
@@ -2230,6 +2209,7 @@ select.filter-select:focus { outline: none; border-color: var(--gold); box-shado
   padding: 20px 26px; border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
+.modal-footer:empty { display: none; }   /* no buttons → no empty band */
 
 /* =================================================================
    10. TOAST
@@ -3087,7 +3067,17 @@ code {
 .cp-list { display:flex; flex-direction:column; gap:10px; }
 .cp-row { display:flex; gap:14px; justify-content:space-between; align-items:flex-start;
   padding:12px; border:1px solid var(--border); border-radius:var(--r-md); }
+/* Card fill + dividers so the summary and each payment stand apart. */
+.cp-summary, .cp-row { background: rgba(255,255,255,.72); box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+[data-theme="dark"] .cp-summary, [data-theme="dark"] .cp-row { background: rgba(255,255,255,.04); }
+.cp-summary { padding: 14px 16px; gap: 0; }
+.cp-summary > div { padding: 0 14px; border-left: 1px solid var(--border); }
+.cp-summary > div:first-child { padding-left: 0; border-left: none; }
+.cp-summary > div > .muted { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.cp-row { padding: 14px 16px; border-left: 3px solid var(--ok); }
+.cp-row .cp-amount { padding-bottom: 8px; margin-bottom: 6px; border-bottom: 1px dashed var(--border); }
 .cp-row.cp-pending { border-color: var(--warn); }
+.cp-row.cp-rejected { border-left-color: var(--out); }
 .cp-row.cp-rejected { opacity:.7; }
 .cp-main { flex:1; min-width:0; }
 .cp-amount { font-weight:700; font-size: var(--fs-md); display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
@@ -3096,3 +3086,113 @@ code {
 .cp-actions { display:flex; gap:8px; margin-top:10px; }
 .cp-reject { margin-top:8px; display:flex; flex-direction:column; gap:8px; }
 .cp-shot img { width:120px; max-height:160px; object-fit:cover; border-radius:8px; display:block; }
+
+/* ---- Brand logo in the sidebar (replaces the fish mark + name) ---- */
+.sidebar-brand .brand-logo { height: 44px; width: auto; display: block; }
+.admin-app.sidebar-collapsed .sidebar-brand .brand-logo { height: 34px; }
+
+/* Sidebar name: same lockup as the storefront header — Cormorant name,
+   gold spaced "Juris Bay Foods" beneath. */
+.sidebar-brand .name {
+  font-family: "Cormorant Garamond", serif; font-size: 1.45rem; font-weight: 700; line-height: 1;
+}
+.sidebar-brand .name small {
+  display: block; margin-top: 4px;
+  font-family: "Montserrat", sans-serif; font-size: .56rem; font-weight: 600;
+  letter-spacing: .26em; text-transform: uppercase; color: var(--gold);
+}
+.sidebar-brand { gap: 12px; }
+
+/* Online Transactions + Return Module: status tabs on their own row, then
+   search / sort / per-page on a second row starting at the left. Sharing one
+   band squeezed the search box until its placeholder was cut off. */
+.view-toolbar.view-toolbar--stack,
+.view-toolbar.view-toolbar--stack:has(> .view-toolbar-filters) { flex-wrap: wrap; }
+.view-toolbar--stack > .tabs,
+.view-toolbar--stack > .return-tabs { flex: 1 1 100%; }
+.view-toolbar--stack > .view-toolbar-filters {
+  flex: 1 1 100%; margin-left: 0; justify-content: flex-start; flex-wrap: nowrap;
+}
+.view-toolbar--stack > .view-toolbar-filters .search-box { flex: 1 1 360px; max-width: 460px; }
+@media (max-width: 700px) {
+  .view-toolbar--stack > .view-toolbar-filters { flex-wrap: wrap; }
+  .view-toolbar--stack > .view-toolbar-filters .search-box { max-width: none; flex-basis: 100%; }
+}
+
+/* ---- Topbar module search ---- */
+.topbar-search {
+  position: relative; flex: 0 1 420px; margin-left: 14px;
+  display: flex; align-items: center; gap: 8px;
+  height: 40px; padding: 0 10px 0 14px;
+  background: var(--surface-2, var(--bg)); border: 1.5px solid var(--border); border-radius: var(--r-pill);
+  transition: border-color var(--t), box-shadow var(--t);
+}
+.topbar-search:focus-within { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-dim); }
+.topbar-search > svg { width: 16px; height: 16px; color: var(--text-muted); flex: none; }
+.topbar-search input {
+  flex: 1; min-width: 0; border: 0; outline: 0; background: transparent;
+  font-size: var(--fs-sm); color: var(--text);
+}
+.topbar-search input::-webkit-search-cancel-button { display: none; }
+.topbar-search-kbd {
+  flex: none; font: 600 10px/1 "Montserrat", sans-serif; letter-spacing: .04em; color: var(--text-muted);
+  padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface);
+}
+.topbar-search:focus-within .topbar-search-kbd { display: none; }
+.topbar-search-list {
+  position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 60;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg, 0 16px 40px rgba(0,0,0,.18)); padding: 6px; max-height: 360px; overflow-y: auto;
+}
+.tsr-item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%;
+  padding: 9px 12px; border: 0; border-radius: var(--r-md); background: none; cursor: pointer; text-align: left;
+}
+.tsr-item.on, .tsr-item:hover { background: var(--gold-dim); }
+.tsr-label { font-size: var(--fs-sm); font-weight: 700; color: var(--text); }
+.tsr-where { font-size: 11px; color: var(--text-muted); letter-spacing: .02em; }
+.tsr-empty { padding: 12px; font-size: var(--fs-sm); color: var(--text-muted); }
+@media (max-width: 760px) {
+  .topbar-search { flex: 1 1 auto; margin-left: 8px; }
+  .topbar-search-kbd { display: none; }
+}
+/* Solid, not glass: the portal's glass theme made the list see-through over
+   the dashboard cards. Fixed colours per theme so the results stay readable. */
+.topbar-search-list {
+  background: #FFFDF8 !important;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  opacity: 1; border-color: rgba(232,163,23,.35);
+  box-shadow: 0 18px 44px rgba(40,24,6,.22);
+}
+:root[data-theme="dark"] .topbar-search-list { background: #1B1812 !important; border-color: rgba(232,163,23,.3); }
+.tsr-item.on, .tsr-item:hover { background: rgba(232,163,23,.16); }
+
+/* ---- Topbar refresh ---- */
+.topbar-refresh svg { width: 18px; height: 18px; }
+.topbar-refresh.is-spinning svg { animation: tbSpin .7s linear infinite; }
+@keyframes tbSpin { to { transform: rotate(360deg); } }
+
+/* ---- Role matrix: "All permissions" master switch ---- */
+.role-toggle-row.role-all {
+  margin: 4px 0 10px; padding: 12px 14px; border-radius: var(--r-md);
+  background: rgba(232,163,23,.10); border: 1px solid rgba(232,163,23,.35);
+}
+.role-all > span:first-child { display: flex; flex-direction: column; gap: 2px; }
+.role-all strong { font-size: var(--fs-sm); color: var(--text); }
+.role-all small { font-size: 11px; color: var(--text-muted); }
+/* Some-but-not-all on: a half-lit track so the state reads at a glance. */
+.role-all input:indeterminate + .switch-track { background: rgba(232,163,23,.45); }
+.role-head-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* ---- Product Reviews as a table ---- */
+.rev-table td { vertical-align: top; padding-top: 14px; padding-bottom: 14px; }
+.rev-td-rating { white-space: nowrap; }
+.rev-td-main { min-width: 280px; max-width: 520px; }
+.rev-td-main .rev-card-product { font-weight: 700; color: var(--text); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.rev-td-comment {
+  margin-top: 6px; padding: 8px 12px; border-left: 3px solid var(--gold); border-radius: 8px;
+  background: rgba(232,163,23,.07); color: var(--text); white-space: pre-wrap; word-break: break-word;
+}
+.rev-td-main .rev-card-nocomment, .rev-td-main .rev-card-reason { margin: 6px 0 0; }
+.rev-td-email { font-size: .78rem; }
+.rev-table .td-actions { flex-wrap: wrap; }

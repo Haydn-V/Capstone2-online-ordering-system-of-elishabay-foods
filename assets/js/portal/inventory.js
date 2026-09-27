@@ -810,15 +810,28 @@ function paintAdjustPreview(container){
     .filter(b => type === "disposal" ? b.remainingQty > 0 : true)
     .sort((a, b) => String(a.expiryDate).localeCompare(String(b.expiryDate)));
 
+  const today = new Date(); today.setHours(0, 0, 0, 0);
   const rows = lots.map(b => {
     const isSel = b.lotCode === lot;
     const left  = type === "disposal" && isSel ? Math.max(0, b.remainingQty - qty) : b.remainingQty;
+    /* How full the lot is, and how soon it expires — the two things that
+       decide which lot a disposal should come out of. */
+    const pct   = b.totalQty ? Math.max(0, Math.min(100, Math.round(left / b.totalQty * 100))) : 0;
+    const days  = b.expiryDate ? Math.round((new Date(b.expiryDate + "T00:00:00") - today) / 864e5) : null;
+    const tone  = days == null ? "" : days < 0 ? "is-expired" : days <= 30 ? "is-soon" : days <= 90 ? "is-near" : "is-ok";
+    const when  = days == null ? "" : days < 0 ? `expired ${-days}d ago` : days === 0 ? "today" : `in ${days}d`;
     return `<tr class="${isSel ? "is-selected" : ""}">
       <td class="mono">${escHtml(b.lotCode)}${isSel ? ` <span class="badge badge-warn">selected</span>` : ""}</td>
-      <td class="num-cell">${isSel && type === "disposal" && qty
-        ? `<span class="adj-lot-was">${b.remainingQty}</span><span class="adj-lot-arrow" aria-hidden="true">→</span>${left}`
-        : b.remainingQty}</td>
-      <td class="num-cell muted">${escHtml(fmtDate(b.expiryDate))}</td>
+      <td class="num-cell">
+        <div class="adj-lot-qty">${isSel && type === "disposal" && qty
+          ? `<span class="adj-lot-was">${b.remainingQty}</span><span class="adj-lot-arrow" aria-hidden="true">→</span><b>${left}</b>`
+          : `<b>${b.remainingQty}</b>`}${b.totalQty ? `<span class="adj-lot-of">/ ${b.totalQty}</span>` : ""}</div>
+        ${b.totalQty ? `<div class="adj-lot-bar"><i style="width:${pct}%"></i></div>` : ""}
+      </td>
+      <td class="num-cell">
+        <div class="adj-lot-date">${escHtml(fmtDate(b.expiryDate))}</div>
+        ${when ? `<span class="adj-lot-when ${tone}">${when}</span>` : ""}
+      </td>
     </tr>`;
   }).join("");
 
@@ -830,14 +843,21 @@ function paintAdjustPreview(container){
   const cover = inv.daysCover == null ? null : inv.daysCover;
   const risk  = inv.expiryRisk;
 
+  const IC = {
+    cover: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
+    move:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/></svg>',
+    lots:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8l9 5 9-5z"/><path d="m3 16 9 5 9-5M3 12l9 5 9-5"/></svg>',
+  };
+  const moveTone = /fast/i.test(inv.movementLabel || "") ? "is-good" : /slow|dead|no/i.test(inv.movementLabel || "") ? "is-warn" : "";
   const facts = [
-    { k: "Days of cover", v: cover == null ? "—" : `${cover}`,
+    { ic: IC.cover, k: "Days of cover", v: cover == null ? "—" : `${cover}`,
       hint: cover == null ? "Nothing has sold in the measured window." : `At the current rate. A restock takes ${inv.leadDays ?? "—"}.` },
-    { k: "Movement", v: inv.movementLabel || "—",
+    { ic: IC.move, tone: moveTone, k: "Movement", v: inv.movementLabel || "—",
       hint: inv.perMonth != null ? `About ${inv.perMonth} a month.` : "" },
-    { k: "Lots on record", v: String(lots.length), hint: "" },
-  ].map(f => `<div class="adj-prev-fact"${f.hint ? ` title="${escHtml(f.hint)}"` : ""}>
-      <span>${f.k}</span><b>${escHtml(f.v)}</b>
+    { ic: IC.lots, k: "Lots on record", v: String(lots.length), hint: "" },
+  ].map(f => `<div class="adj-prev-fact ${f.tone || ""}"${f.hint ? ` title="${escHtml(f.hint)}"` : ""}>
+      <span class="adj-prev-fact-ic" aria-hidden="true">${f.ic}</span>
+      <div><span>${f.k}</span><b>${escHtml(f.v)}</b></div>
     </div>`).join("");
 
   body.innerHTML = `
@@ -849,7 +869,7 @@ function paintAdjustPreview(container){
       <span class="badge ${si.cls}"${si.reason ? ` title="${escHtml(si.reason)}"` : ""}>${escHtml(si.label)}</span>
     </div>
 
-    <div class="adj-prev-figures">
+    <div class="adj-prev-figures ${type === "disposal" ? "is-out" : "is-in"}">
       <div class="adj-prev-fig">
         <span>On hand now</span>
         <b>${p.stock.toLocaleString()}</b>
@@ -861,6 +881,7 @@ function paintAdjustPreview(container){
         <span>After this ${type === "disposal" ? "disposal" : "return"}</span>
         <b>${over ? "—" : Math.max(0, after).toLocaleString()}</b>
       </div>
+      ${qty && !over ? `<span class="adj-prev-delta">${type === "disposal" ? "−" : "+"}${qty.toLocaleString()} unit${qty === 1 ? "" : "s"}</span>` : ""}
     </div>
 
     ${over ? `<div class="adj-prev-warn">

@@ -352,3 +352,58 @@
      and nothing else. */
   .inv-action-btn  { --pill-py: 7px; --pill-px: 12px; --pill-fs: var(--fs-xs); }
 }
+
+/* ---- "What this affects" — refreshed layout ---- */
+.adj-prev-product {
+  padding: 14px 16px; border-radius: var(--r-md);
+  background: linear-gradient(135deg, rgba(232,163,23,.10), transparent 70%);
+  border: 1px solid rgba(232,163,23,.25);
+}
+/* Before -> after: tinted by direction, with the change as a pill. */
+.adj-prev-figures { position: relative; align-items: center; }
+.adj-prev-figures.is-out { background: linear-gradient(90deg, transparent, rgba(214,40,40,.06)); }
+.adj-prev-figures.is-in  { background: linear-gradient(90deg, transparent, rgba(24,169,87,.07)); }
+.adj-prev-figures.is-out .adj-prev-fig:last-of-type b { color: #c0392b; }
+.adj-prev-figures.is-in  .adj-prev-fig:last-of-type b { color: #1e9e57; }
+.adj-prev-arrow {
+  width: 34px; height: 34px; border-radius: 50%; align-items: center; justify-content: center;
+  background: var(--surface); border: 1px solid var(--border); flex: none;
+}
+.adj-prev-arrow svg { width: 16px; height: 16px; }
+.adj-prev-delta {
+  margin-left: auto; align-self: center; padding: 6px 12px; border-radius: 999px;
+  font-weight: 800; font-size: var(--fs-sm); letter-spacing: .02em; white-space: nowrap;
+}
+.is-out .adj-prev-delta { color: #c0392b; background: rgba(214,40,40,.10); border: 1px solid rgba(214,40,40,.25); }
+.is-in  .adj-prev-delta { color: #1e9e57; background: rgba(24,169,87,.10); border: 1px solid rgba(24,169,87,.25); }
+
+/* Fact tiles: icon + label/value, movement tinted. */
+.adj-prev-fact { flex-direction: row !important; align-items: center; gap: 12px; }
+.adj-prev-fact > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.adj-prev-fact-ic {
+  width: 36px; height: 36px; flex: none; border-radius: 10px; display: grid; place-items: center;
+  background: rgba(232,163,23,.13); color: #b7791f;
+}
+.adj-prev-fact-ic svg { width: 17px; height: 17px; }
+.adj-prev-fact.is-good .adj-prev-fact-ic { background: rgba(24,169,87,.12); color: #1e9e57; }
+.adj-prev-fact.is-good b { color: #1e9e57; }
+.adj-prev-fact.is-warn .adj-prev-fact-ic { background: rgba(214,120,20,.14); color: #c26a0d; }
+.adj-prev-fact.is-warn b { color: #c26a0d; }
+
+/* Lots: remaining bar + expiry countdown. */
+.adj-lot-table td { vertical-align: middle; }
+.adj-lot-qty { display: inline-flex; align-items: baseline; gap: 4px; justify-content: flex-end; }
+.adj-lot-qty b { font-weight: 800; color: var(--text); }
+.adj-lot-of { font-size: .72rem; color: var(--text-muted); }
+.adj-lot-bar { width: 90px; height: 5px; margin: 5px 0 0 auto; border-radius: 99px; background: rgba(120,100,60,.15); overflow: hidden; }
+.adj-lot-bar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #e8a317, #f0b429); }
+.adj-lot-date { color: var(--text); }
+.adj-lot-when {
+  display: inline-block; margin-top: 4px; padding: 1px 8px; border-radius: 999px;
+  font-size: .68rem; font-weight: 700; letter-spacing: .02em;
+}
+.adj-lot-when.is-ok      { color: #1e9e57; background: rgba(24,169,87,.10); }
+.adj-lot-when.is-near    { color: #b7791f; background: rgba(232,163,23,.14); }
+.adj-lot-when.is-soon    { color: #c26a0d; background: rgba(214,120,20,.16); }
+.adj-lot-when.is-expired { color: #c0392b; background: rgba(214,40,40,.12); }
+.adj-lot-table tbody tr:nth-child(even):not(.is-selected) > td { background: rgba(120,100,60,.035); }

@@ -9,6 +9,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="../../assets/css/public/styles.css" />
     <link rel="stylesheet" href="../../assets/css/public/profile.css" />
+      <!-- Theme before first paint: Light / Dark / System (no flash). -->
+    <script src="../../assets/js/theme.js"></script>
+    <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   </head>
   <body>
 
@@ -16,11 +19,7 @@
     <header class="nav scrolled" id="nav">
       <div class="nav-inner">
         <a href="../index.html" class="brand" aria-label="Elisha Bay home">
-          <svg class="mark" id="brand-mark" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <circle cx="22" cy="22" r="21" fill="rgba(232,163,23,0.08)"/>
-            <ellipse cx="20" cy="22" rx="12" ry="8" stroke="#e8a317" stroke-width="1.8" fill="rgba(232,163,23,0.07)"/>
-            <path d="M37 17L32 22L37 27" stroke="#e8a317" stroke-width="1.8" stroke-linecap="butt" stroke-linejoin="round"/>
-          </svg>
+          <img class="brand-logo" src="../../assets/img/logo.webp" alt="Elisha Bay — Every mouthful is delightful!" width="495" height="386" decoding="async">
           <span class="name">Elisha&nbsp;Bay<small>Juris Bay Foods</small></span>
         </a>
 
@@ -130,29 +129,36 @@
                    rather than built as one innerHTML string so the page has a
                    shape before the request lands, and so a panel that fails to
                    fill degrades on its own instead of blanking the dashboard. -->
+              <!-- Welcome banner: greeting + the three places people go next. -->
+              <div class="db-hero">
+                <div class="db-hero-text">
+                  <span class="db-hero-kicker" id="db-hello">Welcome back</span>
+                  <h2 class="db-hero-title" id="db-hero-name">Your account</h2>
+                  <p class="db-hero-sub">Track deliveries, check payments and reorder your favourites.</p>
+                </div>
+                <div class="db-hero-actions">
+                  <a class="db-quick db-quick-main" href="../shop.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg><span>Shop now</span></a>
+                </div>
+              </div>
+
               <div class="db-stats" id="db-stats"></div>
 
               <div class="db-grid">
-                <section class="db-panel db-panel-track" aria-labelledby="db-track-h">
-                  <div class="db-panel-head">
-                    <h2 class="db-panel-title" id="db-track-h">Order Tracking</h2>
-                    <a class="db-panel-link" href="my-orders.html">All orders</a>
-                  </div>
-                  <div class="db-panel-body" id="db-tracking"></div>
-                </section>
-
+                <!-- Order Tracking is a popup now: click an order number in
+                     Recent Orders (assets/js/public/order-track.js). -->
                 <section class="db-panel db-panel-pay" aria-labelledby="db-pay-h">
                   <div class="db-panel-head">
-                    <h2 class="db-panel-title" id="db-pay-h">Payment History</h2>
-                    <a class="db-panel-link hide" href="my-payments.html" id="db-pay-link">All payments</a>
+                    <h2 class="db-panel-title" id="db-pay-h"><span class="db-panel-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></span>Payment History</h2>
+                    <a class="db-panel-link hide" href="my-payments.html" id="db-pay-link">All payments <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
+                    <a class="db-panel-link" href="history.html" id="db-pay-hist">View all <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
                   </div>
                   <div class="db-panel-body" id="db-payments"></div>
                 </section>
 
                 <section class="db-panel db-panel-recent" aria-labelledby="db-recent-h">
                   <div class="db-panel-head">
-                    <h2 class="db-panel-title" id="db-recent-h">Recent Orders</h2>
-                    <a class="db-panel-link" href="my-orders.html">View all</a>
+                    <h2 class="db-panel-title" id="db-recent-h"><span class="db-panel-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18M16 10a4 4 0 0 1-8 0"/></svg></span>Recent Orders</h2>
+                    <a class="db-panel-link" href="my-orders.html">View all <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
                   </div>
                   <div class="db-panel-body" id="db-recent"></div>
                 </section>
@@ -170,6 +176,7 @@
     <script defer src="../../assets/js/public/address-picker.js"></script>
     <script defer src="../../assets/js/public/site.js"></script>
     <script defer src="../../assets/js/public/profile-shell.js"></script>
+    <script defer src="../../assets/js/public/order-track.js"></script>
     <script>
     /* WRAPPED IN AN IIFE, and it has to be.
 
@@ -206,10 +213,6 @@
        palette for the same seven statuses would mean an order that is amber on
        one page and orange on the next. */
     const statusClass = st => "status-" + String(st).replace(" ", "-");
-    const STEP_LABEL = {
-      pending: "Placed", accepted: "Accepted", shipping: "Shipping",
-      delivered: "Delivered", completed: "Completed",
-    };
     const PAY_LABEL = {
       cash: "Cash", gcash: "GCash", bank: "Bank Transfer",
       net30: "Net 30", net60: "Net 60", net90: "Net 90",
@@ -269,66 +272,14 @@
       const wrap = document.getElementById("db-stats");
       wrap.className = "db-stats " + (d.credit ? "db-stats-credit" : "db-stats-plain");
       wrap.innerHTML = tiles.map(t => `
-        <div class="db-stat db-stat-${t.key}${t.quiet ? " db-stat-quiet" : ""}">
+        <a href="${t.key === "owed" || t.key === "overdue" ? "my-payments.html" : "my-orders.html"}" class="db-stat db-stat-${t.key}${t.quiet ? " db-stat-quiet" : ""}">
           <span class="db-stat-ic" aria-hidden="true">${t.icon}</span>
           <div class="db-stat-body">
             <span class="db-stat-label">${esc(t.label)}</span>
             <strong class="db-stat-value">${esc(String(t.value))}</strong>
             <span class="db-stat-hint">${esc(t.hint)}</span>
           </div>
-        </div>`).join("");
-    }
-
-    /* ---------- ORDER TRACKING -----------------------------------------
-       One order — the most recent that has not finished — as a step track.
-       The sequence and which step is current both come from the server, so
-       adding a status does not mean editing an order hardcoded in a template. */
-    function renderTracking(d) {
-      const box = document.getElementById("db-tracking");
-      const t = d.tracking;
-
-      if (!t) {
-        box.innerHTML = `
-          <div class="db-empty">
-            <span class="db-empty-ic" aria-hidden="true">${ICON.box}</span>
-            <p><strong>No orders in progress</strong></p>
-            <p>When you place one, you can follow it from here —<br>from confirmation through to delivery.</p>
-            <a class="btn btn-primary" href="../shop.html">Browse the shop</a>
-          </div>`;
-        return;
-      }
-
-      const steps = t.steps.map(s => `
-        <li class="db-step${s.done ? " is-done" : ""}${s.now ? " is-now" : ""}">
-          <span class="db-step-dot" aria-hidden="true"></span>
-          <span class="db-step-label">${esc(STEP_LABEL[s.key] || s.key)}</span>
-        </li>`).join("");
-
-      box.innerHTML = `
-        <div class="db-track-head">
-          <div>
-            <a class="db-track-id" href="my-orders.html">#${esc(t.id)}</a>
-            <div class="db-track-meta">
-              ${EbFormat.fmtDateTime(t.placedAt)} ·
-              ${t.orderType === "delivery" ? "Delivery" : "Pickup"} ·
-              ${peso(t.total)}
-            </div>
-          </div>
-          <span class="order-status ${statusClass(t.status)}">${esc(STATUS_LABEL[t.status] || t.status)}</span>
-        </div>
-
-        <ol class="db-steps">${steps}</ol>
-
-        ${t.held ? `
-          <div class="db-note db-note-warn">
-            This order is <strong>on hold</strong>. Our team will contact you — it has not been cancelled.
-          </div>` : ""}
-
-        ${t.trackingNumber ? `
-          <div class="db-note">
-            <strong>Tracking number:</strong> <span class="mono">${esc(t.trackingNumber)}</span><br>
-            <small>Track it on your courier's own site — we do not read updates from their system.</small>
-          </div>` : ""}`;
+        </a>`).join("");
     }
 
     /* ---------- PAYMENT HISTORY ----------------------------------------
@@ -343,6 +294,7 @@
     function renderPayments(d) {
       const box = document.getElementById("db-payments");
       document.getElementById("db-pay-link").classList.toggle("hide", d.paymentsKind !== "credit");
+      document.getElementById("db-pay-hist").classList.toggle("hide", d.paymentsKind === "credit");
 
       if (!d.payments.length) {
         box.innerHTML = `
@@ -408,10 +360,13 @@
         return;
       }
 
+      /* Each order number drops its tracking open underneath (order-track.js). */
       box.innerHTML = `<ul class="db-list">${d.recentOrders.map(o => `
-        <li class="db-list-row">
+        <li class="db-list-item">
+        <div class="db-list-row">
           <div class="db-list-main">
-            <strong>#${esc(o.id)}</strong>
+            <button type="button" class="db-order-link" data-track="${esc(o.id)}"
+                    title="Track this order">#${esc(o.id)}</button>
             <span class="db-list-sub">${
               /* Named, not counted. "3 items" is not something anyone
                  recognises their own order by. */
@@ -424,7 +379,10 @@
             <span class="db-amt">${peso(o.total)}</span>
             <span class="order-status ${statusClass(o.status)}">${esc(STATUS_LABEL[o.status] || o.status)}</span>
           </div>
+        </div>
+        <div class="ot-drop" data-track-panel="${esc(o.id)}"><div class="ot-drop-inner"></div></div>
         </li>`).join("")}</ul>`;
+      EbOrderTrack.bind(box, id => d.recentOrders.find(o => o.id === id));
     }
 
     function renderLoading() {
@@ -434,7 +392,7 @@
       const wrap = document.getElementById("db-stats");
       wrap.className = "db-stats db-stats-plain";
       wrap.innerHTML = '<div class="db-stat db-stat-skeleton"></div>'.repeat(3);
-      ["db-tracking", "db-payments", "db-recent"].forEach(id => {
+      ["db-payments", "db-recent"].forEach(id => {
         document.getElementById(id).innerHTML = '<div class="db-empty"><p>Loading…</p></div>';
       });
     }
@@ -448,11 +406,10 @@
         /* One failure, said once. Four panels each announcing the same outage
            is four times the noise and no more information. */
         document.getElementById("db-stats").innerHTML = "";
-        document.getElementById("db-tracking").innerHTML =
+        document.getElementById("db-recent").innerHTML =
           `<div class="db-empty"><p><strong>Could not load your dashboard.</strong></p>
            <p>${esc(err.message)}</p></div>`;
         document.getElementById("db-payments").innerHTML = "";
-        document.getElementById("db-recent").innerHTML = "";
         return;
       }
 
@@ -460,8 +417,14 @@
         ? "Your orders, deliveries and credit terms at a glance."
         : "Your orders, deliveries and payments at a glance.";
 
+      /* Greeting by the local hour, first name from the session. */
+      const h = new Date().getHours();
+      document.getElementById("db-hello").textContent =
+        h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+      const full = (typeof state !== "undefined" && state.auth && state.auth.name) || "";
+      document.getElementById("db-hero-name").textContent = full ? full.split(" ")[0] : "Welcome back";
+
       renderStats(d);
-      renderTracking(d);
       renderPayments(d);
       renderRecent(d);
     }

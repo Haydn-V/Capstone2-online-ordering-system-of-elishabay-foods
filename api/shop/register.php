@@ -3,7 +3,10 @@ declare(strict_types=1);
 
 /**
  * POST /api/shop/register.php
- * Body: { "name", "email", "password", "contact"?, "address"? }
+ * Body: { "first_name", "last_name" (or "name"), "email", "password", "contact"?, "address"? }
+ *
+ * STEP 1 OF 2. Validates everything and emails a verification code; it does
+ * NOT create the account. Step 2 is shop/register-verify.php.
  *
  * PUBLIC — customer signup.
  *
@@ -37,6 +40,17 @@ require __DIR__ . '/../core/bootstrap.php';
 Response::requireMethod('POST');
 
 $in = Response::input();
+
+/* First + last name (the current form). `name` becomes "first last" so the
+   rest of this file, and every screen that reads customers.name, is unchanged. */
+$nameErrors = [];
+$nm = CustomerName::fromInput($in, $nameErrors);
+if ($nameErrors) {
+    Response::validation('Check the highlighted fields.', $nameErrors);
+}
+if ($nm !== null) {
+    $in['name'] = $nm['full'];
+}
 
 $data = Validate::check($in)
     ->required('name', 'Your name')
@@ -82,6 +96,8 @@ $existing = Database::one(
 /* One rule, one hash — see Auth::hashPassword. */
 $hash = Auth::hashPassword($data['password']);
 
+/* Refused now rather than after the code, so nobody verifies an email only to
+   be told it is taken. Checked again at verification — see register-verify.php. */
 if ($existing !== null) {
     if ($existing['password'] !== null) {
         /* Deliberately explicit rather than vague: this address is one the
@@ -92,56 +108,18 @@ if ($existing !== null) {
     if ($existing['status'] === 'archived') {
         Response::forbidden('That account is no longer active. Please contact us.');
     }
-
-    Database::run(
-        'UPDATE customers SET password = ?, name = ?, contact = COALESCE(?, contact) WHERE id = ?',
-        [$hash, $data['name'], $contact, $existing['id']]
-    );
-    /* An address given at sign-up replaces the record's; none given leaves
-       whatever the record already had. Written as one set of columns, never
-       column by column — a new barangay beside an old city is not an address. */
-    if ($addrCols) {
-        Database::run(
-            'UPDATE customers SET ' . implode(', ', array_map(static fn($c) => "$c = ?", array_keys($addrCols)))
-            . ' WHERE id = ?',
-            [...array_values($addrCols), $existing['id']]
-        );
-    }
-    $id = $existing['id'];
-    $claimed = true;
-} else {
-    /* cus-11, cus-12 … continuing the seeded sequence. */
-    $n = (int) Database::scalar(
-        "SELECT COALESCE(MAX(CAST(SUBSTRING(id, 5) AS UNSIGNED)), 0) FROM customers WHERE id LIKE 'cus-%'"
-    );
-    $id = sprintf('cus-%02d', $n + 1);
-
-    $cols = ['id', 'name', 'email', 'password', 'contact', 'status', ...array_keys($addrCols)];
-    Database::run(
-        'INSERT INTO customers (' . implode(', ', $cols) . ', joined)
-         VALUES (' . implode(', ', array_fill(0, count($cols), '?')) . ', CURDATE())',
-        [$id, $data['name'], $data['email'], $hash, $contact, 'active', ...array_values($addrCols)]
-    );
-    $claimed = false;
 }
 
-/* Sign them straight in — being made to log in immediately after signing up is
-   a pointless extra step. */
-$customer = Auth::attemptCustomer($data['email'], $data['password']);
-
-Response::created([
-    'customer' => [
-        'id'      => $customer['id'],
-        'name'    => $customer['name'],
-        'email'   => $customer['email'],
-        'contact' => $customer['contact'],
-        /* Always 'active' for a genuinely new account, but NOT for one that
-           claimed an existing customer row — a seeded retailer registering for
-           the first time keeps their status, and the page has to know. See the
-           note in shop/login.php. */
-        'status'  => $customer['status'] ?? null,
-    ],
-    'csrf' => Csrf::token(),
-    /* So the page can say "welcome back, we found your previous orders". */
-    'claimedExistingRecord' => $claimed,
-]);
+/* EMAIL VERIFICATION. Nothing is written to the database here: the validated
+   sign-up is held in the session (password as its hash only) and a 6-digit
+   code is emailed. shop/register-verify.php creates the account once the code
+   is confirmed. See api/core/Signup.php. */
+Response::ok(Signup::hold([
+    'name'     => $data['name'],
+    'email'    => $data['email'],
+    'hash'     => $hash,
+    'contact'  => $contact,
+    'addrCols' => $addrCols,
+    'first'    => $nm['first'] ?? null,
+    'last'     => $nm['last'] ?? null,
+]));

@@ -48,6 +48,10 @@ const REVIEW_TABS = [
 
 function reviewFilter(){ return adminState.reviewFilter || "pending"; }
 
+/* Client-side paging over the loaded (sorted) list. Back to page 1 whenever
+   the tab, search, sort or page size changes; kept after a moderation reload. */
+const REV_PG = { page: 1, limit: 10, key: "" };
+
 async function loadReviews(){
   const host = $("#rev-content");
   if(host) host.innerHTML = `<p class="field-hint" style="padding:18px">Loading reviews…</p>`;
@@ -58,6 +62,8 @@ async function loadReviews(){
       limit: 100,
     });
     REVIEWS = data || [];
+    const key = reviewFilter() + "|" + ($("#rev-search")?.value || "").trim();
+    if(key !== REV_PG.key){ REV_PG.key = key; REV_PG.page = 1; }
     REVIEW_COUNTS = meta?.counts || REVIEW_COUNTS;
     reviewsLoaded = true;
     renderReviews();
@@ -154,39 +160,65 @@ function renderReviews(){
     return;
   }
 
-  host.innerHTML = `<div class="rev-cards">` + REVIEWS.map(r=>{
+  /* One row per review, in the portal's standard table. The review text sits
+     under the product in the same cell; hold / rejection notes follow it. */
+  /* Sort (client-side: the whole filtered list is already loaded). Ties
+     fall back to newest first so the order never looks random. */
+  const sortKey = $("#rev-sort")?.value || "newest";
+  if(!$("#rev-sort")?.dataset.wired && $("#rev-sort")){
+    $("#rev-sort").dataset.wired = "1";
+    $("#rev-sort").addEventListener("change", ()=>{ REV_PG.page = 1; renderReviews(); });
+  }
+  const sizeSel = $("#rev-page-size");
+  if(sizeSel && !sizeSel.dataset.wired){
+    sizeSel.dataset.wired = "1";
+    sizeSel.value = String(REV_PG.limit);
+    sizeSel.addEventListener("change", ()=>{ REV_PG.limit = Number(sizeSel.value) || 10; REV_PG.page = 1; renderReviews(); });
+  }
+  const byDate = (a, b) => String(b.date).localeCompare(String(a.date));
+  const cmp = {
+    newest:   byDate,
+    oldest:   (a, b) => -byDate(a, b),
+    high:     (a, b) => (b.rating - a.rating) || byDate(a, b),
+    low:      (a, b) => (a.rating - b.rating) || byDate(a, b),
+    product:  (a, b) => String(a.product_name).localeCompare(String(b.product_name)) || byDate(a, b),
+    customer: (a, b) => String(a.customer_name).localeCompare(String(b.customer_name)) || byDate(a, b),
+  }[sortKey] || byDate;
+  const sorted = [...REVIEWS].sort(cmp);
+  const pages = Math.max(1, Math.ceil(sorted.length / REV_PG.limit));
+  if(REV_PG.page > pages) REV_PG.page = pages;
+  const rows = sorted.slice((REV_PG.page - 1) * REV_PG.limit, REV_PG.page * REV_PG.limit);
+
+  host.innerHTML = `<div class="table-wrap rev-table-wrap"><table class="data-table rev-table">
+    <thead><tr>
+      <th>Rating</th><th>Product &amp; review</th><th>Customer</th><th>Order</th>
+      <th>Date</th><th>Status</th><th>Actions</th>
+    </tr></thead><tbody>` + rows.map(r=>{
     /* The evidence as it stands TODAY. A review whose order was later
        cancelled is not automatically wrong, but a moderator should not have
        to open another screen to find that out. */
     const orderOdd = r.order_status && r.order_status !== "completed";
     return `
-    <article class="rev-card" data-rev="${r.id}">
-      <header class="rev-card-head">
-        ${reviewStarsRow(r.rating)}
-        <span class="rev-card-product">${escHtml(r.product_name)}</span>
-        ${r.product_archived ? `<span class="rev-chip">Archived product</span>` : ""}
-        <span class="rev-card-status rev-card-status-${r.status}">${REVIEW_STATUS_LABEL[r.status]}</span>
-      </header>
-
-      <p class="rev-card-meta">
-        ${escHtml(r.customer_name)} · ${escHtml(r.customer_email)} ·
-        order <span class="mono">${escHtml(r.order_id)}</span>
-        ${orderOdd ? `<span class="rev-chip rev-chip-warn">Order is now ${escHtml(r.order_status)}</span>` : ""}
-        · ${EbFormat.fmtDateTime(r.date)}${r.edited ? " · edited" : ""}
-      </p>
-
-      ${r.comment
-        ? `<blockquote class="rev-card-body">${escHtml(r.comment)}</blockquote>`
-        : `<p class="rev-card-nocomment">Rating only — no comment was left.</p>`}
-
-      ${r.hold_reason ? holdNote(r.hold_reason) : ""}
-
-      ${r.reject_reason ? `<p class="rev-card-reason">
-        <b>Reason given:</b> ${escHtml(r.reject_reason)}
-        ${r.moderator ? ` — ${escHtml(r.moderator)}, ${EbFormat.fmtDateTime(r.moderated_at)}` : ""}
-      </p>` : ""}
-
-      <footer class="rev-card-actions">
+    <tr data-rev="${r.id}">
+      <td class="rev-td-rating">${reviewStarsRow(r.rating)}</td>
+      <td class="rev-td-main">
+        <div class="rev-card-product">${escHtml(r.product_name)}
+          ${r.product_archived ? `<span class="rev-chip">Archived product</span>` : ""}</div>
+        ${r.comment
+          ? `<div class="rev-td-comment">${escHtml(r.comment)}</div>`
+          : `<div class="rev-card-nocomment">Rating only — no comment was left.</div>`}
+        ${r.hold_reason ? holdNote(r.hold_reason) : ""}
+        ${r.reject_reason ? `<p class="rev-card-reason">
+          <b>Reason given:</b> ${escHtml(r.reject_reason)}
+          ${r.moderator ? ` — ${escHtml(r.moderator)}, ${EbFormat.fmtDateTime(r.moderated_at)}` : ""}
+        </p>` : ""}
+      </td>
+      <td><div class="td-name">${escHtml(r.customer_name)}</div><div class="muted rev-td-email">${escHtml(r.customer_email)}</div></td>
+      <td><span class="mono">${escHtml(r.order_id)}</span>
+        ${orderOdd ? `<div><span class="rev-chip rev-chip-warn">Order is now ${escHtml(r.order_status)}</span></div>` : ""}</td>
+      <td class="muted">${EbFormat.fmtDateTime(r.date)}${r.edited ? "<div>edited</div>" : ""}</td>
+      <td><span class="rev-card-status rev-card-status-${r.status}">${REVIEW_STATUS_LABEL[r.status]}</span></td>
+      <td><div class="td-actions">
         ${r.status === "pending" ? `
           <button class="btn btn-sm btn-gold" data-rev-act="publish" data-id="${r.id}">Publish</button>
           <button class="btn btn-sm btn-ghost" data-rev-act="reject" data-id="${r.id}">Reject…</button>` : ""}
@@ -194,9 +226,15 @@ function renderReviews(){
           <button class="btn btn-sm btn-ghost" data-rev-act="unpublish" data-id="${r.id}">Unpublish…</button>` : ""}
         ${r.status === "rejected" ? `
           <button class="btn btn-sm btn-gold" data-rev-act="publish" data-id="${r.id}">Publish</button>` : ""}
-      </footer>
-    </article>`;
-  }).join("") + `</div>`;
+      </div></td>
+    </tr>`;
+  }).join("") + `</tbody></table></div>
+    <div class="table-toolbar" style="margin-top:14px">
+      <span class="muted" id="rev-showing" style="font-size:.82rem"></span>
+      <div class="pagination" id="rev-pagination" style="margin-left:auto"></div>
+    </div>`;
+  EbPaginate.render("rev", { page: REV_PG.page, limit: REV_PG.limit, total: sorted.length, pages },
+    p => { REV_PG.page = p; renderReviews(); });
 
   host.querySelectorAll("[data-rev-act]").forEach(btn=>{
     btn.addEventListener("click", ()=> moderateReview(btn.dataset.revAct, Number(btn.dataset.id), btn));

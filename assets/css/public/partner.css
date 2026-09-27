@@ -175,9 +175,23 @@
    Putting it on the wrapper cannot go wrong that way: the wrapper is hidden
    whole for a signed-in applicant (.hide is display:none), so the rule goes
    with it and nothing is left floating above the first thing on the form. */
-#pf-credentials {
-  margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border);
+/* Numbered sections: a divider and a header between each group. */
+#partner-form { counter-reset: pfsec; }
+.pf-sec { counter-increment: pfsec; padding: 26px 0 6px; border-top: 1px solid var(--border); }
+.pf-sec:first-of-type { border-top: 0; padding-top: 8px; }
+.pf-sec-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
+.pf-sec-num {
+  flex: none; width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: color-mix(in srgb, var(--gold) 16%, transparent); color: var(--gold);
+  font: 700 var(--fs-sm) "Montserrat", sans-serif;
 }
+.pf-sec-num::before { content: counter(pfsec); }
+.pf-sec-title {
+  margin: 0; font: 700 var(--fs-base) "Montserrat", sans-serif; letter-spacing: .02em; color: var(--text);
+}
+.pf-sec-desc { margin: 3px 0 0; font-size: var(--fs-sm); color: var(--text-muted); }
+#partner-form > .btn-block { margin-top: 18px; }
 .pf-group-label {
   font-family: "Montserrat","Karla",sans-serif;
   font-size: var(--fs-sm); font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
@@ -213,10 +227,10 @@
 .pf-account-note strong { font-weight: 700; }
 
 /* Larger, more legible fields than the compact auth-modal defaults,
-   with colored labels so each field is easy to pick out at a glance */
-.partner-form-card .auth-field { margin-bottom: 20px; }
+   with bold labels; required ones end in a red * (theme.js) */
+.partner-form-card .auth-field { margin-bottom: 16px; }
 .partner-form-card .auth-field label {
-  font-size: var(--fs-sm); font-weight: 700; color: var(--red);
+  font-size: var(--fs-sm); font-weight: 700; color: var(--text);
   margin-bottom: 9px;
 }
 .partner-form-card .auth-input { font-size: var(--fs-lg); padding: 15px 14px 15px 44px; }

@@ -129,10 +129,6 @@ if ($track !== null) {
        'on-hold' is not a step. It is a pause on the first one, reported through
        `held` so the page can say so without inventing a stage in the journey
        that the order does not actually pass through. */
-    $sequence = ['pending', 'accepted', 'shipping', 'delivered', 'completed'];
-    $current  = $track['status'] === 'on-hold' ? 'pending' : $track['status'];
-    $reached  = array_search($current, $sequence, true);
-
     $tracking = [
         'id'             => $track['id'],
         'status'         => $track['status'],
@@ -142,15 +138,7 @@ if ($track !== null) {
         'placedAt'       => $track['datetime'],
         'trackingNumber' => $track['tracking_number'],
         'deliveredAt'    => $track['delivered_at'],
-        'steps'          => array_map(
-            static fn(string $st, int $i): array => [
-                'key'   => $st,
-                'done'  => $reached !== false && $i < $reached,
-                'now'   => $reached !== false && $i === $reached,
-            ],
-            $sequence,
-            array_keys($sequence)
-        ),
+        'steps'          => Orders::trackingSteps($track['status']),
     ];
 }
 
@@ -158,7 +146,7 @@ if ($track !== null) {
    Recent orders — five, with enough to recognise them by
    ------------------------------------------------------------------ */
 $recent = Database::all(
-    'SELECT id, status, order_type, method, total, date, datetime
+    'SELECT id, status, order_type, method, total, date, datetime, tracking_number
        FROM orders WHERE customer_id = ?
       ORDER BY datetime DESC LIMIT 5',
     [$customerId]
@@ -193,6 +181,10 @@ $recentOrders = array_map(static fn(array $o): array => [
     'placedAt'   => $o['datetime'],
     'itemCount'  => $itemCount[$o['id']] ?? 0,
     'firstItem'  => $firstItem[$o['id']] ?? null,
+    /* Everything the tracking popup needs, so it opens without a request. */
+    'held'           => $o['status'] === 'on-hold',
+    'trackingNumber' => $o['tracking_number'],
+    'steps'          => Orders::trackingSteps($o['status']),
 ], $recent);
 
 /* ------------------------------------------------------------------

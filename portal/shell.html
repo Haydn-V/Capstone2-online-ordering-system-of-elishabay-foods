@@ -28,115 +28,6 @@
        ============================================================ -->
   </head>
   <body>
-    <!-- ===== LOGIN VIEW ===== -->
-    <div id="login-view" class="login-view">
-      <div class="login-card">
-        <div class="login-brand">
-          <svg
-            class="mark"
-            viewBox="0 0 44 44"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            aria-hidden="true"
-          >
-            <circle cx="22" cy="22" r="21" fill="rgba(232,163,23,0.08)" />
-            <ellipse
-              cx="20"
-              cy="22"
-              rx="12"
-              ry="8"
-              stroke="#e8a317"
-              stroke-width="1.8"
-              fill="rgba(232,163,23,0.07)"
-            />
-            <path
-              d="M37 17L32 22L37 27"
-              stroke="#e8a317"
-              stroke-width="1.8"
-              stroke-linecap="butt"
-              stroke-linejoin="round"
-            />
-          </svg>
-          <div class="name">Elisha Bay<small>Staff Portal</small></div>
-        </div>
-        <div class="login-eyebrow">Staff Access</div>
-        <h2 class="login-title">Sign In</h2>
-        <div class="login-error" id="login-error" role="alert"></div>
-        <form id="login-form" novalidate>
-          <div class="field">
-            <label for="login-email">Email Address</label>
-            <input
-              id="login-email"
-              name="email"
-              type="email"
-              class="control"
-              placeholder="admin@elishabay.ph"
-              autocomplete="email"
-              required
-            />
-            <span class="field-error" id="err-email"></span>
-          </div>
-          <div class="field">
-            <label for="login-pw">Password</label>
-            <div class="pw-wrap">
-              <input
-                id="login-pw"
-                name="password"
-                type="password"
-                class="control"
-                placeholder="Enter password"
-                autocomplete="current-password"
-                required
-              />
-              <button
-                type="button"
-                class="pw-toggle"
-                id="pw-toggle"
-                aria-label="Toggle password visibility"
-              >
-                <svg
-                  id="eye-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              </button>
-            </div>
-            <span class="field-error" id="err-pw"></span>
-          </div>
-          <button
-            type="submit"
-            class="btn btn-gold btn-block"
-            id="login-btn"
-            style="margin-top: 8px"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path
-                d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"
-              />
-            </svg>
-            Sign In
-          </button>
-        </form>
-        <p class="login-footer">
-          Elisha Bay · Juris Bay Foods, Inc. &copy; 2025
-        </p>
-      </div>
-    </div>
-
     <!-- ===== ADMIN APP ===== -->
     <div id="admin-app" class="admin-app hide">
       <!-- ── Unified top bar (brand + role + actions, spans full width) ── -->
@@ -157,7 +48,21 @@
             <path d="M3 12h18M3 6h18M3 18h18" />
           </svg>
         </button>
+        <!-- Module search: finds any screen in the sidebar the user can open
+             (engine.js, "TOPBAR SEARCH"). Ctrl+K focuses it. -->
+        <div class="topbar-search" id="topbar-search" role="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          <input type="search" id="topbar-search-input" placeholder="Search modules…" autocomplete="off"
+                 aria-label="Search modules" aria-controls="topbar-search-list" aria-expanded="false" />
+          <kbd class="topbar-search-kbd" aria-hidden="true">Ctrl K</kbd>
+          <div class="topbar-search-list" id="topbar-search-list" role="listbox" hidden></div>
+        </div>
         <div class="topbar-actions">
+          <!-- Reload this screen's data in place (engine.js, "TOPBAR REFRESH"). -->
+          <button class="icon-btn topbar-refresh" id="topbar-refresh" type="button"
+                  aria-label="Refresh this page" title="Refresh">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/></svg>
+          </button>
           <div class="topbar-notif" id="topbar-notif">
             <button
               class="icon-btn notif-btn"
@@ -308,35 +213,8 @@
       <aside class="sidebar" id="sidebar" aria-label="Admin navigation">
 
         <div class="sidebar-brand">
-          <svg
-            class="mark"
-            viewBox="0 0 44 44"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            aria-hidden="true"
-          >
-            <circle cx="22" cy="22" r="21" fill="rgba(232,163,23,0.08)" />
-            <ellipse
-              cx="20"
-              cy="22"
-              rx="12"
-              ry="8"
-              stroke="#e8a317"
-              stroke-width="1.8"
-              fill="rgba(232,163,23,0.07)"
-            />
-            <path
-              d="M37 17L32 22L37 27"
-              stroke="#e8a317"
-              stroke-width="1.8"
-              stroke-linecap="butt"
-              stroke-linejoin="round"
-            />
-          </svg>
-          <!-- No caption under the name. It said "Admin Panel" to every role,
-               including an Inventory Staff member who is not in one, and the
-               header already says who is signed in and as what. -->
-          <div class="name">Elisha Bay</div>
+          <img class="brand-logo" src="../../assets/img/logo.webp" alt="Elisha Bay — Every mouthful is delightful!" width="495" height="386" decoding="async">
+          <div class="name">Elisha&nbsp;Bay<small>Juris Bay Foods</small></div>
         </div>
 
         <nav class="sidebar-nav" aria-label="Modules">

@@ -354,6 +354,15 @@ INSERT INTO product_returns (id, order_id, customer_id, customer_name, email, ph
   ('RET-20260614-001', 'ORD-20260612-001', NULL, 'Lorna Mendez', 'lmendez@email.ph', '09201122334', 'bg-sundri', 1, 'BT-20260410-E', '2026-06-12', 'Received wrong flavor — ordered Sundried got Adobo', 'rejected', '2026-06-13 14:00:00', 0, 0, NULL, NULL, 'Batch code matches original order. No wrong-flavor variance on record for this batch.'),
   ('RET-20260613-001', 'ORD-20260614-002', NULL, 'Marco Dela Cruz', 'mdelacruz@email.ph', '09276543210', 'db-pesto', 1, 'BT-20260405-F', '2026-06-14', 'Foreign object found inside jar — small plastic fragment', 'processed', '2026-06-12 09:00:00', 1, 290, 'gcash', 'Refund ₱290 sent via GCash 09276543210', NULL);
 
+-- Each seeded return as a one-item request (see migration 016).
+INSERT INTO product_return_items (return_id, product_id, qty, unit_price, batch_code)
+SELECT r.id, r.product_id, r.qty,
+       COALESCE((SELECT oi.price_at_purchase FROM order_items oi
+                  WHERE oi.order_id = r.order_id AND oi.product_id = r.product_id LIMIT 1),
+                r.refund_amount / NULLIF(r.qty, 0), 0),
+       r.batch_code
+  FROM product_returns r;
+
 /* ---------- NOTIFICATIONS ---------- */
 /* `priority` is spelled out per row rather than left to the column default,
    so a freshly seeded database and one migrated by 010 sort identically. The

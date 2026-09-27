@@ -204,7 +204,7 @@ async function loadPortal() {
   if (!root) return;                       // legacy page — engine.js self-inits
 
   try {
-    /* 1. shell — provides #login-view, #admin-app, sidebar, #main-content */
+    /* 1. shell — provides #admin-app, sidebar, #main-content */
     root.textContent = "";
     appendFragment(root, await fetchText(PORTAL_BASE + "shell.html"));
 

@@ -163,6 +163,14 @@ if (isset($in['address']) && is_array($in['address'])) {
     ];
 }
 
+/* First + last name (My Profile). Joined into `name`, which the block below
+   validates and saves as before; the halves are stored after the update. */
+$nm = CustomerName::fromInput($in, $errors);
+if ($nm !== null) {
+    if (isset($errors['first_name']) || isset($errors['last_name'])) unset($in['name']);
+    else $in['name'] = $nm['full'];
+}
+
 /* Name. Saves immediately — getting it wrong is an inconvenience, not a route
    to taking the account over. Email is handled above, behind a code. */
 if (array_key_exists('name', $in)) {
@@ -192,6 +200,9 @@ if ($fields !== []) {
     $params[] = $customer['id'];
 
     Database::run("UPDATE customers SET $set WHERE id = ?", $params);
+    if ($nm !== null && isset($fields['name'])) {
+        CustomerName::write($customer['id'], $nm['first'], $nm['last']);
+    }
 }
 
 /* No audit row.
@@ -376,7 +387,8 @@ function profilePayload(array $row): array
     $line  = Address::compose($a);
     $hasAny = $line !== '' || $row['addr_barangay_code'] !== null;
 
-    return [
+    /* firstName / lastName: stored halves, or a suggested split (019). */
+    return CustomerName::parts((string) $row['id'], (string) $row['name']) + [
         'id'      => $row['id'],
         'name'    => $row['name'],
         'email'   => $row['email'],

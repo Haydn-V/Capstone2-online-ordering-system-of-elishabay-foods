@@ -68,6 +68,8 @@ DROP TABLE IF EXISTS faqs;
 DROP TABLE IF EXISTS site_content;
 DROP TABLE IF EXISTS product_reviews;
 DROP TABLE IF EXISTS notifications;
+DROP TABLE IF EXISTS customer_notifications;
+DROP TABLE IF EXISTS product_return_items;
 DROP TABLE IF EXISTS product_returns;
 DROP TABLE IF EXISTS credit_payments;
 DROP TABLE IF EXISTS payment_accounts;
@@ -171,6 +173,10 @@ CREATE TABLE users (
     id VARCHAR(50) NOT NULL,
     role_id INT NULL, 
     name VARCHAR(100) NOT NULL,
+    /* Migration 019: the halves the sign-up / My Profile forms edit; `name`
+       is kept equal to "first last". */
+    first_name VARCHAR(60) NULL,
+    last_name  VARCHAR(60) NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
     avatar VARCHAR(10) NULL,
@@ -301,6 +307,9 @@ CREATE TABLE orders (
        is optional and every writer guards on hasTable(), so a rule that
        depended on it would silently stop running on a base install. */
     delivered_at DATETIME NULL,
+    /* When the order reached `completed` — starts the customer's 24-hour
+       return window (migration 016). */
+    completed_at DATETIME NULL,
     status ENUM('pending', 'on-hold', 'accepted', 'shipping', 'delivered', 'completed', 'cancelled') DEFAULT 'pending',
     notes TEXT NULL,
     pay_verified TINYINT(1) DEFAULT 0,
@@ -528,11 +537,20 @@ CREATE TABLE product_returns (
     batch_code VARCHAR(50) NULL,
     purchase_date DATE NOT NULL,
     reason TEXT NOT NULL,
+    proof_image VARCHAR(255) NULL,           /* customer's photo (016) */
+    scope ENUM('whole','items') NOT NULL DEFAULT 'items',
+    /* Where the customer wants the money (017). GCash or bank only. */
+    refund_pref ENUM('gcash','bank') NULL,
+    refund_account_name VARCHAR(100) NULL,
+    refund_account_number VARCHAR(50) NULL,
+    refund_bank_name VARCHAR(100) NULL,
+    refund_qr VARCHAR(255) NULL,
     status ENUM('received','validated','eligible','ineligible','approved','rejected','processed') DEFAULT 'received',
     received_date DATETIME NOT NULL,
     eligibility TINYINT(1) NULL,   /* NULL = not yet assessed */
     refund_amount DECIMAL(10, 2) DEFAULT 0.00,
     refund_method VARCHAR(50) NULL,
+    refund_receipt VARCHAR(255) NULL,        /* staff's transfer screenshot (017) */
     notes TEXT NULL,
     rejected_reason TEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -547,6 +565,23 @@ CREATE TABLE product_returns (
 
 CREATE INDEX idx_returns_order ON product_returns(order_id);
 CREATE INDEX idx_returns_status ON product_returns(status);
+
+/* The lines of a return request (016). product_returns is the request; its
+   product_id/qty hold the first item and the total units for older queries. */
+CREATE TABLE product_return_items (
+    id INT AUTO_INCREMENT NOT NULL,
+    return_id VARCHAR(50) NOT NULL,
+    product_id VARCHAR(50) NOT NULL,
+    qty INT NOT NULL,
+    unit_price DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+    batch_code VARCHAR(50) NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_rti_return FOREIGN KEY (return_id)
+        REFERENCES product_returns(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_rti_product FOREIGN KEY (product_id)
+        REFERENCES products(id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE INDEX idx_rti_return ON product_return_items(return_id);
 
 /* Notification bell feed. Exactly one of order_id / return_id / product_id is
    set depending on type; audit-type rows carry none of them. */
@@ -621,3 +656,22 @@ CREATE TABLE product_reviews (
     CONSTRAINT fk_review_moderator FOREIGN KEY (moderated_by)
         REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+/* The customer's own notification bell (018). */
+CREATE TABLE customer_notifications (
+    id INT AUTO_INCREMENT NOT NULL,
+    customer_id VARCHAR(50) NOT NULL,
+    type ENUM('order','payment','return') NOT NULL,
+    title VARCHAR(120) NOT NULL,
+    message VARCHAR(500) NOT NULL,
+    link VARCHAR(255) NULL,          /* page inside public/, e.g. profile/my-orders.html */
+    order_id VARCHAR(50) NULL,
+    return_id VARCHAR(50) NULL,
+    is_read TINYINT(1) NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_cn_customer FOREIGN KEY (customer_id)
+        REFERENCES customers(id) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE INDEX idx_cn_customer ON customer_notifications(customer_id, is_read, created_at);

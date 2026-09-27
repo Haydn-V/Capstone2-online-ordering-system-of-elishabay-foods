@@ -12,19 +12,18 @@
 
 <link rel="stylesheet" href="../assets/css/public/styles.css" />
 <link rel="stylesheet" href="../assets/css/public/partner.css" />
-</head>
+    <!-- Theme before first paint: Light / Dark / System (no flash). -->
+    <script src="../assets/js/theme.js"></script>
+    <link rel="icon" type="image/png" href="../assets/img/favicon.png" />
+  </head>
 <body>
 
 <!-- ===== NAVBAR ===== -->
 <header class="nav" id="nav">
   <div class="nav-inner">
     <a href="index.html" class="brand" aria-label="Elisha Bay home">
-      <svg class="mark" id="brand-mark" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <circle cx="22" cy="22" r="21" fill="rgba(232,163,23,0.08)"/>
-        <ellipse cx="20" cy="22" rx="12" ry="8" stroke="#e8a317" stroke-width="1.8" fill="rgba(232,163,23,0.07)"/>
-        <path d="M37 17L32 22L37 27" stroke="#e8a317" stroke-width="1.8" stroke-linecap="butt" stroke-linejoin="round"/>
-      </svg>
-      <span class="name">Elisha&nbsp;Bay<small>Juris Bay Foods</small></span>
+      <img class="brand-logo" src="../assets/img/logo.webp" alt="Elisha Bay — Every mouthful is delightful!" width="495" height="386" decoding="async">
+          <span class="name">Elisha&nbsp;Bay<small>Juris Bay Foods</small></span>
     </a>
 
     <nav class="nav-links" id="navlinks" aria-label="Primary">
@@ -165,6 +164,10 @@
             </div>
 
             <form id="partner-form" novalidate>
+              <!-- Five numbered sections (CSS counter, so the hidden credentials
+                   section never leaves a gap in the numbering). -->
+              <section class="pf-sec">
+              <div class="pf-sec-head"><span class="pf-sec-num" aria-hidden="true"></span><div><h4 class="pf-sec-title">Business Information</h4><p class="pf-sec-desc">Your registered store and tax details.</p></div></div>
               <div class="auth-field">
                 <label for="pf-company">Registered Company / Store Name *</label>
                 <div class="auth-input-group">
@@ -205,11 +208,18 @@
                    a retailer's address is where stock is delivered on credit
                    terms, the last address in the system that should be typed
                    freehand. Every part is required here, street and ZIP included. -->
+              </section>
+
+              <section class="pf-sec">
+              <div class="pf-sec-head"><span class="pf-sec-num" aria-hidden="true"></span><div><h4 class="pf-sec-title">Business Address</h4><p class="pf-sec-desc">Where we deliver your wholesale stock.</p></div></div>
               <fieldset class="auth-addr">
-                <legend class="auth-addr-legend">Complete Business Address *</legend>
+                <legend class="sr-only">Complete Business Address</legend>
                 <div id="bp-addr-host"></div>
               </fieldset>
+              </section>
 
+              <section class="pf-sec">
+              <div class="pf-sec-head"><span class="pf-sec-num" aria-hidden="true"></span><div><h4 class="pf-sec-title">Contact Person</h4><p class="pf-sec-desc">Who we call about orders and deliveries.</p></div></div>
               <div class="pf-row">
                 <div class="auth-field">
                   <label for="pf-contact-name">Contact Person Name *</label>
@@ -245,8 +255,11 @@
                    survives approval untouched. api/b2b/apply.php refuses
                    credentials from a signed-in applicant, which is what makes
                    this hiding true rather than decorative. -->
-              <div id="pf-credentials">
-              <h4 class="pf-group-label">Create Account Credentials</h4>
+              </section>
+
+              <section class="pf-sec" id="pf-credentials">
+              <div class="pf-sec-head"><span class="pf-sec-num" aria-hidden="true"></span><div><h4 class="pf-sec-title">Account Credentials</h4><p class="pf-sec-desc">Your sign-in for the retailer portal once approved.</p></div></div>
+
               <div class="pf-row">
                 <div class="auth-field">
                   <label for="pf-username">Preferred Username *</label>
@@ -266,7 +279,7 @@
                   <span class="field-error" data-err></span>
                 </div>
               </div>
-              </div><!-- /#pf-credentials -->
+              </section><!-- /#pf-credentials -->
 
               <!-- A whole "Wholesale Volume" section used to stand here, and it is gone.
                    It held two fields, removed one at a time:
@@ -280,6 +293,8 @@
                    applications have values in it, and dropping the column would delete
                    that history to save nothing. Nothing writes to it now. -->
 
+              <section class="pf-sec">
+              <div class="pf-sec-head"><span class="pf-sec-num" aria-hidden="true"></span><div><h4 class="pf-sec-title">Additional Notes</h4><p class="pf-sec-desc">Optional — branches, target volume or delivery schedule.</p></div></div>
               <div class="auth-field">
                 <label for="pf-notes">Additional Notes or Target Branches</label>
                 <div class="auth-input-group auth-input-group-ta">
@@ -287,6 +302,8 @@
                   <textarea class="auth-input auth-textarea" id="pf-notes" rows="3" placeholder="Tell us about your branches, target volume, or delivery schedule…"></textarea>
                 </div>
               </div>
+
+              </section>
 
               <button type="submit" class="btn btn-red btn-block">
                 Submit Partnership Application
@@ -307,15 +324,8 @@
     <div class="footer-grid">
       <div class="footer-col-brand">
         <a href="index.html" class="brand brand-footer" aria-label="Elisha Bay home">
-          <svg class="mark" id="footer-mark" viewBox="0 0 44 44" fill="none" aria-hidden="true">
-            <circle cx="22" cy="22" r="21" fill="rgba(232,163,23,0.08)"/>
-            <path d="M10 24c0-6.627 5.373-12 12-12s12 5.373 12 12" stroke="rgba(232,163,23,0.7)" stroke-width="2.2" stroke-linecap="butt" stroke-linejoin="round"/>
-            <path d="M6 24h32" stroke="#e8a317" stroke-width="2" stroke-linecap="butt" stroke-linejoin="round"/>
-            <ellipse cx="22" cy="28" rx="6" ry="4" fill="rgba(232,163,23,0.12)"/>
-            <path d="M16 28c0-3.314 2.686-6 6-6s6 2.686 6 6" stroke="rgba(255,255,255,0.5)" stroke-width="1.6" stroke-linecap="butt" stroke-linejoin="round"/>
-            <path d="M30 24l4-4M30 24l4 4" stroke="#e8a317" stroke-width="1.8" stroke-linecap="butt" stroke-linejoin="round"/>
-          </svg>
-          <span class="name">Elisha&nbsp;Bay</span>
+          <img class="brand-logo" src="../assets/img/logo.webp" alt="Elisha Bay — Every mouthful is delightful!" width="495" height="386" decoding="async">
+          <span class="name">Elisha&nbsp;Bay<small>Juris Bay Foods</small></span>
         </a>
         <p class="footer-motto">"Every Mouthful is Delightful." Premium artisan food from Dagupan City.</p>
       </div>

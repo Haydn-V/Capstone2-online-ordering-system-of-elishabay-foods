@@ -3,9 +3,7 @@
    ================================================================= */
 
 /* Entrance animations */
-.shop-hero    { animation: pageIn .52s cubic-bezier(.22,.61,.36,1) both; }
-.shop-sidebar { animation: pageIn .52s cubic-bezier(.22,.61,.36,1) .1s both; }
-.shop-main    { animation: pageIn .52s cubic-bezier(.22,.61,.36,1) .2s both; }
+/* No staggered entrance: main already fades in (styles.css). */
 
 /* =================================================================
    SHOP HERO — follows theme (matches index hero)

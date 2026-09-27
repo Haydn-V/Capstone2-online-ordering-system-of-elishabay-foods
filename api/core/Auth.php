@@ -199,6 +199,23 @@ final class Auth
         return self::$customer = $c;
     }
 
+    /**
+     * Sign in a customer by id, with no password check. ONLY for a sign-up the
+     * caller has just verified by emailed code (shop/register-verify.php) —
+     * the plain password is never kept, so attemptCustomer() cannot be used.
+     */
+    public static function loginCustomer(string $id): array
+    {
+        $c = Database::one('SELECT id, name, email, contact, status FROM customers WHERE id = ?', [$id]);
+        if ($c === null) {
+            Response::error('SERVER', 'Your account could not be opened. Please sign in.', 500);
+        }
+        session_regenerate_id(true);
+        $_SESSION[self::SESSION_CUSTOMER] = $c['id'];
+        $_SESSION[self::SESSION_TIME] = time();
+        return self::$customer = $c;
+    }
+
     /** The signed-in customer, or null. Re-read each request, like staff. */
     public static function customer(): ?array
     {

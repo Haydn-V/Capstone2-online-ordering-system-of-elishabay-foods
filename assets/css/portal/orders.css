@@ -214,16 +214,12 @@
 /* =================================================================
    PAYMENT VERIFICATION
    ================================================================= */
-.pv-list { display: flex; flex-direction: column; gap: 16px; }
+/* List is a table now; the card opens in the modal from View. */
+.pv-modal-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .pv-card {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-lg); overflow: hidden;
   box-shadow: var(--shadow-sm);
-}
-.pv-card-header {
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  padding: 14px 18px; border-bottom: 1px solid var(--border);
-  background: var(--bg-soft);
 }
 .pv-card-body {
   display: grid; grid-template-columns: 1fr 1fr;
@@ -303,17 +299,33 @@
 /* =================================================================
    ORDER DETAIL VIEW (in modal)
    ================================================================= */
-.order-detail-section { margin-bottom: 18px; }
+/* Each section is its own card so Customer / Items / Payment read as
+   separate blocks instead of one long run of rows. */
+.order-detail-section {
+  margin-bottom: 14px; padding: 14px 18px;
+  background: rgba(255,255,255,.72);
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+.order-detail-section:last-child { margin-bottom: 0; }
+[data-theme="dark"] .order-detail-section { background: rgba(255,255,255,.04); }
 .order-detail-heading {
-  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .12em;
-  text-transform: uppercase; color: var(--text-muted);
-  margin-bottom: 8px; padding-bottom: 6px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--gold-ink);
+  margin: 0 -18px 8px; padding: 0 18px 10px;
   border-bottom: 1px solid var(--border);
+}
+.order-detail-heading::before {
+  content: ""; width: 3px; height: 12px; border-radius: 2px; background: var(--gold);
 }
 .detail-row {
   display: flex; justify-content: space-between; align-items: flex-start;
   gap: 10px; padding: 5px 0; font-size: var(--fs-base);
 }
+.order-detail-section .detail-row { padding: 8px 0; border-bottom: 1px dashed var(--border); }
+.order-detail-section .detail-row:last-child { border-bottom: none; }
+.order-detail-section .detail-row-label { font-weight: 500; }
 .detail-row-label { color: var(--text-muted); flex-shrink: 0; }
 .detail-row-val   { font-weight: 600; text-align: right; }
 
@@ -324,9 +336,10 @@
   border-bottom: 1px solid var(--border);
 }
 .order-item-row:last-child { border-bottom: none; }
-.order-item-name { flex: 1; font-weight: 600; }
-.order-item-qty  { color: var(--text-muted); min-width: 36px; text-align: center; }
-.order-item-sub  { font-weight: 700; min-width: 70px; text-align: right; }
+/* Qty sits right after the name ("Tuyo Delizioso ×2"), price alone on the right. */
+.order-item-name { flex: 0 1 auto; font-weight: 600; }
+.order-item-qty  { color: var(--text-muted); }
+.order-item-sub  { font-weight: 700; min-width: 70px; text-align: right; margin-left: auto; }
 
 .receipt-addr { font-size: var(--fs-sm); color: var(--text-muted); margin-top: 4px; text-align: left; }
 
@@ -384,6 +397,54 @@
   border-bottom: 1px solid var(--border);
 }
 .return-card-body { padding: 16px 18px; }
+/* ---- Return View popup: header strip + one card per concern ---- */
+.ret-detail-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-bottom: 14px;
+}
+.ret-detail-customer { font-size: var(--fs-md); font-weight: 700; }
+.ret-detail-sub { font-size: var(--fs-xs); font-family: var(--font-mono, monospace); margin-top: 2px; }
+.ret-detail-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 32px; }
+@media (max-width: 700px) { .ret-detail-grid { grid-template-columns: 1fr; } }
+.ret-detail-grid > div > .detail-row:last-child { border-bottom: 1px dashed var(--border); }
+@media (min-width: 701px) { .ret-detail-grid > div > .detail-row:last-child { border-bottom: none; } }
+
+/* Stepper: 7 equal columns, number over label, a line joining them. */
+.ret-stepper {
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+  align-items: start;   /* circles on one line whether the label is 1 or 2 lines */
+  margin: 4px 0 0; padding: 4px 0 0; overflow: visible;
+}
+.ret-stepper .return-step {
+  position: relative; flex-direction: column; align-items: center;
+  justify-content: flex-start; gap: 8px;
+  text-align: center; white-space: normal; line-height: 1.35;
+}
+.ret-stepper .step-num { width: 26px; height: 26px; position: relative; z-index: 1; background: var(--surface); }
+.ret-stepper .return-step.done .step-num { background: var(--ok-ink); }
+.ret-stepper .return-step.active .step-num { background: var(--gold); box-shadow: 0 0 0 4px var(--gold-dim); }
+.ret-stepper .return-step:not(:last-child)::after {
+  content: ""; position: absolute; top: 13px; left: calc(50% + 17px); right: calc(-50% + 17px);
+  height: 2px; background: var(--text-muted); opacity: .35;
+}
+.ret-stepper .return-step.done:not(:last-child)::after { background: var(--ok-ink); opacity: 1; }
+.ret-stepper .step-label { padding: 0 4px; }
+@media (max-width: 700px) {
+  .ret-stepper { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 14px; }
+  .ret-stepper .return-step::after { display: none; }
+}
+
+.ret-detail .return-reason { margin-bottom: 8px; }
+.ret-detail .return-reason:last-child { margin-bottom: 0; }
+.ret-detail .return-reason strong {
+  display: block; margin-bottom: 3px; color: var(--text);
+  font-size: var(--fs-2xs); letter-spacing: .08em; text-transform: uppercase;
+}
+.return-reason.staff-notes { border-left-color: var(--ok-ink); }
+.ret-detail-actions {
+  display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;
+  padding-top: 14px; margin-top: 14px; border-top: 1px solid var(--border);
+}
 .return-card-footer {
   padding: 12px 18px; border-top: 1px solid var(--border);
   display: flex; gap: 8px; align-items: center; flex-wrap: wrap;

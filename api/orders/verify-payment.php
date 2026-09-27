@@ -105,6 +105,10 @@ try {
     throw $e;
 }
 
+/* Tell the customer (their bell in the storefront header). After the commit:
+   a notification that fails must never undo the change itself. */
+CustomerNotify::payment($order['id'], $verified);
+
 Response::ok([
     'id'          => $order['id'],
     'payVerified' => $verified,

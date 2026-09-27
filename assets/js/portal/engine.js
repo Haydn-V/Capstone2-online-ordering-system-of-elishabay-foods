@@ -106,6 +106,9 @@ const PERMISSIONS = {
   "orders.accept":                             { area:"Online Orders",  label:"Accept/hold/reject orders, verify payments" },
   "orders.status":                               { area:"Online Orders",  label:"Update order status" },
   "orders.returns":                                { area:"Online Orders",  label:"Process returns & refunds" },
+  /* Was missing here while the database had it (migration 011), so it drew no
+     switch yet counted in "Total Permissions" — Admin showed 13 with 12 on. */
+  "reviews.moderate": { area:"Maintenance",    label:"Moderate customer product reviews" },
 };
 
 /* Roles editable from the Roles & Permissions screen. "Super Admin" is
@@ -119,6 +122,18 @@ const ROLE_PERMISSIONS = {
 
 /* Display metadata (slug badge + blurb) for the Roles & Permissions cards.
    Custom roles created via "Create New Role" get an entry pushed here too. */
+/* Factory permissions of the built-in roles — the same grants db/seed.sql
+   writes. The matrix's "Default" button restores these (then Save Matrix
+   persists them). Custom roles have no default and show no button. */
+const ROLE_DEFAULTS = {
+  "Admin": ["users.manage","b2b.review","landing.manage","products.manage","inventory.report","inventory.manage",
+            "sales.report","batches.manage","payments.manage","transactions.view","audit.view","pos.use",
+            "orders.view","orders.accept","orders.status","orders.returns","reviews.moderate"],
+  "Cashier": ["pos.use","transactions.view","sales.report","payments.manage"],
+  "Inventory Staff": ["inventory.report","inventory.manage","batches.manage","audit.view"],
+  "Online Orders Staff": ["orders.view","orders.accept","orders.status","orders.returns","transactions.view","payments.manage"],
+};
+
 const ROLE_META = {
   "Admin":               { slug:"admin",                 desc:"Full operational access across every module except managing roles & permissions." },
   "Cashier":             { slug:"cashier",              desc:"Walk-in POS sales, payment scheme monitoring, and transaction history." },
@@ -995,12 +1010,12 @@ window.addEventListener("resize", ()=>{
 /* ============================================================
    THEME TOGGLE
    ============================================================ */
+/* #theme-btn opens the Light / Dark / System menu (assets/js/theme.js), which
+   sets data-theme. Charts are drawn with theme colours, so they redraw. */
 function initTheme(){
-  const btn = $("#theme-btn");
-  if(!btn) return;
-  btn.addEventListener("click", ()=>{
-    adminState.theme = adminState.theme === "light" ? "dark" : "light";
-    document.documentElement.setAttribute("data-theme", adminState.theme);
+  window.addEventListener("eb-theme-change", e => {
+    adminState.theme = e.detail.theme;
+    if(typeof redrawCharts === "function") redrawCharts();
   });
 }
 
@@ -1199,6 +1214,12 @@ async function loadAdminData(){
     jobs.push(EbApi.get("roles/list.php").then(r => {
       /* Rebuild the two structures the Roles screen renders from, so the
          matrix reflects role_permissions rather than the old constants. */
+      /* The server's permission list is the authority: add any key this file
+         does not know yet, so a permission added by a migration always gets a
+         switch instead of being counted invisibly. */
+      (r.data.permissions || []).forEach(p => {
+        if(!PERMISSIONS[p.key]) PERMISSIONS[p.key] = { area: p.area, label: p.label, systemOnly: !!p.systemOnly };
+      });
       Object.keys(ROLE_PERMISSIONS).forEach(k => delete ROLE_PERMISSIONS[k]);
       r.data.roles.forEach(role => {
         if(!role.isSystem) ROLE_PERMISSIONS[role.name] = role.permissions;
@@ -1285,7 +1306,6 @@ function applySignedInUser(user){
   adminState.currentUser = user;
 
   const avatar = user.avatar || initials(user.name);
-  $("#login-view").classList.add("hide");
   $("#admin-app").classList.remove("hide");
   $("#sidebar-name").textContent      = user.name;
   $("#sidebar-role").textContent      = user.role;
@@ -1347,71 +1367,18 @@ async function checkSessionAuth(){
 }
 
 /* ============================================================
-   LOGIN
+   SIGN-IN
+   ------------------------------------------------------------
+   Staff sign in on the landing page only. The portal used to carry
+   its own sign-in card as well — left over from testing — which
+   flashed on screen while the session check ran. Now: signed in →
+   the portal opens; not signed in → back to the landing page.
    ============================================================ */
-function initLogin(){
-  /* Already signed in? Skip the login screen. Fires and forgets: the login
-     form below is wired either way, and checkSessionAuth() hides it if the
-     session turns out to be valid. */
-  checkSessionAuth();
+const LANDING_URL = PORTAL_BASE_PATH + "public/index.html";
 
-  const form     = $("#login-form");
-  const errBox   = $("#login-error");
-  const emailEl  = $("#login-email");
-  const pwEl     = $("#login-pw");
-  const pwToggle = $("#pw-toggle");
-  const eyeIcon  = $("#eye-icon");
-
-  const eyeHide = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20C5 20 1 12 1 12a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>';
-  const eyeShow = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-
-  pwToggle.addEventListener("click", ()=>{
-    const hidden = pwEl.type === "password";
-    pwEl.type = hidden ? "text" : "password";
-    eyeIcon.innerHTML = hidden ? eyeHide : eyeShow;
-  });
-
-  form.addEventListener("submit", async e=>{
-    e.preventDefault();
-    const email = emailEl.value.trim();
-    const pw    = pwEl.value;
-    $("#err-email").textContent = "";
-    $("#err-pw").textContent    = "";
-    errBox.classList.remove("show");
-
-    let valid = true;
-    if(!email){ $("#err-email").textContent = "Email is required."; valid=false; }
-    if(!pw)   { $("#err-pw").textContent    = "Password is required."; valid=false; }
-    if(!valid) return;
-
-    /* Disabled for the duration so a double-click cannot fire two logins,
-       and so the button reflects that something is happening. */
-    const btn = $("#login-btn");
-    const label = btn ? btn.textContent : "";
-    if(btn){ btn.disabled = true; btn.textContent = "Signing in…"; }
-
-    try {
-      /* The password leaves the browser and is checked against a bcrypt hash
-         in MySQL. It is never compared here, and no credential list exists in
-         this file any more. portalRole() makes the server refuse an account
-         that belongs to a different portal. */
-      const user = await EbSession.login(email, pw, portalRole());
-      applySignedInUser(user);
-      await loadCatalog();
-      navigate("dashboard");
-    } catch(err){
-      /* Field-level messages where the server gave them, one banner otherwise. */
-      if(err.fields && err.fields.email)    $("#err-email").textContent = err.fields.email;
-      if(err.fields && err.fields.password) $("#err-pw").textContent    = err.fields.password;
-      if(!err.fields || (!err.fields.email && !err.fields.password)){
-        errBox.textContent = err.message;
-        errBox.classList.add("show");
-      }
-      pwEl.value = "";
-    } finally {
-      if(btn){ btn.disabled = false; btn.textContent = label; }
-    }
-  });
+async function initLogin(){
+  const ok = await checkSessionAuth();
+  if(!ok) window.location.replace(LANDING_URL);
 }
 
 /* ============================================================
@@ -1478,6 +1445,9 @@ function syncNavHighlight(mod, tab){
   });
 }
 
+/* Passed as navigate()'s intent by the topbar Refresh: re-render in place
+   WITHOUT enterModule(), so the screen's search, filters and page survive. */
+const NAV_REFRESH = "__refresh";
 function navigate(mod, tab, intent){
   /* deactivate all panels and nav items */
   /* permission guard — bounce to dashboard if this mod isn't granted
@@ -1503,7 +1473,8 @@ function navigate(mod, tab, intent){
   /* Arriving resets the destination's filters, then applies whatever this
      particular navigation asked for. Both happen BEFORE the render, because
      the render is what reads them. */
-  enterModule(mod, intent);
+  const isRefresh = intent === NAV_REFRESH;
+  if(!isRefresh) enterModule(mod, intent);
 
   /* render the module */
   const renders = {
@@ -1543,7 +1514,7 @@ function navigate(mod, tab, intent){
      finally immediately after, so a render that reads navIntent() sees it and
      nothing later can. The finally matters: a render that throws must not
      leave the intent standing for the next navigation to pick up. */
-  NAV_INTENT = intent || null;
+  NAV_INTENT = isRefresh ? null : (intent || null);
   try {
     if(renders[mod]) renders[mod]();
   } finally {
@@ -2475,6 +2446,7 @@ function renderCustomers(){
       page, limit,
       search: $("#search-customers")?.value || null,
       status: ($("#filter-customers")?.value === "all" ? null : $("#filter-customers")?.value) || null,
+      sort: $("#cust-sort")?.value || "name",
     }),
     c => `
     <tr class="${c.status==="archived"?"archived":""}">
@@ -2514,6 +2486,10 @@ function renderCustomers(){
   if($("#search-customers") && !$("#search-customers").dataset.wired){
     $("#search-customers").dataset.wired = "1";
     $("#search-customers").addEventListener("input", debounce(reset, 300));
+  }
+  if($("#cust-sort") && !$("#cust-sort").dataset.wired){
+    $("#cust-sort").dataset.wired = "1";
+    $("#cust-sort").addEventListener("change", reset);
   }
   if($("#filter-customers") && !$("#filter-customers").dataset.wired){
     $("#filter-customers").dataset.wired = "1";
@@ -2914,19 +2890,31 @@ function openViewAppModal(a){
         ${a.requestedTerms ? `<span class="badge badge-info">${escHtml(a.requestedTerms)} requested</span>` : ""}
         ${a.tier ? tierBadge(a.tier) : ""}
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
-        <p style="font-size:.88rem"><strong>Applicant:</strong><br>${escHtml(a.applicantName)}</p>
-        <p style="font-size:.88rem"><strong>Business Type:</strong><br>${escHtml(a.businessType)}</p>
-        <p style="font-size:.88rem"><strong>Email:</strong><br>${escHtml(a.email)}</p>
-        <p style="font-size:.88rem"><strong>Phone:</strong><br>${escHtml(a.phone)}</p>
-        <p style="font-size:.88rem"><strong>Submitted:</strong><br>${fmtDate(a.submittedDate)}</p>
-        ${a.requestedTerms ? `<p style="font-size:.88rem"><strong>Requested Terms:</strong><br>${escHtml(a.requestedTerms)}</p>` : ""}
+      <!-- Same card sections as Order Detail (orders.css) so the groups read apart. -->
+      <div class="order-detail-section">
+        <div class="order-detail-heading">Applicant</div>
+        <div class="detail-row"><span class="detail-row-label">Name</span><span class="detail-row-val">${escHtml(a.applicantName)}</span></div>
+        <div class="detail-row"><span class="detail-row-label">Email</span><span class="detail-row-val">${escHtml(a.email)}</span></div>
+        <div class="detail-row"><span class="detail-row-label">Phone</span><span class="detail-row-val">${escHtml(a.phone)}</span></div>
       </div>
-      <div class="field"><label>Application Notes</label><p style="font-size:.88rem;color:var(--text-muted)">${escHtml(a.notes||"—")}</p></div>
-      ${a.status==="rejected" ? `<div class="field"><label>Rejection Reason</label><p style="font-size:.88rem;color:var(--out-ink)">${escHtml(a.reason||"—")}</p></div>` : ""}
+      <div class="order-detail-section">
+        <div class="order-detail-heading">Business</div>
+        <div class="detail-row"><span class="detail-row-label">Business Name</span><span class="detail-row-val">${escHtml(a.businessName)}</span></div>
+        <div class="detail-row"><span class="detail-row-label">Business Type</span><span class="detail-row-val">${escHtml(a.businessType)}</span></div>
+        ${a.requestedTerms ? `<div class="detail-row"><span class="detail-row-label">Requested Terms</span><span class="detail-row-val">${escHtml(a.requestedTerms)}</span></div>` : ""}
+        <div class="detail-row"><span class="detail-row-label">Submitted</span><span class="detail-row-val">${fmtDate(a.submittedDate)}</span></div>
+      </div>
+      <div class="order-detail-section">
+        <div class="order-detail-heading">Application Notes</div>
+        <p style="font-size:.88rem;color:var(--text-muted);margin:0;white-space:pre-wrap">${escHtml(a.notes||"—")}</p>
+      </div>
+      ${a.status==="rejected" ? `<div class="order-detail-section" style="border-left:3px solid var(--out)">
+        <div class="order-detail-heading">Rejection Reason</div>
+        <p style="font-size:.88rem;color:var(--out-ink);margin:0">${escHtml(a.reason||"—")}</p>
+      </div>` : ""}
     `,
     confirmLabel: null,
-    cancelLabel: "Close"
+    cancelLabel: null   /* the header × closes it */
   });
 }
 
@@ -5232,12 +5220,27 @@ function roleCard(role, index, isSuperAdmin){
         <h3>${escHtml(role)}</h3>
         <span class="role-slug-badge">${escHtml(meta.slug)}</span>
       </div>
+      <div class="role-head-actions">
+      ${ROLE_DEFAULTS[role] ? `<button class="btn btn-ghost btn-sm" data-default-role="${escHtml(role)}" title="Restore this role's original permissions">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+        Default
+      </button>` : ""}
       <button class="btn btn-ghost btn-sm" data-save-role="${escHtml(role)}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
         Save Matrix
       </button>
+      </div>
     </div>
     <p class="role-desc">${escHtml(meta.desc)}</p>
+    <!-- Master switch: every permission this role can be given, on or off in
+         one go. Super-Admin-only permissions stay locked either way. -->
+    <label class="role-toggle-row role-all ${isSuperAdmin?"locked":""}">
+      <span><strong>All permissions</strong><small>Turn every permission on or off</small></span>
+      <span class="switch">
+        <input type="checkbox" data-role-all="${escHtml(role)}" ${isSuperAdmin?"checked disabled":""}/>
+        <span class="switch-track"><span class="switch-thumb"></span></span>
+      </span>
+    </label>
     ${modules}
     <div class="role-card-foot">
       <span>Role ID: #${index}</span>
@@ -5250,8 +5253,48 @@ function renderRoles(){
   const roles = ["Super Admin", ...Object.keys(ROLE_PERMISSIONS)];
   $("#roles-matrix").innerHTML = roles.map((role,i)=> roleCard(role, i+1, role==="Super Admin")).join("");
 
-  $$("#roles-matrix input[type=checkbox]:not(:disabled)").forEach(cb=>{
+  /* The master switch reflects "is everything grantable on?", and flipping it
+     sets every grantable switch through their own change handlers below, so the
+     role's list and total stay in step exactly as with single clicks. */
+  const permBoxes = card => [...card.querySelectorAll("input[data-perm-key]:not(:disabled)")];
+  const syncAll = card => {
+    const all = card.querySelector("input[data-role-all]");
+    if(!all || all.disabled) return;
+    const boxes = permBoxes(card);
+    all.checked = boxes.length > 0 && boxes.every(b => b.checked);
+    all.indeterminate = !all.checked && boxes.some(b => b.checked);
+  };
+  $$("#roles-matrix [data-role-card]").forEach(syncAll);
+  /* Default: set each grantable switch to the factory list, through the
+     same change handlers, so the list, the total and the master stay in
+     step. Nothing is stored until Save Matrix. */
+  $$("#roles-matrix [data-default-role]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const card = btn.closest("[data-role-card]");
+      const want = new Set(ROLE_DEFAULTS[btn.dataset.defaultRole] || []);
+      permBoxes(card).forEach(b=>{
+        const on = want.has(b.dataset.permKey);
+        if(b.checked !== on){ b.checked = on; b.dispatchEvent(new Event("change")); }
+      });
+      syncAll(card);
+      toast(`${btn.dataset.defaultRole} reset to default — click Save Matrix to keep it.`, "ok");
+    });
+  });
+
+  $$("#roles-matrix input[data-role-all]:not(:disabled)").forEach(all=>{
+    all.addEventListener("change", ()=>{
+      const card = all.closest("[data-role-card]");
+      const on = all.checked;   /* read once: each box's handler re-syncs `all` */
+      permBoxes(card).forEach(b=>{
+        if(b.checked !== on){ b.checked = on; b.dispatchEvent(new Event("change")); }
+      });
+      syncAll(card);
+    });
+  });
+
+  $$("#roles-matrix input[data-perm-key]:not(:disabled)").forEach(cb=>{
     cb.addEventListener("change", ()=>{
+      syncAll(cb.closest("[data-role-card]"));
       const role = cb.dataset.role;
       const key  = cb.dataset.permKey;
       const list = ROLE_PERMISSIONS[role] || (ROLE_PERMISSIONS[role]=[]);
@@ -5477,3 +5520,102 @@ function init(){
 if (!document.getElementById("portal-root")) {
   document.addEventListener("DOMContentLoaded", init);
 }
+
+
+/* ============================================================
+   TOPBAR SEARCH — jump to any module
+   ------------------------------------------------------------
+   Reads the sidebar itself, so it only ever offers what this role can
+   open (RBAC hides the rest with display:none) and never drifts from the
+   menu. Choosing a result clicks that sidebar button, which is the same
+   path as navigating by hand. Delegated from document because the shell
+   is injected after this file runs.
+   ============================================================ */
+(function(){
+  let items = [], sel = 0;
+  const $in   = () => document.getElementById("topbar-search-input");
+  const $list = () => document.getElementById("topbar-search-list");
+  const clean = el => (el ? el.textContent : "").replace(/\s+/g, " ").trim();
+
+  function collect(){
+    return [...document.querySelectorAll("#sidebar .nav-item[data-mod]")]
+      .filter(b => b.style.display !== "none" && b.closest(".nav-group")?.style.display !== "none")
+      .map(b => {
+        const group  = clean(b.closest(".nav-group")?.querySelector(".nav-group-label"));
+        const parent = b.classList.contains("sub") ? clean(b.closest(".nav-sub-list")?.previousElementSibling) : "";
+        return { btn: b, label: clean(b), where: [group, parent].filter(Boolean).join(" › ") };
+      });
+  }
+  function draw(q){
+    const list = $list(); if(!list) return;
+    q = q.trim().toLowerCase();
+    if(!q){ close(); return; }
+    items = collect().filter(i => (i.label + " " + i.where).toLowerCase().includes(q))
+      .sort((a, b) => a.label.toLowerCase().indexOf(q) - b.label.toLowerCase().indexOf(q))
+      .slice(0, 8);
+    sel = 0;
+    list.innerHTML = items.length
+      ? items.map((i, n) => `<button type="button" class="tsr-item${n === 0 ? " on" : ""}" role="option" data-n="${n}">
+          <span class="tsr-label">${escHtml(i.label)}</span><span class="tsr-where">${escHtml(i.where)}</span></button>`).join("")
+      : `<div class="tsr-empty">No module matches "${escHtml(q)}"</div>`;
+    list.hidden = false;
+    $in()?.setAttribute("aria-expanded", "true");
+  }
+  function close(){
+    const list = $list(); if(list){ list.hidden = true; list.innerHTML = ""; }
+    $in()?.setAttribute("aria-expanded", "false");
+  }
+  function go(n){
+    const it = items[n]; if(!it) return;
+    close(); const inp = $in(); if(inp){ inp.value = ""; inp.blur(); }
+    const sub = it.btn.closest(".nav-sub-list");   /* open a collapsed parent first */
+    if(sub && getComputedStyle(sub).display === "none") sub.previousElementSibling?.click();
+    it.btn.click();
+  }
+  function mark(){
+    $list()?.querySelectorAll(".tsr-item").forEach((b, n) => b.classList.toggle("on", n === sel));
+  }
+
+  document.addEventListener("input", e => { if(e.target.id === "topbar-search-input") draw(e.target.value); });
+  document.addEventListener("focusin", e => { if(e.target.id === "topbar-search-input" && e.target.value) draw(e.target.value); });
+  document.addEventListener("keydown", e => {
+    if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k" && $in()){
+      e.preventDefault(); $in().focus(); $in().select(); return;
+    }
+    if(e.target.id !== "topbar-search-input") return;
+    if(e.key === "ArrowDown"){ e.preventDefault(); sel = Math.min(sel + 1, items.length - 1); mark(); }
+    else if(e.key === "ArrowUp"){ e.preventDefault(); sel = Math.max(sel - 1, 0); mark(); }
+    else if(e.key === "Enter"){ e.preventDefault(); go(sel); }
+    else if(e.key === "Escape"){ close(); e.target.blur(); }
+  });
+  document.addEventListener("mousedown", e => {
+    const hit = e.target.closest?.(".tsr-item");
+    if(hit){ e.preventDefault(); go(Number(hit.dataset.n)); return; }
+    if(!e.target.closest?.("#topbar-search")) close();
+  });
+})();
+
+
+/* ============================================================
+   TOPBAR REFRESH — reload the current screen's data in place
+   ------------------------------------------------------------
+   Re-fetches the shared catalogue, then re-renders the module that is
+   open (its own fetches run again) on the tab it is on. No page reload,
+   so the sidebar, the open module and its filters all stay put.
+   ============================================================ */
+document.addEventListener("click", async e => {
+  const btn = e.target.closest?.("#topbar-refresh");
+  if(!btn || btn.classList.contains("is-spinning")) return;
+  btn.classList.add("is-spinning");
+  btn.disabled = true;
+  try {
+    if(typeof loadCatalog === "function") await loadCatalog();
+    const mod = adminState.currentModule || "dashboard";
+    navigate(mod, TAB_MEMORY[mod]?.() || undefined, NAV_REFRESH);
+    toast("Refreshed.", "ok");
+  } catch(err){
+    toast("Could not refresh: " + (err.message || err), "err");
+  } finally {
+    setTimeout(() => { btn.classList.remove("is-spinning"); btn.disabled = false; }, 500);
+  }
+});

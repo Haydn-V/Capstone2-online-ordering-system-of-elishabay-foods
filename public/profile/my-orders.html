@@ -9,6 +9,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="../../assets/css/public/styles.css" />
     <link rel="stylesheet" href="../../assets/css/public/profile.css" />
+      <!-- Theme before first paint: Light / Dark / System (no flash). -->
+    <script src="../../assets/js/theme.js"></script>
+    <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   </head>
   <body>
 
@@ -16,11 +19,7 @@
     <header class="nav scrolled" id="nav">
       <div class="nav-inner">
         <a href="../index.html" class="brand" aria-label="Elisha Bay home">
-          <svg class="mark" id="brand-mark" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <circle cx="22" cy="22" r="21" fill="rgba(232,163,23,0.08)"/>
-            <ellipse cx="20" cy="22" rx="12" ry="8" stroke="#e8a317" stroke-width="1.8" fill="rgba(232,163,23,0.07)"/>
-            <path d="M37 17L32 22L37 27" stroke="#e8a317" stroke-width="1.8" stroke-linecap="butt" stroke-linejoin="round"/>
-          </svg>
+          <img class="brand-logo" src="../../assets/img/logo.webp" alt="Elisha Bay — Every mouthful is delightful!" width="495" height="386" decoding="async">
           <span class="name">Elisha&nbsp;Bay<small>Juris Bay Foods</small></span>
         </a>
 
@@ -130,16 +129,40 @@
                 <p class="mp-sub">Track and manage all your Elisha Bay purchases.</p>
               </div>
 
-              <div class="mp-tabs" id="order-tabs" role="tablist">
-                <button class="mp-tab active" data-status="all" role="tab">All</button>
-                <button class="mp-tab" data-status="pending" role="tab">Pending</button>
-                <button class="mp-tab" data-status="accepted" role="tab">Accepted</button>
-                <button class="mp-tab" data-status="shipping" role="tab">Shipping</button>
-                <button class="mp-tab" data-status="completed" role="tab">Completed</button>
-                <button class="mp-tab" data-status="cancelled" role="tab">Cancelled</button>
+              <!-- Same layout as History: section tabs, one toolbar card
+                   (status chips | sort · show), the list, then the pager. -->
+              <div class="hist-tabs" id="ord-main-tabs" role="tablist">
+                <button class="hist-tab active" data-main="orders" role="tab" aria-selected="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18M16 10a4 4 0 0 1-8 0"/></svg>
+                  <span>Orders</span><em class="hist-count" id="cnt-orders"></em>
+                </button>
+                <button class="hist-tab" data-main="returns" role="tab" aria-selected="false">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+                  <span>Returns &amp; Refunds</span><em class="hist-count" id="cnt-returns"></em>
+                </button>
+              </div>
+
+              <div class="hist-toolbar">
+                <div class="hist-filters" id="order-tabs"></div>
+                <div class="hist-controls">
+                  <label class="hist-ctl">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
+                    <span class="hist-ctl-label">Sort</span>
+                    <select class="hist-select" id="ord-sort" aria-label="Sort" data-eb-select></select>
+                  </label>
+                  <label class="hist-ctl">
+                    <span class="hist-ctl-label">Show</span>
+                    <select class="hist-select" id="ord-size" aria-label="Rows per page" data-eb-select>
+                      <option value="5">5 per page</option>
+                      <option value="10" selected>10 per page</option>
+                      <option value="20">20 per page</option>
+                    </select>
+                  </label>
+                </div>
               </div>
 
               <div class="orders-list" id="orders-list"></div>
+              <div class="hist-pager" id="ord-pager"></div>
             </div>
 
           </div><!-- /mp-account-layout -->
@@ -153,6 +176,7 @@
     <script defer src="../../assets/js/public/address-picker.js"></script>
     <script defer src="../../assets/js/public/site.js"></script>
     <script defer src="../../assets/js/public/profile-shell.js"></script>
+    <script defer src="../../assets/js/public/order-track.js"></script>
     <script>
     /* ── My Orders page logic ── */
 
@@ -197,7 +221,7 @@
              the rating control can be rendered and pre-filled without a second
              request per item. All four come from shop/my-orders.php. */
           items: o.items.map(i => ({
-            name: i.name, qty: i.qty, price: i.price,
+            name: i.name, qty: i.qty, price: i.price, image: i.image || null,
             productId: i.productId,
             myRating: i.myRating, myComment: i.myComment, myStatus: i.myStatus,
           })),
@@ -206,8 +230,11 @@
              invented here. */
           cancelReason: o.cancelReason || null,
           trackingNumber: o.trackingNumber || null,
+          /* Completed within the last 24 hours — offers "Return / Refund". */
+          returnOpen: !!o.returnOpen,
+          steps: o.steps || [],   /* tracking popup (order-track.js) */
         }));
-        renderOrders(currentFilter);
+        if (currentFilter !== "returns") renderOrders(currentFilter);
       } catch(err){
         if(err.isAuth){
           /* Not signed in — say so and offer the way forward, rather than
@@ -236,12 +263,87 @@
       cancelled: "Cancelled",
     };
 
+    /* ── Paging + sort (client-side; both lists arrive whole) ── */
+    let page = 1, size = 10;
+    const SORTS = {
+      orders:  { newest: "Newest first", oldest: "Oldest first", high: "Total: high to low", low: "Total: low to high" },
+      returns: { newest: "Newest first", oldest: "Oldest first" },
+    };
+    const sortBy = { orders: "newest", returns: "newest" };
+    const mainTab = () => currentFilter === "returns" ? "returns" : "orders";
+    function syncSort() {
+      const t = mainTab();
+      document.getElementById("ord-sort").innerHTML = Object.entries(SORTS[t]).map(([v, l]) =>
+        `<option value="${v}"${v === sortBy[t] ? " selected" : ""}>${l}</option>`).join("");
+    }
+    function sortRows(rows, key) {
+      const k = sortBy[mainTab()];
+      return [...rows].sort((a, b) =>
+        k === "oldest" ? String(a[key]).localeCompare(String(b[key])) :
+        k === "high"   ? (b.total || 0) - (a.total || 0) :
+        k === "low"    ? (a.total || 0) - (b.total || 0) :
+                         String(b[key]).localeCompare(String(a[key])));
+    }
+    /* One page of rows; draws the pager under the list. */
+    function pageRows(rows) {
+      const pager = document.getElementById("ord-pager");
+      const pages = Math.max(1, Math.ceil(rows.length / size));
+      if (page > pages) page = pages;
+      const from = (page - 1) * size;
+      if (!rows.length) { pager.innerHTML = ""; return []; }
+      const nums = [];
+      for (let i = 1; i <= pages; i++) {
+        if (i === 1 || i === pages || Math.abs(i - page) <= 1) nums.push(i);
+        else if (nums[nums.length - 1] !== "…") nums.push("…");
+      }
+      pager.innerHTML = `
+        <span class="hist-showing">Showing ${from + 1}–${Math.min(from + size, rows.length)} of ${rows.length}</span>
+        ${pages > 1 ? `<div class="hist-pages">
+          <button type="button" class="hist-pg" data-pg="${page - 1}" ${page === 1 ? "disabled" : ""} aria-label="Previous page">‹</button>
+          ${nums.map(n => n === "…" ? '<span class="hist-gap">…</span>'
+            : `<button type="button" class="hist-pg${n === page ? " active" : ""}" data-pg="${n}">${n}</button>`).join("")}
+          <button type="button" class="hist-pg" data-pg="${page + 1}" ${page === pages ? "disabled" : ""} aria-label="Next page">›</button>
+        </div>` : ""}`;
+      pager.querySelectorAll("[data-pg]").forEach(b => b.addEventListener("click", () => {
+        page = Number(b.dataset.pg); redraw();
+        document.getElementById("ord-main-tabs").scrollIntoView({ block: "start", behavior: "smooth" });
+      }));
+      return rows.slice(from, from + size);
+    }
+    const redraw = () => currentFilter === "returns" ? renderReturns() : renderOrders(currentFilter);
+
+    /* Status chips with counts (Orders tab), and the two tab counts. */
+    const CHIPS = ["all", "pending", "accepted", "shipping", "completed", "cancelled"];
+    function drawChips() {
+      const el = document.getElementById("order-tabs");
+      if (currentFilter === "returns") { el.innerHTML = ""; return; }
+      const n = f => f === "all" ? MY_ORDERS.length : MY_ORDERS.filter(o => o.status === f).length;
+      el.innerHTML = CHIPS.map(f => `<button type="button" class="hist-chip${f === currentFilter ? " active" : ""}" data-status="${f}">${f === "all" ? "All" : STATUS_LABEL[f]}<span>${n(f)}</span></button>`).join("");
+    }
+    function drawCounts() {
+      document.getElementById("cnt-orders").textContent = MY_ORDERS.length || "";
+      const r = (MY_RETURNS.requests || []).length;
+      const el = document.getElementById("cnt-returns");
+      el.textContent = r || "";
+    }
+    function showMain(which) {
+      document.querySelectorAll("#ord-main-tabs .hist-tab").forEach(t => {
+        const on = t.dataset.main === which;
+        t.classList.toggle("active", on); t.setAttribute("aria-selected", String(on));
+      });
+      page = 1;
+      if (which === "returns") { currentFilter = "returns"; syncSort(); drawChips(); loadReturns(); }
+      else { currentFilter = "all"; syncSort(); renderOrders("all"); }
+    }
+
     function renderOrders(filter = "all") {
       const list = document.getElementById("orders-list");
       currentFilter = filter;
       const filtered = filter === "all"
         ? MY_ORDERS
         : MY_ORDERS.filter(o => o.status === filter);
+      drawChips(); drawCounts();
+      const shown = pageRows(sortRows(filtered, "datetime"));
 
       if (!filtered.length) {
         list.innerHTML = `
@@ -257,15 +359,16 @@
         return;
       }
 
-      list.innerHTML = filtered.map(order => {
+      list.innerHTML = shown.map(order => {
         const statusClass = "status-" + order.status.replace(" ", "-");
         const itemsHTML = order.items.map(item => `
           <div class="order-item">
-            <div class="order-item-img">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".4">
+            <div class="order-item-img">${item.image
+              ? `<img src="${esc(EbFormat.imageUrl(item.image))}" alt="" loading="lazy">`
+              : `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".4">
                 <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
                 <path d="M3 6h18M16 10a4 4 0 0 1-8 0"/>
-              </svg>
+              </svg>`}
             </div>
             <div class="order-item-info">
               <div class="order-item-name">${item.name}</div>
@@ -279,15 +382,18 @@
            nothing was sold, and a Sales Invoice for it would be a document
            recording a sale that did not happen. */
         const actions = getOrderActions(order.status, order.id)
+          + (order.returnOpen
+              ? `<button class="btn-order-action act-return" data-action="return" data-id="${order.id}">${ACT_ICON.ret}Return / Refund</button>`
+              : "")
           + (order.status !== "cancelled"
-              ? `<button class="btn-order-action" data-action="invoice" data-id="${order.id}">View Invoice</button>`
+              ? `<button class="btn-order-action act-invoice" data-action="invoice" data-id="${order.id}">${ACT_ICON.invoice}View Invoice</button>`
               : "");
 
         return `
           <div class="order-card">
             <div class="order-card-head">
               <div>
-                <div class="order-id">Order <strong>#${order.id}</strong></div>
+                <div class="order-id">Order <button type="button" class="order-id-link" data-track="${order.id}" title="Track this order"><strong>#${order.id}</strong></button></div>
                 <!-- order.type was a field the mapper above never produced.
                      It builds orderType (delivery/pickup, straight from
                      shop/my-orders.php), so every card on this page rendered
@@ -297,6 +403,7 @@
               </div>
               <span class="order-status ${statusClass}">${STATUS_LABEL[order.status]}</span>
             </div>
+            <div class="ot-drop ot-drop-card" data-track-panel="${order.id}"><div class="ot-drop-inner"></div></div>
             <div class="order-card-body">
               <div class="order-items">${itemsHTML}</div>
               ${order.trackingNumber && (order.status === "shipping" || order.status === "delivered") ? `
@@ -328,15 +435,19 @@
 
          Both now go through EbApi, which attaches the CSRF header; neither
          claims anything until the server has answered. */
+      /* Order number drops its tracking open; one at a time (order-track.js). */
+      EbOrderTrack.bind(list, id => MY_ORDERS.find(x => x.id === id));
+
       list.querySelectorAll("[data-action]").forEach(btn => {
         btn.addEventListener("click", async () => {
           const action = btn.dataset.action;
           const id = btn.dataset.id;
 
           if (action === "invoice")  { openInvoice(id); return; }
+          if (action === "return")   { openReturnForm(id); return; }
           if (action === "cancel")   { await cancelOrder(id, btn); return; }
           if (action === "received") { await confirmReceived(id, btn); return; }
-          if (action === "reorder")  { showToast(`Items from ${id} added to cart!`, "success"); }
+          if (action === "reorder")  { openReorder(id); return; }
           if (action === "rate") {
             /* Found by id rather than passed through the DOM: the button
                carries an identifier, never a JSON blob of the record. */
@@ -391,8 +502,9 @@
         : "";
       return `<div class="order-item-rate">
         ${stars}${state}
-        <button type="button" class="btn-rate" data-action="rate"
+        <button type="button" class="btn-rate${rated ? " btn-rate-edit" : ""}" data-action="rate"
                 data-product="${esc(item.productId)}">
+          <svg class="btn-rate-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.8L12 17.3 5.8 20.9l1.6-6.8L2.2 8.9l6.9-.6z"/></svg>
           ${rated ? `Edit your rating<span class="sr-only"> of ${esc(item.name)}, currently ${item.myRating} of 5 stars</span>`
                   : `Rate this product<span class="sr-only">: ${esc(item.name)}</span>`}
         </button>
@@ -445,11 +557,20 @@
       const rejected = item.myStatus === "rejected";
 
       const body = `
-        <p class="rate-intro">
-          <strong>${esc(item.name)}</strong><br>
-          Only customers who bought a product can rate it, so this review will
-          show as a verified purchase.
-        </p>
+        <div class="rate-head">
+          <span class="rate-head-ic${item.image ? " has-img" : ""}" aria-hidden="true">
+            ${item.image
+              ? `<img src="${esc(EbFormat.imageUrl(item.image))}" alt="" loading="lazy">`
+              : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18M16 10a4 4 0 0 1-8 0"/></svg>`}
+          </span>
+          <div>
+            <strong>${esc(item.name)}</strong>
+            <span class="rate-verified">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              Verified purchase
+            </span>
+          </div>
+        </div>
         ${held ? `<div class="rate-note rate-note-pending">
           Your last review is waiting to be checked. Ratings are never held for
           being low — only the wording is checked.</div>` : ""}
@@ -611,6 +732,7 @@ Tell us why — this is recorded with the cancellation.`, ""
     }
 
     async function confirmReceived(id, btn) {
+      if (!window.confirm(`Confirm you received order ${id}?\n\nThe order will be marked Completed. You can still request a return within 24 hours.`)) return;
       const restore = busy(btn, "Confirming…");
       try {
         const { data } = await EbApi.post("shop/confirm-received.php", { order_id: id });
@@ -618,6 +740,7 @@ Tell us why — this is recorded with the cancellation.`, ""
         if (o) o.status = data.status;
         renderOrders(currentFilter);
         showToast("Thanks — your order is complete.", "success");
+        loadMyOrders();   /* picks up the new Return / Refund button */
       } catch (err) {
         restore();
         orderActionError(err);
@@ -647,27 +770,526 @@ Tell us why — this is recorded with the cancellation.`, ""
       });
     }
 
+    /* Small icons so each action reads at a glance; colour says what it does
+       (profile.css: .act-*). */
+    const ACT_ICON = {
+      reorder:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.3L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.3L3 16"/><path d="M3 21v-5h5"/></svg>',
+      ret:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
+      invoice:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>',
+      received: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+      cancel:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+      view:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+    };
+
     function getOrderActions(status, id) {
       switch (status) {
         case "pending":
-          return `<button class="btn-order-action danger" data-action="cancel" data-id="${id}">Cancel</button>`;
+          return `<button class="btn-order-action act-cancel" data-action="cancel" data-id="${id}">${ACT_ICON.cancel}Cancel</button>`;
+        /* Shipping too: the parcel can arrive before staff mark it delivered. */
+        case "shipping":
         case "delivered":
-          return `<button class="btn-order-action primary" data-action="received" data-id="${id}">Mark Received</button>`;
+          return `<button class="btn-order-action act-received" data-action="received" data-id="${id}">${ACT_ICON.received}Order Received</button>`;
         case "completed":
-          return `<button class="btn-order-action" data-action="reorder" data-id="${id}">Reorder</button>`;
+          return `<button class="btn-order-action act-reorder" data-action="reorder" data-id="${id}">${ACT_ICON.reorder}Reorder</button>`;
         default:
           return "";
       }
     }
 
+    /* ==========================================================
+       RETURNS & REFUNDS
+       ----------------------------------------------------------
+       A customer may ask for a return up to 24 hours after an order
+       is completed — the whole order, or chosen products and how many.
+       The request needs a reason and a photo, and goes to the staff
+       Return Module, which decides eligibility and pays the refund.
+
+       Presentation only: the window, the quantities and the amount
+       are all re-derived by api/shop/return-request.php.
+       ========================================================== */
+    let MY_RETURNS = { requests: [], eligible: [], windowHours: 24 };
+
+    const PESO = n => "₱" + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+    async function loadReturns() {
+      const list = document.getElementById("orders-list");
+      list.innerHTML = `<div class="orders-empty"><p>Loading your return requests…</p></div>`;
+      try {
+        const { data } = await EbApi.get("shop/returns.php");
+        MY_RETURNS = data;
+        drawCounts();
+        if (currentFilter === "returns") renderReturns();
+      } catch (err) {
+        list.innerHTML = `<div class="orders-empty"><h3>Could not load your returns</h3><p>${esc(err.message)}</p></div>`;
+      }
+    }
+
+    function renderReturns() {
+      const list = document.getElementById("orders-list");
+      const { requests, eligible, windowHours } = MY_RETURNS;
+      const head = `
+        <div class="rr-bar">
+          <div>
+            <div class="rr-bar-title">Return &amp; Refund Requests</div>
+            <div class="rr-bar-sub">Request a return any time within ${windowHours} hours of your order being completed.</div>
+          </div>
+          <button class="btn btn-gold" id="rr-new" ${eligible.length ? "" : "disabled"}
+                  title="${eligible.length ? "" : "No completed orders inside the " + windowHours + "-hour window"}">Request a Return</button>
+        </div>`;
+
+      const shownReq = pageRows(sortRows(requests, "submittedAt"));
+      if (!requests.length) {
+        list.innerHTML = head + `
+          <div class="orders-empty">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>
+            </svg>
+            <h3>No return requests</h3>
+            <p>${eligible.length ? "Something wrong with a recent order? Request a return above."
+                                 : "Orders can be returned within " + windowHours + " hours of being completed."}</p>
+          </div>`;
+      } else {
+        list.innerHTML = head + shownReq.map(r => `
+          <div class="order-card">
+            <div class="order-card-head">
+              <div>
+                <div class="order-id">Request <strong>#${esc(r.id)}</strong></div>
+                <div class="order-date">Order #${esc(r.orderId)} · ${EbFormat.fmtDate(r.submittedAt)} · ${r.scope === "whole" ? "Whole order" : "Selected items"}</div>
+              </div>
+              <span class="order-status status-rr-${r.status}">${esc(r.statusLabel)}</span>
+            </div>
+            <div class="order-card-body">
+              <div class="rr-lines">${r.items.map(i => `
+                <div class="rr-line"><span>${esc(i.name)} <span class="rr-x">×${i.qty}</span></span><span>${PESO(i.subtotal)}</span></div>`).join("")}
+              </div>
+              ${r.status === "rejected" && r.rejectedReason ? `<div class="order-note"><strong>Not accepted:</strong> ${esc(r.rejectedReason)}</div>` : ""}
+            </div>
+            <div class="order-card-foot">
+              <div>
+                <div class="order-total-label">${r.status === "refunded" ? "Refunded" : "Refund Requested"}</div>
+                <div class="order-total-val">${PESO(r.status === "refunded" ? r.refundAmount : r.total)}</div>
+              </div>
+              <div class="order-actions">
+                <button class="btn-order-action ${r.status === "refunded" ? "act-received" : "act-invoice"}" data-rr-view="${esc(r.id)}">${r.status === "refunded" ? ACT_ICON.invoice + "View Receipt" : ACT_ICON.view + "View Details"}</button>
+              </div>
+            </div>
+          </div>`).join("");
+      }
+
+      list.querySelector("#rr-new")?.addEventListener("click", () => openReturnForm());
+      list.querySelectorAll("[data-rr-view]").forEach(b =>
+        b.addEventListener("click", () => openReturnDetail(b.dataset.rrView)));
+    }
+
+    function openReturnDetail(id) {
+      const r = MY_RETURNS.requests.find(x => x.id === id);
+      if (!r) return;
+      const row = (k, v) => `<div class="rr-row"><span>${k}</span><span>${v}</span></div>`;
+      const when = EbFormat.fmtDateTime ? EbFormat.fmtDateTime(r.submittedAt) : EbFormat.fmtDate(r.submittedAt);
+      openModal("Return Request", `
+        <div class="rr-detail">
+          <div class="rr-card">
+            <div class="rr-card-title">Request</div>
+            ${row("Request number", `<span class="rr-num">#${esc(r.id)}</span>`)}
+            ${row("Status", `<span class="order-status status-rr-${r.status}">${esc(r.statusLabel)}</span>`)}
+            ${row("Order number", `<span class="rr-num">#${esc(r.orderId)}</span>`)}
+            ${row("Submitted", esc(when))}
+            ${row("Returning", r.scope === "whole" ? "Whole order" : "Selected items")}
+            ${row("Number of products", `${r.itemCount} ${r.itemCount === 1 ? "item" : "items"}`)}
+          </div>
+          <div class="rr-card">
+            <div class="rr-card-title">Items</div>
+            ${r.items.map(i => `<div class="rr-line"><span>${esc(i.name)} <span class="rr-x">×${i.qty} @ ${PESO(i.unitPrice)}</span></span><span>${PESO(i.subtotal)}</span></div>`).join("")}
+            <div class="rr-line rr-total"><span>Total amount</span><span>${PESO(r.total)}</span></div>
+            ${r.status === "refunded" ? `<div class="rr-line"><span>Refunded${r.refundMethod ? " via " + esc(PAY_LABEL[r.refundMethod] || r.refundMethod) : ""}</span><span>${PESO(r.refundAmount)}</span></div>` : ""}
+          </div>
+          <div class="rr-card">
+            <div class="rr-card-title">Reason</div>
+            <p class="rr-reason">${esc(r.reason)}</p>
+            ${r.status === "rejected" && r.rejectedReason ? `<div class="order-note"><strong>Why it was not accepted:</strong> ${esc(r.rejectedReason)}</div>` : ""}
+          </div>
+          ${r.refundTo ? `<div class="rr-card">
+            <div class="rr-card-title">Refund To</div>
+            ${row("Method", r.refundTo.method === "bank" ? "Bank Transfer" : "GCash")}
+            ${r.refundTo.bankName ? row("Bank", esc(r.refundTo.bankName)) : ""}
+            ${row("Account name", esc(r.refundTo.accountName || "—"))}
+            ${row(r.refundTo.method === "bank" ? "Account number" : "GCash number", esc(r.refundTo.accountNumber || "QR code provided"))}
+          </div>` : ""}
+          ${r.status === "refunded" ? `<div class="rr-card rr-card-ok">
+            <div class="rr-card-title">Refund Receipt</div>
+            ${r.refundReceipt ? `
+              <p class="rr-reason">We sent ${PESO(r.refundAmount)}${r.refundMethod ? " via " + esc(PAY_LABEL[r.refundMethod] || r.refundMethod) : ""}. Here is the transfer receipt:</p>
+              <a href="${esc(EbFormat.imageUrl(r.refundReceipt))}" target="_blank" rel="noopener noreferrer">
+                <img class="rr-proof" src="${esc(EbFormat.imageUrl(r.refundReceipt))}" alt="Refund receipt for ${esc(r.id)}">
+              </a>` : `<p class="rr-reason">Your refund of ${PESO(r.refundAmount)} has been sent.</p>`}
+          </div>` : ""}
+          ${r.proofImage ? `<div class="rr-card">
+            <div class="rr-card-title">Your Photo</div>
+            <a href="${esc(EbFormat.imageUrl(r.proofImage))}" target="_blank" rel="noopener noreferrer">
+              <img class="rr-proof" src="${esc(EbFormat.imageUrl(r.proofImage))}" alt="Photo attached to ${esc(r.id)}">
+            </a>
+          </div>` : ""}
+        </div>`, { wide: true });
+    }
+
+    /* The request form. Opened from the tab (choose an order) or from an order
+       card (that order preselected). */
+    async function openReturnForm(orderId) {
+      /* Fresh numbers every time: what is still returnable changes as requests
+         are filed, and the window closes on its own. */
+      try {
+        const { data } = await EbApi.get("shop/returns.php");
+        MY_RETURNS = data;
+      } catch (err) { showToast(err.message, "info"); return; }
+      const eligible = MY_RETURNS.eligible;
+      if (!eligible.length) {
+        showToast(`No orders can be returned right now — returns must be requested within ${MY_RETURNS.windowHours} hours of an order being completed.`, "info");
+        return;
+      }
+      const start = eligible.find(o => o.id === orderId) || eligible[0];
+      if (orderId && start.id !== orderId) {
+        showToast("Everything on that order is already in a return request.", "info");
+      }
+
+      const timeLeft = m => m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min left` : `${m} min left`;
+
+      openModal("Request a Return & Refund", `
+        <form id="rr-form" class="rr-form" novalidate>
+          <div class="field">
+            <label for="rr-order">Order</label>
+            <select class="control" id="rr-order">
+              ${eligible.map(o => `<option value="${esc(o.id)}" ${o.id === start.id ? "selected" : ""}>#${esc(o.id)} — ${PESO(o.total)} (${timeLeft(o.minutesLeft)})</option>`).join("")}
+            </select>
+          </div>
+
+          <div class="field">
+            <label>What are you returning?</label>
+            <div class="rr-scope" role="radiogroup" aria-label="What are you returning?">
+              <label class="rr-scope-opt"><input type="radio" name="rr-scope" value="whole" checked><span>Whole order</span></label>
+              <label class="rr-scope-opt"><input type="radio" name="rr-scope" value="items"><span>Choose items</span></label>
+            </div>
+          </div>
+
+          <div class="rr-items" id="rr-items"></div>
+
+          <div class="field">
+            <label for="rr-reason">Reason</label>
+            <textarea class="control" id="rr-reason" rows="3" maxlength="1000"
+              placeholder="e.g. The lid was dented and the bottle smelled spoiled when opened."></textarea>
+          </div>
+
+          <div class="field">
+            <label for="rr-proof">Photo of the product</label>
+            <input class="up-input" id="rr-proof" type="file" accept="image/png,image/jpeg,image/webp">
+            <label class="up-drop" for="rr-proof" id="rr-proof-drop">
+              <span class="up-cta">Choose a photo</span>
+              <span class="up-hint">PNG, JPEG or WebP — show the problem clearly</span>
+            </label>
+            <div class="rr-proof-preview hide" id="rr-proof-card">
+              <img id="rr-proof-img" alt="Selected photo">
+              <button type="button" class="btn-order-action" id="rr-proof-change">Change photo</button>
+            </div>
+          </div>
+
+          <!-- Where the refund goes. GCash or bank transfer only — no cash. -->
+          <div class="rr-refund-to">
+            <div class="rr-sub-title">Where should we send your refund?</div>
+            <div class="rr-scope" role="radiogroup" aria-label="Refund method">
+              <label class="rr-scope-opt"><input type="radio" name="rr-pref" value="gcash" checked><span>GCash / E-wallet</span></label>
+              <label class="rr-scope-opt"><input type="radio" name="rr-pref" value="bank"><span>Bank Transfer</span></label>
+            </div>
+            <div class="field hide" id="rr-bank-field">
+              <label for="rr-bank">Bank Name</label>
+              <input class="control" id="rr-bank" maxlength="100" placeholder="e.g. BDO, BPI, Landbank">
+            </div>
+            <div class="field">
+              <label for="rr-acc-name">Account Name</label>
+              <input class="control" id="rr-acc-name" maxlength="100" placeholder="Name on the account">
+            </div>
+            <div class="field">
+              <label for="rr-acc-no" id="rr-acc-no-label">GCash Number</label>
+              <input class="control" id="rr-acc-no" inputmode="numeric" maxlength="20" placeholder="09XXXXXXXXX">
+            </div>
+            <div class="field">
+              <label for="rr-qr">or upload your QR code <span class="rr-optional">(optional if you gave the number)</span></label>
+              <input class="up-input" id="rr-qr" type="file" accept="image/png,image/jpeg,image/webp">
+              <label class="up-drop" for="rr-qr" id="rr-qr-drop">
+                <span class="up-cta">Choose QR image</span>
+                <span class="up-hint">PNG, JPEG or WebP</span>
+              </label>
+              <div class="rr-proof-preview hide" id="rr-qr-card">
+                <img id="rr-qr-img" alt="Selected QR code">
+                <button type="button" class="btn-order-action" id="rr-qr-remove">Remove</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="rr-summary">
+            <span id="rr-count">0 items</span>
+            <span>Refund requested: <strong id="rr-total">₱0</strong></span>
+          </div>
+          <p class="rate-err" id="rr-err" role="alert"></p>
+          <button type="submit" class="btn btn-primary btn-block" id="rr-submit">Submit Request</button>
+        </form>`, {
+        wide: true,
+        onOpen: (root) => {
+          const form = root.querySelector("#rr-form");
+          const orderSel = root.querySelector("#rr-order");
+          const itemsBox = root.querySelector("#rr-items");
+          const err = root.querySelector("#rr-err");
+          let proofPath = null;
+
+          const current = () => eligible.find(o => o.id === orderSel.value);
+          const scope = () => form.querySelector('input[name="rr-scope"]:checked').value;
+
+          const picked = () => [...itemsBox.querySelectorAll(".rr-qty")]
+            .map(i => ({ product_id: i.dataset.pid, qty: Math.floor(Number(i.value) || 0), price: Number(i.dataset.price) }))
+            .filter(i => i.qty > 0);
+          const sum = () => {
+            const p = picked();
+            const n = p.reduce((a, i) => a + i.qty, 0);
+            root.querySelector("#rr-count").textContent = `${n} ${n === 1 ? "item" : "items"}`;
+            root.querySelector("#rr-total").textContent = PESO(p.reduce((a, i) => a + i.qty * i.price, 0));
+          };
+          /* Whole order: every returnable unit, fixed. Choose items: start at
+             zero and let them pick. */
+          const drawItems = () => {
+            const whole = scope() === "whole";
+            /* A − / + stepper per product. The number box stays a real input
+               (typing works too); the buttons just nudge it within 0..max. */
+            itemsBox.innerHTML = current().lines.map(l => `
+              <div class="rr-item${whole ? " is-whole" : ""}">
+                <span class="rr-item-ic" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18M16 10a4 4 0 0 1-8 0"/></svg>
+                </span>
+                <div class="rr-item-name">${esc(l.name)}
+                  <small>${PESO(l.unitPrice)} each · ${l.remaining} of ${l.bought} returnable</small></div>
+                <div class="rr-stepper" role="group" aria-label="How many ${esc(l.name)} to return">
+                  <button type="button" class="rr-step-btn" data-step="-1" aria-label="One less" ${whole ? "disabled" : ""}>−</button>
+                  <input class="rr-qty" type="number" min="0" max="${l.remaining}" inputmode="numeric"
+                         value="${whole ? l.remaining : 0}" data-pid="${esc(l.productId)}" data-price="${l.unitPrice}"
+                         ${whole ? "disabled" : ""} aria-label="Quantity">
+                  <button type="button" class="rr-step-btn" data-step="1" aria-label="One more" ${whole ? "disabled" : ""}>+</button>
+                </div>
+                <div class="rr-item-sub">${PESO(whole ? l.remaining * l.unitPrice : 0)}</div>
+              </div>`).join("");
+
+            const refresh = inp => {
+              const max = Number(inp.max), v = Math.max(0, Math.min(max, Math.floor(Number(inp.value) || 0)));
+              inp.value = v;
+              const row = inp.closest(".rr-item");
+              row.classList.toggle("is-picked", v > 0);
+              row.querySelector('[data-step="-1"]').disabled = inp.disabled || v <= 0;
+              row.querySelector('[data-step="1"]').disabled = inp.disabled || v >= max;
+              row.querySelector(".rr-item-sub").textContent = PESO(v * Number(inp.dataset.price));
+            };
+            itemsBox.querySelectorAll(".rr-qty").forEach(inp => {
+              inp.addEventListener("input", () => { refresh(inp); sum(); });
+              refresh(inp);
+            });
+            itemsBox.querySelectorAll(".rr-step-btn").forEach(b => b.addEventListener("click", () => {
+              const inp = b.parentElement.querySelector(".rr-qty");
+              inp.value = Number(inp.value || 0) + Number(b.dataset.step);
+              refresh(inp); sum();
+            }));
+            sum();
+          };
+
+          orderSel.addEventListener("change", drawItems);
+          form.querySelectorAll('input[name="rr-scope"]').forEach(r => r.addEventListener("change", drawItems));
+          drawItems();
+
+          /* Uploaded on pick, like the checkout's payment screenshot — same
+             endpoint, same checks (api/uploads/image.php). */
+          const fileIn = root.querySelector("#rr-proof");
+          const drop = root.querySelector("#rr-proof-drop");
+          const card = root.querySelector("#rr-proof-card");
+          fileIn.addEventListener("change", async () => {
+            const file = fileIn.files && fileIn.files[0];
+            if (!file) return;
+            err.textContent = "";
+            drop.querySelector(".up-cta").textContent = "Uploading…";
+            try {
+              const data = await EbApi.upload(file, "references");
+              proofPath = data.path;
+              root.querySelector("#rr-proof-img").src = EbFormat.imageUrl(data.path);
+              drop.classList.add("hide");
+              card.classList.remove("hide");
+            } catch (e) {
+              err.textContent = e.message;
+            } finally {
+              drop.querySelector(".up-cta").textContent = "Choose a photo";
+              fileIn.value = "";
+            }
+          });
+          root.querySelector("#rr-proof-change").addEventListener("click", () => fileIn.click());
+
+          /* Refund destination: labels follow the method; bank asks for the bank. */
+          let qrPath = null;
+          const pref = () => form.querySelector('input[name="rr-pref"]:checked').value;
+          const syncPref = () => {
+            const bank = pref() === "bank";
+            root.querySelector("#rr-bank-field").classList.toggle("hide", !bank);
+            root.querySelector("#rr-acc-no-label").textContent = bank ? "Account Number" : "GCash Number";
+            root.querySelector("#rr-acc-no").placeholder = bank ? "Bank account number" : "09XXXXXXXXX";
+          };
+          form.querySelectorAll('input[name="rr-pref"]').forEach(r => r.addEventListener("change", syncPref));
+          syncPref();
+          root.querySelector("#rr-acc-no").addEventListener("input", e => {
+            e.target.value = e.target.value.replace(/[^0-9+]/g, "");
+          });
+          const qrIn = root.querySelector("#rr-qr");
+          const qrDrop = root.querySelector("#rr-qr-drop");
+          const qrCard = root.querySelector("#rr-qr-card");
+          qrIn.addEventListener("change", async () => {
+            const file = qrIn.files && qrIn.files[0];
+            if (!file) return;
+            err.textContent = "";
+            qrDrop.querySelector(".up-cta").textContent = "Uploading…";
+            try {
+              const data = await EbApi.upload(file, "references");
+              qrPath = data.path;
+              root.querySelector("#rr-qr-img").src = EbFormat.imageUrl(data.path);
+              qrDrop.classList.add("hide");
+              qrCard.classList.remove("hide");
+            } catch (e) {
+              err.textContent = e.message;
+            } finally {
+              qrDrop.querySelector(".up-cta").textContent = "Choose QR image";
+              qrIn.value = "";
+            }
+          });
+          root.querySelector("#rr-qr-remove").addEventListener("click", () => {
+            qrPath = null;
+            qrCard.classList.add("hide");
+            qrDrop.classList.remove("hide");
+          });
+
+          form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            err.textContent = "";
+            const items = picked();
+            const reason = root.querySelector("#rr-reason").value.trim();
+            if (!items.length) { err.textContent = "Choose at least one item to return."; return; }
+            if (reason.length < 10) { err.textContent = "Tell us what went wrong (at least 10 characters)."; return; }
+            if (!proofPath) { err.textContent = "Attach a photo of the product."; return; }
+            const accName = root.querySelector("#rr-acc-name").value.trim();
+            const accNo = root.querySelector("#rr-acc-no").value.trim();
+            const bankName = root.querySelector("#rr-bank").value.trim();
+            if (pref() === "bank" && !bankName) { err.textContent = "Enter the bank name."; return; }
+            if (accName.length < 2) { err.textContent = "Enter the account name for your refund."; return; }
+            if (!accNo && !qrPath) {
+              err.textContent = pref() === "bank"
+                ? "Enter the account number or upload a QR code."
+                : "Enter your GCash number or upload a QR code.";
+              return;
+            }
+
+            const done = busy(root.querySelector("#rr-submit"), "Submitting…");
+            try {
+              const { data } = await EbApi.post("shop/return-request.php", {
+                order_id: orderSel.value,
+                scope: scope(),
+                items: items.map(i => ({ product_id: i.product_id, qty: i.qty })),
+                reason,
+                proof: proofPath,
+                refund_pref: pref(),
+                refund_account_name: accName,
+                refund_account_number: accNo,
+                refund_bank_name: pref() === "bank" ? bankName : "",
+                refund_qr: qrPath || "",
+              });
+              closeModal();
+              showToast(`Request #${data.id} sent — we'll review it shortly.`, "success");
+              /* Land on the tab where the new request is. */
+              showMain("returns");
+              loadMyOrders();
+            } catch (e2) {
+              done();
+              err.textContent = e2.isValidation && e2.fields ? (Object.values(e2.fields)[0] || e2.message) : e2.message;
+            }
+          });
+        },
+      });
+    }
+
+    /* ── Reorder ──────────────────────────────────────────────
+       Pick which items and how many (starts at what was ordered), at
+       TODAY's price and stock, then add them all and open the cart. */
+    function openReorder(orderId) {
+      const order = MY_ORDERS.find(o => o.id === orderId);
+      if (!order) return;
+      const rows = order.items.map((it, i) => {
+        const p = typeof getProduct === "function" ? getProduct(it.productId) : null;
+        const ok = !!p && productAvailable(p);
+        const max = ok ? productMax(p) : 0;
+        return { i, it, p, ok, max, qty: ok ? Math.min(it.qty, max) : 0, on: ok };
+      });
+      const body = `
+        <p class="ro-note">Choose what to add. Current prices and stock apply.</p>
+        <div class="ro-list">${rows.map(r => `
+          <label class="ro-row${r.ok ? "" : " is-out"}" data-i="${r.i}">
+            <input type="checkbox" class="ro-check" ${r.ok ? "checked" : "disabled"}>
+            <span class="ro-img">${r.it.image ? `<img src="${esc(EbFormat.imageUrl(r.it.image))}" alt="">` : ""}</span>
+            <span class="ro-info">
+              <b>${esc(r.it.name)}</b>
+              <small>${r.ok ? PESO(r.p.price) + " each" + (r.max < r.it.qty ? ` · only ${r.max} left` : "") : "Out of stock"}</small>
+            </span>
+            ${r.ok ? `<span class="ro-step">
+              <button type="button" data-d="-1" aria-label="Less">−</button>
+              <span class="ro-qty">${r.qty}</span>
+              <button type="button" data-d="1" aria-label="More">+</button>
+            </span>` : ""}
+          </label>`).join("")}
+        </div>
+        <div class="ro-foot">
+          <span>Total <b id="ro-total"></b></span>
+          <button type="button" class="btn btn-gold" id="ro-add">Add to cart</button>
+        </div>`;
+      openModal("Reorder #" + orderId, body, { onOpen: root => {
+        const box = root || document;
+        const total = () => {
+          const sum = rows.filter(r => r.on).reduce((s, r) => s + r.p.price * r.qty, 0);
+          box.querySelector("#ro-total").textContent = PESO(sum);
+          box.querySelector("#ro-add").disabled = !rows.some(r => r.on && r.qty > 0);
+        };
+        box.querySelectorAll(".ro-row").forEach(el => {
+          const r = rows[Number(el.dataset.i)];
+          el.querySelector(".ro-check").addEventListener("change", e => { r.on = e.target.checked; el.classList.toggle("is-off", !r.on); total(); });
+          el.querySelectorAll("[data-d]").forEach(b => b.addEventListener("click", e => {
+            e.preventDefault();
+            r.qty = Math.max(1, Math.min(r.max, r.qty + Number(b.dataset.d)));
+            el.querySelector(".ro-qty").textContent = r.qty;
+            total();
+          }));
+        });
+        box.querySelector("#ro-add").addEventListener("click", async () => {
+          const lines = rows.filter(r => r.on && r.qty > 0).map(r => ({ id: r.it.productId, qty: r.qty }));
+          const { added, skipped } = await addManyToCart(lines);
+          closeModal();
+          if (added) {
+            showToast(`${added} item${added > 1 ? "s" : ""} added to your cart`, "success");
+            openCart();
+          }
+          if (skipped.length) showToast(`Not added (stock limit): ${skipped.join(", ")}`, "info");
+        });
+        total();
+      } });
+    }
+
     /* Tab filtering */
     document.getElementById("order-tabs").addEventListener("click", e => {
-      const tab = e.target.closest(".mp-tab");
-      if (!tab) return;
-      document.querySelectorAll(".mp-tab").forEach(t => t.classList.remove("active"));
-      tab.classList.add("active");
-      renderOrders(tab.dataset.status);
+      const chip = e.target.closest(".hist-chip");
+      if (!chip) return;
+      page = 1; renderOrders(chip.dataset.status);
     });
+    document.getElementById("ord-main-tabs").addEventListener("click", e => {
+      const t = e.target.closest(".hist-tab");
+      if (t) showMain(t.dataset.main);
+    });
+    document.getElementById("ord-sort").addEventListener("change", e => { sortBy[mainTab()] = e.target.value; page = 1; redraw(); });
+    document.getElementById("ord-size").addEventListener("change", e => { size = Number(e.target.value) || 10; page = 1; redraw(); });
+    syncSort();
 
       /* The avatar, the name, the role tag, the Payment Schemes link and the
          sign-out button all moved to EbProfileShell — they were written out
@@ -685,7 +1307,7 @@ Tell us why — this is recorded with the cancellation.`, ""
 
        whenAuthReady() resolves from an event site.js fires once shop/me.php has
        replied, and resolves immediately if that already happened. */
-    window.addEventListener("load", () => {
+    window.addEventListener("DOMContentLoaded", () => {   /* not "load": that waited for every image */
       /* The guard, the sidebar and the sign-out button are the shell's now —
          all three were duplicated across the four account pages. See
          assets/js/public/profile-shell.js.
@@ -693,7 +1315,13 @@ Tell us why — this is recorded with the cancellation.`, ""
          loadMyOrders() fetches the real orders; renderOrders() runs again once
          they arrive, so the loader shows "Loading…" rather than an empty list
          that reads as "you have never ordered". */
-      EbProfileShell.mount({ page: "orders", onReady: loadMyOrders });
+      EbProfileShell.mount({ page: "orders", onReady: () => {
+        loadMyOrders();
+        /* The Returns count shows on its tab before it is opened. */
+        EbApi.get("shop/returns.php").then(r => { MY_RETURNS = r.data; drawCounts(); }).catch(() => {});
+        /* A return notification links to #returns — open that tab. */
+        if (location.hash === "#returns") showMain("returns");
+      } });
     });
     </script>
   </body>

@@ -482,3 +482,41 @@ body::before {
 /* backdrop-filter is GPU work — one per pane is fine, but skip it on
    the long scrolling lists where dozens would stack up. */
 .alert-row, .notif-row, .nd-item { -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+/* ── Popups, light mode: visible separators ────────────────────────────
+   Light glass sets --border to WHITE (.45), which is invisible on the white
+   section cards inside a popup — every divider, dashed row line and card edge
+   in the staff popups disappeared, while dark mode (white .12 on near-black)
+   read clearly. Inside the modal only, light mode gets a warm ink line at the
+   same visual weight dark mode has. Every popup section uses var(--border) /
+   var(--border-lift), so this one override covers them all. */
+:root:not([data-theme="dark"]) .modal {
+  --border:      rgba(110, 78, 28, .20);
+  --border-lift: rgba(110, 78, 28, .32);
+}
+:root:not([data-theme="dark"]) .modal .modal-header,
+:root:not([data-theme="dark"]) .modal .modal-footer {
+  border-color: rgba(110, 78, 28, .16);
+}
+/* Section cards: a touch of edge and lift so each block reads as a box. */
+:root:not([data-theme="dark"]) .modal .order-detail-section {
+  background: #fff;
+  border-color: rgba(110, 78, 28, .20);
+  box-shadow: 0 1px 3px rgba(60, 40, 10, .06);
+}
+/* Section headings: a gold hairline under the title, like dark mode's. */
+:root:not([data-theme="dark"]) .modal .order-detail-heading {
+  border-bottom-color: rgba(232, 163, 23, .45);
+}
+/* The same white-on-white problem on the popup's own controls and cards:
+   ghost buttons (Cancel, Reject…, Place on Hold), the × and the Verify
+   Payment card had glass-white edges that vanished on the white popup. */
+:root:not([data-theme="dark"]) .modal .btn-ghost,
+:root:not([data-theme="dark"]) .modal .btn-ghost-danger,
+:root:not([data-theme="dark"]) .modal .modal-close,
+:root:not([data-theme="dark"]) .modal .pv-card {
+  border-color: rgba(110, 78, 28, .22);
+}
+:root:not([data-theme="dark"]) .modal .btn-ghost:hover,
+:root:not([data-theme="dark"]) .modal .modal-close:hover { border-color: rgba(232, 163, 23, .6); }
+:root:not([data-theme="dark"]) .modal .btn-ghost-danger { border-color: rgba(214, 40, 40, .35); }

@@ -999,7 +999,12 @@ function renderQueue(){
     </select>`);
 
   $("#queue-content").innerHTML = `
-    <div class="queue-list" id="queue-list"></div>
+    <div class="table-wrap viewport-bound">
+      <table class="data-table">
+        <thead><tr><th>#</th><th>Order ID</th><th>Customer</th><th>Items</th><th>Date</th><th>Payment</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="queue-tbody"></tbody>
+      </table>
+    </div>
     <div class="table-toolbar" style="margin-top:14px">
       <span class="muted" id="queue-showing" style="font-size:.82rem"></span>
       <div class="pagination" id="queue-pagination" style="margin-left:auto"></div>
@@ -1014,47 +1019,37 @@ function renderQueue(){
   EbPaginate.list(
     "queue",
     adminState.queuePager,
-    () => $("#queue-list"),
+    () => $("#queue-tbody"),
     (page, limit) => EbApi.get("orders/list.php", {
       page, limit, type: "online", with_deliveries: 1, status: statuses, sort: "oldest",
     }),
     (o, i) => {
       const hasProof = o.proof.uploaded;
-      const itemChips = o.items.map(it =>
-        `<span class="order-item-chip">${escHtml(it.name || it.id)} ×${it.qty}</span>`).join("");
+      /* One line in the table; the full list and address are in Details. */
+      const itemText = o.items.map(it => `${it.name || it.id} ×${it.qty}`).join(", ");
       /* Numbered by position on this page, and labelled as such — a bare "#1"
          on page 3 reads as "first in the queue". */
       const seq = ((adminState.queuePager.page || 1) - 1) * (adminState.queuePager.pageSize || 10) + i + 1;
-      return `
-      <div class="order-card ${!hasProof?"urgent":""}">
-        <div class="order-card-header">
-          <span style="font-size:.72rem;font-weight:800;color:var(--text-muted);background:var(--bg-soft);border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center">#${seq}</span>
-          <span class="order-card-id">${escHtml(o.id)}</span>${o.type === "walk-in" ? ` <span class="badge badge-warn" title="Rung up at the POS as a delivery. Paid at the counter; shipped and tracked here like an online order.">Walk-in delivery</span>` : ""}
-          <span class="order-card-customer">${escHtml(o.customer)}</span>
-          ${statusChip(o.status)}
-          <span class="order-card-date">${fmtDateTime(o.datetime)}</span>
-        </div>
-        <div style="padding:0 20px">
-          <div style="font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px">Items</div>
-          <div class="order-card-items">${itemChips}</div>
-          <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:4px">Delivery to: ${escHtml(o.address || "—")}</div>
-        </div>
-        <div class="order-card-footer">
-          <span class="order-card-total">${peso(o.total)}</span>
-          <span class="order-card-method">
-            ${escHtml(payMethodLabel(o.payMethod))}
-            ${hasProof ? `<span style="color:var(--ok-ink);font-weight:700;margin-left:6px">✓ Proof uploaded</span>` : `<span style="color:var(--out-ink);font-weight:700;margin-left:6px">⚠ No proof yet</span>`}
-          </span>
-          <div class="order-card-actions">
-            <button class="btn btn-ghost btn-sm" data-view-order="${o.id}">Details</button>
-            ${hasProof ? `<button class="btn btn-gold btn-sm" data-verify-order="${o.id}">Verify Payment</button>` : ""}
-            <button class="btn btn-red btn-sm" data-status-order="${o.id}">Update Status</button>
-          </div>
-        </div>
-      </div>`;
+      return `<tr>
+      <td class="muted" style="font-weight:700">${seq}</td>
+      <td class="mono-sm">${escHtml(o.id)}${o.type === "walk-in" ? ` <span class="badge badge-warn" title="Rung up at the POS as a delivery. Paid at the counter; shipped and tracked here like an online order.">Walk-in delivery</span>` : ""}</td>
+      <td>${escHtml(o.customer)}</td>
+      <td class="muted" style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(itemText)}">${escHtml(itemText)}</td>
+      <td class="muted">${fmtDateTime(o.datetime)}</td>
+      <td>${escHtml(payMethodLabel(o.payMethod))}<br>${hasProof
+        ? `<span style="color:var(--ok-ink);font-weight:700;font-size:.78rem">✓ Proof uploaded</span>`
+        : `<span style="color:var(--out-ink);font-weight:700;font-size:.78rem">⚠ No proof yet</span>`}</td>
+      <td style="font-weight:700">${peso(o.total)}</td>
+      <td>${orderStatusBadge(o.status)}</td>
+      <td><div class="td-actions">
+        <button class="btn btn-ghost btn-sm" data-view-order="${o.id}">Details</button>
+        ${hasProof ? `<button class="btn btn-gold btn-sm" data-verify-order="${o.id}">Verify</button>` : ""}
+        <button class="btn btn-red btn-sm" data-status-order="${o.id}">Update Status</button>
+      </div></td>
+    </tr>`;
     },
     {
-      asTable: false,
+      colspan: 9,
       empty: { title: "Queue Empty", hint: filter==="all" ? "No orders awaiting review" : `No ${STATUS_LABEL[filter]||filter} orders` },
       after: (rows, meta) => {
         /* Keep ORDERS in step so the detail and status modals can find the row. */
@@ -1151,40 +1146,100 @@ function renderPaymentVerify(){
     </select>`);
 
   $("#pv-content").innerHTML = `
-    <div class="pv-list" id="pv-list"></div>
+    <div class="table-wrap viewport-bound">
+      <table class="data-table">
+        <thead><tr><th>Order ID</th><th>Customer</th><th>Email</th><th>Date</th><th>Payment</th><th>Amount Due</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="pv-tbody"></tbody>
+      </table>
+    </div>
     <div class="table-toolbar" style="margin-top:14px">
       <span class="muted" id="pv-showing" style="font-size:.82rem"></span>
       <div class="pagination" id="pv-pagination" style="margin-left:auto"></div>
     </div>`;
 
+  /* List first, detail on demand: the full proof card opens in a modal from
+     the row's View button. */
+  const pvRows = new Map();
+
   EbPaginate.list(
     "pv",
     adminState.pvPager,
-    () => $("#pv-list"),
+    () => $("#pv-tbody"),
     (page, limit) => EbApi.get("orders/list.php", {
       page, limit, type: "online", pay_verified: 0, proof_uploaded: 1,
       status: filter === "all" ? "pending,on-hold" : filter,
       sort: "oldest",
     }),
     o => {
-      /* The AMOUNT DUE, not the sale total. A retailer registered as a
-         withholding agent transfers the total less the tax it keeps for the
-         BIR (VAT Maintenance), so its correct payment would otherwise be
-         flagged MISMATCH. Equal to the total for everyone else. */
-      const total = (o.tax && o.tax.amountDue != null) ? o.tax.amountDue : o.total;
-      const withheld = o.tax && o.tax.withholdingTax > 0 ? o.tax.withholdingTax : 0;
-      const match = Math.abs((o.proof.amount || 0) - total) < 0.01;
-      const itemRows = o.items.map(it =>
-        `<div class="pv-row"><span class="pv-row-label">${escHtml(it.name || it.id)} ×${it.qty}</span><span class="pv-row-val">${it.price != null ? peso(it.price * it.qty) : "—"}</span></div>`).join("");
-      return `
-      <div class="pv-card">
-        <div class="pv-card-header">
-          <span class="order-card-id">${escHtml(o.id)}</span>${o.type === "walk-in" ? ` <span class="badge badge-warn" title="Rung up at the POS as a delivery. Paid at the counter; shipped and tracked here like an online order.">Walk-in delivery</span>` : ""}
-          <span class="order-card-customer">${escHtml(o.customer)}</span>
-          ${statusChip(o.status)}
-          <span style="flex:1"></span>
-          <span style="font-size:.78rem;color:var(--text-muted)">${fmtDateTime(o.datetime)}</span>
-        </div>
+      pvRows.set(String(o.id), o);
+      const due = (o.tax && o.tax.amountDue != null) ? o.tax.amountDue : o.total;
+      return `<tr>
+      <td class="mono-sm">${escHtml(o.id)}${o.type === "walk-in" ? ` <span class="badge badge-warn" title="Rung up at the POS as a delivery. Paid at the counter; shipped and tracked here like an online order.">Walk-in delivery</span>` : ""}</td>
+      <td>${escHtml(o.customer)}</td>
+      <td class="muted">${escHtml(o.email || "—")}</td>
+      <td class="muted">${fmtDateTime(o.datetime)}</td>
+      <td>${escHtml(payMethodLabel(o.payMethod))}</td>
+      <td style="font-weight:700">${peso(due)}</td>
+      <td>${orderStatusBadge(o.status)}</td>
+      <td><button class="btn btn-ghost btn-sm" data-pv-view="${escHtml(o.id)}">View</button></td>
+    </tr>`;
+    },
+    {
+      colspan: 8,
+      empty: { title: "All Verified", hint: filter==="all" ? "No pending payment proofs to review" : `No ${STATUS_LABEL[filter]||filter} proofs to review` },
+      after: (rows, meta) => {
+        rows.forEach(r => {
+          const i = ORDERS.findIndex(o => o.id === r.id);
+          if(i > -1) ORDERS[i] = r; else ORDERS.push(r);
+        });
+        if(tabsEl){
+          const c = meta.counts || {};
+          tabsEl.innerHTML = PV_TABS.map(t=>{
+            const n = t === "all" ? ((c.pending||0) + (c["on-hold"]||0)) : (c[t] || 0);
+            /* Badge only where there is work waiting — see tabBadge(). */
+            const b = tabBadge(t, t==="all" ? "All" : (STATUS_LABEL[t]||t), n);
+            return `<button class="tab-btn ${t===adminState.pvFilter?"active":""}" data-pvfilter="${t}"
+                            role="tab" aria-selected="${t===adminState.pvFilter}"
+                            aria-label="${escHtml(b.aria)}">${b.html}</button>`;
+          }).join("");
+          $$("#pv-status-tabs .tab-btn").forEach(btn=>{
+            btn.addEventListener("click", ()=>{
+              adminState.pvFilter = btn.dataset.pvfilter;
+              adminState.pvPager.page = 1;
+              renderPaymentVerify();
+            });
+          });
+        }
+        $$("#pv-content [data-pv-view]").forEach(b=> b.addEventListener("click", ()=>{
+          const o = pvRows.get(b.dataset.pvView);
+          if(o) openPaymentVerifyModal(o);
+        }));
+      },
+    }
+  );
+}
+
+/* The full proof card for one order, with the approve / hold / reject
+   decisions. Hold and reject open their own modal in place of this one. */
+function openPaymentVerifyModal(o){
+  const total = (o.tax && o.tax.amountDue != null) ? o.tax.amountDue : o.total;
+  const withheld = o.tax && o.tax.withholdingTax > 0 ? o.tax.withholdingTax : 0;
+  const match = Math.abs((o.proof.amount || 0) - total) < 0.01;
+  const itemRows = o.items.map(it =>
+    `<div class="pv-row"><span class="pv-row-label">${escHtml(it.name || it.id)} ×${it.qty}</span><span class="pv-row-val">${it.price != null ? peso(it.price * it.qty) : "—"}</span></div>`).join("");
+  openModal({
+    title: `Verify Payment — ${o.id}`,
+    large: true,
+    cancelLabel: null,   /* the header × closes it */
+    confirmLabel: null,
+    body: `
+      <div class="pv-modal-head">
+        <span class="order-card-customer">${escHtml(o.customer)}</span>
+        ${statusChip(o.status)}
+        <span style="flex:1"></span>
+        <span style="font-size:.78rem;color:var(--text-muted)">${fmtDateTime(o.datetime)}</span>
+      </div>
+      <div class="pv-card pv-card-modal">
         <div class="pv-card-body">
           <div class="pv-section">
             <div class="pv-section-label">Order Details</div>
@@ -1214,40 +1269,14 @@ function renderPaymentVerify(){
           <button class="btn btn-ghost btn-sm" data-hold-pay="${o.id}">Place On Hold</button>
           <button class="btn btn-ghost-danger btn-sm" data-reject-pay="${o.id}">Reject Payment</button>
         </div>
-      </div>`;
+      </div>`,
+    onOpen(){
+      const m = $("#modal-body");
+      m.querySelector("[data-approve-pay]")?.addEventListener("click", ()=>{ closeModal(); approvePayment(o.id); });
+      m.querySelector("[data-hold-pay]")?.addEventListener("click", ()=> openHoldModal(o.id));
+      m.querySelector("[data-reject-pay]")?.addEventListener("click", ()=> cancelOrder(o.id));
     },
-    {
-      asTable: false,
-      empty: { title: "All Verified", hint: filter==="all" ? "No pending payment proofs to review" : `No ${STATUS_LABEL[filter]||filter} proofs to review` },
-      after: (rows, meta) => {
-        rows.forEach(r => {
-          const i = ORDERS.findIndex(o => o.id === r.id);
-          if(i > -1) ORDERS[i] = r; else ORDERS.push(r);
-        });
-        if(tabsEl){
-          const c = meta.counts || {};
-          tabsEl.innerHTML = PV_TABS.map(t=>{
-            const n = t === "all" ? ((c.pending||0) + (c["on-hold"]||0)) : (c[t] || 0);
-            /* Badge only where there is work waiting — see tabBadge(). */
-            const b = tabBadge(t, t==="all" ? "All" : (STATUS_LABEL[t]||t), n);
-            return `<button class="tab-btn ${t===adminState.pvFilter?"active":""}" data-pvfilter="${t}"
-                            role="tab" aria-selected="${t===adminState.pvFilter}"
-                            aria-label="${escHtml(b.aria)}">${b.html}</button>`;
-          }).join("");
-          $$("#pv-status-tabs .tab-btn").forEach(btn=>{
-            btn.addEventListener("click", ()=>{
-              adminState.pvFilter = btn.dataset.pvfilter;
-              adminState.pvPager.page = 1;
-              renderPaymentVerify();
-            });
-          });
-        }
-        $$("#pv-content [data-approve-pay]").forEach(b=> b.addEventListener("click", ()=> approvePayment(b.dataset.approvePay)));
-        $$("#pv-content [data-hold-pay]").forEach(b=> b.addEventListener("click", ()=> openHoldModal(b.dataset.holdPay)));
-        $$("#pv-content [data-reject-pay]").forEach(b=> b.addEventListener("click", ()=> cancelOrder(b.dataset.rejectPay)));
-      },
-    }
-  );
+  });
 }
 
 async function approvePayment(orderId){
@@ -1749,7 +1778,7 @@ function renderReturns(){
                     aria-label="${escHtml(b.aria)}">${b.html}</button>`;
   }).join("");
   $$("#return-tabs .return-tab-btn").forEach(btn=>{
-    btn.addEventListener("click", ()=>{ adminState.returnTab = btn.dataset.returntab; renderReturns(); });
+    btn.addEventListener("click", ()=>{ adminState.returnTab = btn.dataset.returntab; if(adminState.returnPager) adminState.returnPager.page = 1; renderReturns(); });
   });
 
   const tab = adminState.returnTab;
@@ -1759,6 +1788,7 @@ function renderReturns(){
       r.id.toLowerCase().includes(q) ||
       r.orderId.toLowerCase().includes(q) ||
       r.customer.toLowerCase().includes(q) ||
+      (r.items || []).some(it => (it.name || "").toLowerCase().includes(q)) ||
       r.productName.toLowerCase().includes(q));
 
   if(!list.length){
@@ -1766,48 +1796,211 @@ function renderReturns(){
     return;
   }
 
-  $("#returns-content").innerHTML = list.map(r=>renderReturnCard(r)).join("");
-  wireReturnActions();
+  /* Paging + sort, client-side: RETURNS is already fully loaded. One slot —
+     mountToolbarControl keeps a single slot per screen. */
+  const pg = adminState.returnPager || (adminState.returnPager = { page: 1, limit: 10, sort: "newest" });
+  /* Mounted once — re-mounting on every tab/sort/page rebuilt both menus and
+     made them flicker. */
+  if(!$("#ret-sort")) mountToolbarControl("returns", "paging", `
+    <select class="filter-select" id="ret-sort" aria-label="Sort returns">
+      <option value="newest">Newest first</option>
+      <option value="oldest">Oldest first</option>
+      <option value="customer">Customer A–Z</option>
+      <option value="refund">Refund high–low</option>
+    </select>
+    <select class="filter-select" id="ret-page-size" aria-label="Rows per page">
+      <option value="10">10 per page</option>
+      <option value="25">25 per page</option>
+      <option value="50">50 per page</option>
+    </select>`);
+  const sortSel = $("#ret-sort"), sizeSel = $("#ret-page-size");
+  if(sortSel && !sortSel.dataset.wired){
+    sortSel.dataset.wired = "1";
+    sortSel.addEventListener("change", ()=>{ pg.sort = sortSel.value; pg.page = 1; renderReturns(); });
+    sizeSel.addEventListener("change", ()=>{ pg.limit = Number(sizeSel.value) || 10; pg.page = 1; renderReturns(); });
+  }
+  if(sortSel) sortSel.value = pg.sort;
+  if(sizeSel) sizeSel.value = String(pg.limit);
+
+  /* Return IDs are RET-YYYYMMDD-NNN, so the ID sorts by date. */
+  const sorted = [...list].sort((x,y)=>
+    pg.sort === "oldest"   ? x.id.localeCompare(y.id) :
+    pg.sort === "customer" ? x.customer.localeCompare(y.customer) :
+    pg.sort === "refund"   ? (y.refundAmount||0) - (x.refundAmount||0) :
+                             y.id.localeCompare(x.id));
+  const pages = Math.max(1, Math.ceil(sorted.length / pg.limit));
+  if(pg.page > pages) pg.page = pages;
+  const pageRows = sorted.slice((pg.page - 1) * pg.limit, pg.page * pg.limit);
+
+  /* List first, detail on demand: the full card (steps, reasons, actions)
+     opens in a modal from View. */
+  $("#returns-content").innerHTML = `
+    <div class="table-wrap viewport-bound">
+      <table class="data-table">
+        <thead><tr><th>Return ID</th><th>Customer</th><th>Order ID</th><th>Items</th><th>Units</th><th>Refund</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>${pageRows.map(r=>`<tr>
+          <td class="mono-sm">${escHtml(r.id)}</td>
+          <td>${escHtml(r.customer)}</td>
+          <td class="mono-sm">${escHtml(r.orderId)}</td>
+          <td>${escHtml(returnItemsSummary(r))}</td>
+          <td>${r.qty}</td>
+          <td style="font-weight:700">${r.refundAmount ? peso(r.refundAmount) : "—"}</td>
+          <td>${returnStatusChip(r)}</td>
+          <td><button class="btn btn-ghost btn-sm" data-view-ret="${escHtml(r.id)}">View</button></td>
+        </tr>`).join("")}</tbody>
+      </table>
+    </div>
+    <div class="table-toolbar" style="margin-top:14px">
+      <span class="muted" id="ret-showing" style="font-size:.82rem"></span>
+      <div class="pagination" id="ret-pagination" style="margin-left:auto"></div>
+    </div>`;
+  EbPaginate.render("ret", { page: pg.page, limit: pg.limit, total: sorted.length, pages },
+    p => { pg.page = p; renderReturns(); });
+  $$("#returns-content [data-view-ret]").forEach(btn=> btn.addEventListener("click", ()=>openReturnDetail(btn.dataset.viewRet)));
 }
 
+/* A request can carry several products (customer requests, migration 016). */
+function returnItemsSummary(r){
+  const items = r.items && r.items.length ? r.items : [{ name: r.productName }];
+  return items[0].name + (items.length > 1 ? ` +${items.length - 1} more` : "");
+}
+
+/* How long after the order completed the request came in — the 24-hour rule
+   is enforced when the customer files it; this shows staff the margin. */
+function returnWindowNote(r){
+  if(!r.orderCompletedAt || !r.receivedDate) return "—";
+  const h = (new Date(r.receivedDate.replace(" ","T")) - new Date(r.orderCompletedAt.replace(" ","T"))) / 36e5;
+  const txt = h < 1 ? `${Math.max(1, Math.round(h*60))} min` : `${Math.round(h)} h`;
+  return h <= 24
+    ? `<span style="color:var(--ok-ink)">✓ ${txt} after completion</span>`
+    : `<span style="color:var(--out-ink)">⚠ ${txt} after completion</span>`;
+}
+
+/* Where the customer asked for the refund to go (GCash / bank, migration 017). */
+function returnRefundToRows(r){
+  const t = r.refundTo;
+  if(!t) return `<p class="muted" style="margin:0;font-size:.86rem">No refund account given — contact the customer.</p>`;
+  const row = (k, v) => `<div class="detail-row"><span class="detail-row-label">${k}</span><span class="detail-row-val">${v}</span></div>`;
+  return row("Method", t.method === "bank" ? "Bank Transfer" : "GCash")
+    + (t.bankName ? row("Bank", escHtml(t.bankName)) : "")
+    + row("Account Name", escHtml(t.accountName || "—"))
+    + row(t.method === "bank" ? "Account Number" : "GCash Number", t.accountNumber ? `<code>${escHtml(t.accountNumber)}</code>` : "—")
+    + (t.qr ? `<a href="${escHtml(imageUrl(t.qr))}" target="_blank" rel="noopener noreferrer" title="Open QR full size">
+         <img src="${escHtml(imageUrl(t.qr))}" alt="Customer's refund QR code" style="width:140px;height:140px;object-fit:contain;border-radius:8px;border:1px solid var(--border);margin-top:8px;background:#fff"></a>` : "");
+}
+
+function returnStatusChip(r){
+  const chipStatus = r.status==="processed" ? "completed" : r.status==="ineligible"||r.status==="rejected" ? "cancelled" : r.status==="approved"||r.status==="eligible" ? "accepted" : r.status==="received"?"pending":r.status;
+  const statusLabel = {received:"Received",validated:"Validated",eligible:"Eligible",ineligible:"Ineligible",approved:"Approved",rejected:"Rejected",processed:"Processed"}[r.status] || r.status;
+  return `<span class="status-chip status-${chipStatus}">${statusLabel}</span>`;
+}
+
+/* The full return card in a modal. Its action buttons open their own
+   step modal in place of this one. */
+function openReturnDetail(returnId){
+  const r = RETURNS.find(r=>r.id===returnId);
+  if(!r) return;
+  openModal({
+    title: `Return — ${r.id}`,
+    large: true,
+    cancelLabel: null, confirmLabel: null,   /* the header × closes it */
+    body: renderReturnCard(r),
+    onOpen(){
+      $("#modal").classList.add("modal-xl");   /* reset by the next openModal */
+      wireReturnActions("#modal-body");
+    },
+  });
+}
+
+/* The View popup's content: header strip, then one card per concern —
+   progress, the return itself, what was said about it, and the next step. */
 function renderReturnCard(r){
   const step = RETURN_STATUS_STEP[r.status] || 1;
   const steps = RETURN_STEPS.map((s,i)=>{
     const n = i+1;
     const cls = n<step?"done":n===step?"active":"";
-    const conn = i<RETURN_STEPS.length-1 ? `<div class="step-connector"></div>` : "";
-    return `<div class="return-step ${cls}"><div class="step-num">${n<step?"✓":n}</div> ${s}</div>${conn}`;
+    return `<div class="return-step ${cls}"><div class="step-num">${n<step?"✓":n}</div><span class="step-label">${s}</span></div>`;
   }).join("");
-
   const actions = returnActions(r);
-  const chipStatus = r.status==="processed" ? "completed" : r.status==="ineligible"||r.status==="rejected" ? "cancelled" : r.status==="approved"||r.status==="eligible" ? "accepted" : r.status==="received"?"pending":r.status;
-  const statusLabel = {received:"Received",validated:"Validated",eligible:"Eligible",ineligible:"Ineligible",approved:"Approved",rejected:"Rejected",processed:"Processed"}[r.status] || r.status;
+  const row = (label, val) => `<div class="detail-row"><span class="detail-row-label">${label}</span><span class="detail-row-val">${val}</span></div>`;
 
   return `
-    <div class="return-card">
-      <div class="return-card-header">
-        <span class="order-card-id">${escHtml(r.id)}</span>
-        <span class="order-card-customer">${escHtml(r.customer)}</span>
-        <span class="status-chip status-${chipStatus}">${statusLabel}</span>
-        <span style="flex:1"></span>
-        <span style="font-size:.78rem;color:var(--text-muted)">Order: ${escHtml(r.orderId)}</span>
-      </div>
-      <div class="return-card-body">
-        <div class="return-step-indicator">${steps}</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 24px;margin-bottom:12px">
-          <div class="detail-row"><span class="detail-row-label">Product</span><span class="detail-row-val">${escHtml(r.productName)}</span></div>
-          <div class="detail-row"><span class="detail-row-label">Qty</span><span class="detail-row-val">${r.qty}</span></div>
-          <div class="detail-row"><span class="detail-row-label">Batch Code</span><span class="detail-row-val"><code>${escHtml(r.batchCode)}</code></span></div>
-          <div class="detail-row"><span class="detail-row-label">Purchase Date</span><span class="detail-row-val">${fmtDate(r.purchaseDate)}</span></div>
-          <div class="detail-row"><span class="detail-row-label">Contact</span><span class="detail-row-val">${escHtml(r.phone)}</span></div>
-          ${r.refundAmount ? `<div class="detail-row"><span class="detail-row-label">Refund Amt.</span><span class="detail-row-val" style="color:var(--gold-ink)">${peso(r.refundAmount)}</span></div>` : ""}
-          ${r.refundMethod ? `<div class="detail-row"><span class="detail-row-label">Refund Via</span><span class="detail-row-val">${escHtml(payMethodLabel(r.refundMethod))}</span></div>` : ""}
+    <div class="ret-detail">
+      <div class="ret-detail-head">
+        <div>
+          <div class="ret-detail-customer">${escHtml(r.customer)}</div>
+          <div class="muted ret-detail-sub">${escHtml(r.id)} · Order ${escHtml(r.orderId)}</div>
         </div>
-        <div class="return-reason ${r.status==="rejected"?"rejected-reason":""}"><strong>Customer Reason:</strong> ${escHtml(r.reason)}</div>
-        ${r.notes ? `<div class="return-reason" style="border-left-color:var(--ok-ink)"><strong>Staff Notes:</strong> ${escHtml(r.notes)}</div>` : ""}
-        ${r.rejectedReason ? `<div class="return-reason rejected-reason"><strong>Rejection Reason:</strong> ${escHtml(r.rejectedReason)}</div>` : ""}
+        ${returnStatusChip(r)}
       </div>
-      ${actions ? `<div class="return-card-footer">${actions}</div>` : ""}
+
+      <div class="order-detail-section">
+        <div class="order-detail-heading">Progress</div>
+        <div class="return-step-indicator ret-stepper">${steps}</div>
+      </div>
+
+      <div class="order-detail-section">
+        <div class="order-detail-heading">Return Details</div>
+        <div class="ret-detail-grid">
+          <div>
+            ${row("Request Type", r.scope === "whole" ? "Whole order" : "Selected items")}
+            ${row("Contact", escHtml(r.phone || "—"))}
+            ${row("Purchase Date", fmtDate(r.purchaseDate))}
+            ${r.batchCode ? row("Batch Code", `<code>${escHtml(r.batchCode)}</code>`) : ""}
+          </div>
+          <div>
+            ${row("Requested", r.receivedDate ? fmtDateTime(r.receivedDate) : "—")}
+            ${row("Return Window", returnWindowNote(r))}
+            ${r.refundAmount ? row(r.status === "processed" ? "Refunded" : "Refund Amt.", `<span style="color:var(--gold-ink)">${peso(r.refundAmount)}</span>`) : ""}
+            ${r.refundMethod ? row("Refund Via", escHtml(payMethodLabel(r.refundMethod))) : ""}
+          </div>
+        </div>
+      </div>
+
+      <div class="order-detail-section">
+        <div class="order-detail-heading">Items Returned · ${r.qty} ${r.qty === 1 ? "unit" : "units"}</div>
+        <div class="order-items-list">${(r.items || []).map(it => `
+          <div class="order-item-row">
+            <span class="order-item-name">${escHtml(it.name)}</span>
+            <span class="order-item-qty">×${it.qty}</span>
+            <span class="order-item-sub">${peso(it.subtotal)}</span>
+          </div>`).join("")}
+        </div>
+        <div class="detail-row" style="margin-top:6px;border-top:1px solid var(--border);padding-top:10px;font-weight:700">
+          <span class="detail-row-label">Total Paid for Items</span>
+          <span class="detail-row-val" style="color:var(--gold-ink)">${peso((r.items || []).reduce((n, it) => n + (it.subtotal || 0), 0))}</span>
+        </div>
+      </div>
+      <div class="order-detail-section">
+        <div class="order-detail-heading">Refund To</div>
+        ${returnRefundToRows(r)}
+      </div>
+${r.refundReceipt ? `
+      <div class="order-detail-section" style="border-left:3px solid var(--ok)">
+        <div class="order-detail-heading">Refund Receipt</div>
+        <a class="proof-shot" href="${escHtml(imageUrl(r.refundReceipt))}" target="_blank" rel="noopener noreferrer" title="Open full size">
+          <img src="${escHtml(imageUrl(r.refundReceipt))}" alt="Refund receipt for ${escHtml(r.id)}" loading="lazy"
+               style="max-width:100%;max-height:240px;border-radius:8px;display:block">
+        </a>
+      </div>` : ""}
+${r.proofImage ? `
+      <div class="order-detail-section">
+        <div class="order-detail-heading">Customer's Photo</div>
+        <a class="proof-shot" href="${escHtml(imageUrl(r.proofImage))}" target="_blank" rel="noopener noreferrer" title="Open full size">
+          <img src="${escHtml(imageUrl(r.proofImage))}" alt="Return photo for ${escHtml(r.id)}" loading="lazy"
+               style="max-width:100%;max-height:240px;border-radius:8px;display:block">
+        </a>
+        <div class="proof-status uploaded" style="margin-top:6px">Click to open full size</div>
+      </div>` : ""}
+
+      <div class="order-detail-section">
+        <div class="order-detail-heading">Notes</div>
+        <div class="return-reason ${r.status==="rejected"?"rejected-reason":""}"><strong>Customer Reason</strong>${escHtml(r.reason)}</div>
+        ${r.notes ? `<div class="return-reason staff-notes"><strong>Staff Notes</strong>${escHtml(r.notes)}</div>` : ""}
+        ${r.rejectedReason ? `<div class="return-reason rejected-reason"><strong>Rejection Reason</strong>${escHtml(r.rejectedReason)}</div>` : ""}
+      </div>
+
+      ${actions ? `<div class="ret-detail-actions">${actions}</div>` : ""}
     </div>`;
 }
 
@@ -1824,13 +2017,13 @@ function returnActions(r){
   }
 }
 
-function wireReturnActions(){
-  $$("#returns-content [data-validate-ret]").forEach(btn=> btn.addEventListener("click", ()=>validateReturn(btn.dataset.validateRet)));
-  $$("#returns-content [data-eligible-ret]").forEach(btn=> btn.addEventListener("click", ()=>markEligible(btn.dataset.eligibleRet)));
-  $$("#returns-content [data-ineligible-ret]").forEach(btn=> btn.addEventListener("click", ()=>markIneligible(btn.dataset.ineligibleRet)));
-  $$("#returns-content [data-approve-ret]").forEach(btn=> btn.addEventListener("click", ()=>approveReturn(btn.dataset.approveRet)));
-  $$("#returns-content [data-reject-ret]").forEach(btn=> btn.addEventListener("click", ()=>rejectReturn(btn.dataset.rejectRet)));
-  $$("#returns-content [data-refund-ret]").forEach(btn=> btn.addEventListener("click", ()=>processRefund(btn.dataset.refundRet)));
+function wireReturnActions(scope = "#returns-content"){
+  $$(`${scope} [data-validate-ret]`).forEach(btn=> btn.addEventListener("click", ()=>validateReturn(btn.dataset.validateRet)));
+  $$(`${scope} [data-eligible-ret]`).forEach(btn=> btn.addEventListener("click", ()=>markEligible(btn.dataset.eligibleRet)));
+  $$(`${scope} [data-ineligible-ret]`).forEach(btn=> btn.addEventListener("click", ()=>markIneligible(btn.dataset.ineligibleRet)));
+  $$(`${scope} [data-approve-ret]`).forEach(btn=> btn.addEventListener("click", ()=>approveReturn(btn.dataset.approveRet)));
+  $$(`${scope} [data-reject-ret]`).forEach(btn=> btn.addEventListener("click", ()=>rejectReturn(btn.dataset.rejectRet)));
+  $$(`${scope} [data-refund-ret]`).forEach(btn=> btn.addEventListener("click", ()=>processRefund(btn.dataset.refundRet)));
 }
 
 /* The audit row for a return transition is written by returns/advance.php,
@@ -1857,8 +2050,8 @@ function validateReturn(returnId){
         <div class="order-detail-heading">Order Verification</div>
         <div class="detail-row"><span class="detail-row-label">Order ID</span><span class="detail-row-val">${escHtml(r.orderId)}</span></div>
         <div class="detail-row"><span class="detail-row-label">Order Found</span><span class="detail-row-val" style="color:var(--ok-ink)">${o?"✓ Confirmed":"✗ Not found"}</span></div>
-        <div class="detail-row"><span class="detail-row-label">Product</span><span class="detail-row-val">${escHtml(r.productName)}</span></div>
-        <div class="detail-row"><span class="detail-row-label">Batch Code</span><span class="detail-row-val"><code>${escHtml(r.batchCode)}</code></span></div>
+        <div class="detail-row"><span class="detail-row-label">Items</span><span class="detail-row-val">${escHtml(returnItemsSummary(r))} · ${r.qty} ${r.qty === 1 ? "unit" : "units"}</span></div>
+        <div class="detail-row"><span class="detail-row-label">Return Window</span><span class="detail-row-val">${returnWindowNote(r)}</span></div>
         <div class="detail-row"><span class="detail-row-label">Purchase Date</span><span class="detail-row-val">${fmtDate(r.purchaseDate)}</span></div>
       </div>
       <div class="field"><label>Validation Notes</label><input class="control" id="validate-notes" value="Order ID confirmed, product batch verified"/></div>`,
@@ -1951,24 +2144,50 @@ function rejectReturn(returnId){
 function processRefund(returnId){
   const r = RETURNS.find(r=>r.id===returnId);
   if(!r) return;
+  const pref = r.refundTo ? r.refundTo.method : "gcash";
+  let receipt = null;   /* path from api/uploads/image.php, purpose "refunds" */
   openModal({
     title:"Process Refund",
     body:`<div class="detail-row"><span class="detail-row-label">Customer</span><span class="detail-row-val">${escHtml(r.customer)}</span></div>
       <div class="detail-row" style="margin-bottom:12px"><span class="detail-row-label">Refund Amount</span><span class="detail-row-val" style="color:var(--gold-ink)">${peso(r.refundAmount)}</span></div>
-      <div class="field"><label>Refund Method</label>
+      <div class="order-detail-section">
+        <div class="order-detail-heading">Send To</div>
+        ${returnRefundToRows(r)}
+      </div>
+      <div class="field"><label for="refund-method">Refund Method</label>
         <select class="control" id="refund-method">
-          <option value="gcash">GCash</option>
-          <option value="bank">Bank Transfer</option>
-          <option value="cash">Cash</option>
+          <option value="gcash" ${pref==="gcash"?"selected":""}>GCash</option>
+          <option value="bank" ${pref==="bank"?"selected":""}>Bank Transfer</option>
         </select>
       </div>
-      <div class="field"><label>Transaction Notes</label><input class="control" id="refund-notes" placeholder="e.g. Refund ₱290 sent via GCash 09171112233"/></div>`,
+      <div class="field"><label for="refund-receipt">Transfer Receipt <span style="color:var(--out)">*</span></label>
+        <input class="control" id="refund-receipt" type="file" accept="image/png,image/jpeg,image/webp">
+        <div class="muted" style="font-size:.78rem;margin-top:4px">Screenshot of the completed GCash / bank transfer. The customer sees this as proof of refund.</div>
+        <img id="refund-receipt-preview" alt="Receipt preview" class="hide" style="max-width:100%;max-height:200px;border-radius:8px;margin-top:8px;display:block">
+        <div class="field-error" id="refund-receipt-err" style="color:var(--out-ink);font-size:.8rem"></div>
+      </div>
+      <div class="field"><label for="refund-notes">Transaction Notes</label><input class="control" id="refund-notes" placeholder="e.g. GCash ref 1234 5678 90"/></div>`,
     confirmLabel:"Confirm Refund Processed", confirmClass:"btn-gold",
+    onOpen(){
+      const inp = $("#refund-receipt"), prev = $("#refund-receipt-preview"), err = $("#refund-receipt-err");
+      inp.addEventListener("change", async ()=>{
+        const file = inp.files && inp.files[0];
+        if(!file) return;
+        err.textContent = "Uploading…"; receipt = null;
+        try {
+          const data = await EbApi.upload(file, "refunds");
+          receipt = data.path;
+          prev.src = imageUrl(receipt); prev.classList.remove("hide");
+          err.textContent = "";
+        } catch(e){ err.textContent = e.message; prev.classList.add("hide"); }
+      });
+    },
     async onConfirm(){
+      if(!receipt){ $("#refund-receipt-err").textContent = "Upload the transfer receipt first."; return; }
       const method = $("#refund-method").value;
       const notes = $("#refund-notes").value.trim() || `Refund ${peso(r.refundAmount)} via ${payMethodLabel(method)}`;
       if(!await advanceReturn(returnId, "processed",
-            { refund_method: method, refund_amount: r.refundAmount, note: notes })) return;
+            { refund_method: method, refund_amount: r.refundAmount, refund_receipt: receipt, note: notes })) return;
       addReturnAudit(returnId, "processed", notes);
       toast(`Refund of ${peso(r.refundAmount)} processed`, "ok");
       closeModal(); renderReturns();
