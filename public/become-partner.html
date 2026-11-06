@@ -2,13 +2,13 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="description" content="Become a retailer partner with Juris Bay Foods — wholesale margins, flexible credit terms, and 100% traceable gourmet bangus." />
 <title>Become a Retailer Partner — Elisha Bay</title>
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
 <link rel="stylesheet" href="../assets/css/public/styles.css" />
 <link rel="stylesheet" href="../assets/css/public/partner.css" />
@@ -96,9 +96,7 @@
     <div class="container partner-container">
       <div class="partner-layout">
 
-        <!-- SIDEBAR. .partner-aside makes it stick beside the form instead of
-             scrolling away and leaving its column empty for the length of a
-             long application — see partner.css. -->
+        <!-- Sticky sidebar beside the form (see partner.css). -->
         <aside class="partner-aside">
           <h2 class="partner-sidebar-head">Why Partner With Us?</h2>
 
@@ -148,31 +146,36 @@
 
         <!-- FORM CARD -->
         <div class="partner-form-card" id="partner-form-wrap">
-          <div id="partner-form-view">
+          <!-- Applying needs an account (api/b2b/apply.php refuses otherwise); this gate shows until the visitor signs in. -->
+          <div class="pf-gate hide" id="pf-gate">
+            <span class="pf-gate-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+            <h3 class="pf-gate-title">Sign in to apply</h3>
+            <p class="pf-gate-text">Before you become a retail partner, sign in to your Elisha Bay account or create one. Your application is attached to that account, and it becomes your partner login once approved.</p>
+            <div class="pf-gate-actions">
+              <button type="button" class="btn btn-gold" id="pf-gate-login">Sign In</button>
+              <button type="button" class="btn btn-ghost" id="pf-gate-register">Create Account</button>
+            </div>
+          </div>
+          <!-- Hidden until the sign-in check answers (signInGate), so the form never flashes for a signed-out visitor. -->
+          <div id="partner-form-view" class="hide">
             <h3 class="partner-form-title">Wholesale Application Form</h3>
             <p class="partner-form-sub">Complete your business profile below. All fields marked with asterisk (*) are mandatory.</p>
 
-            <!-- Shown only to a signed-in customer. It names the account the
-                 application will be attached to, because that account is what
-                 gets promoted on approval and the applicant should not have to
-                 infer it from a prefilled field. api/b2b/apply.php takes the
-                 email from the session and does not read the one in the body,
-                 so this line is the disclosure of that. -->
+            <!-- Shows which account the application will be attached to (the server takes the email from the session). -->
             <div class="pf-account-note hide" id="pf-account-note">
               <span class="pf-account-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
               <span>This application will be attached to your Elisha Bay account, <strong id="pf-account-who"></strong>. You already have a sign-in, so no new credentials are needed.</span>
             </div>
 
             <form id="partner-form" novalidate>
-              <!-- Five numbered sections (CSS counter, so the hidden credentials
-                   section never leaves a gap in the numbering). -->
+              <!-- Five numbered sections using a CSS counter, so the hidden credentials section leaves no gap. -->
               <section class="pf-sec">
               <div class="pf-sec-head"><span class="pf-sec-num" aria-hidden="true"></span><div><h4 class="pf-sec-title">Business Information</h4><p class="pf-sec-desc">Your registered store and tax details.</p></div></div>
               <div class="auth-field">
                 <label for="pf-company">Registered Company / Store Name *</label>
                 <div class="auth-input-group">
                   <span class="auth-input-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1M9 13h1M9 17h1M14 9h1M14 13h1M14 17h1"/></svg></span>
-                  <input class="auth-input" id="pf-company" type="text" placeholder="e.g. Mangin Grocery &amp; Sari-Sari Store" required />
+                  <input class="auth-input" id="pf-company" type="text" autocomplete="organization" placeholder="e.g. Mangin Grocery &amp; Sari-Sari Store" required />
                 </div>
                 <span class="field-error" data-err></span>
               </div>
@@ -197,17 +200,13 @@
                   <label for="pf-tin">BIR TIN Number *</label>
                   <div class="auth-input-group">
                     <span class="auth-input-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg></span>
-                    <input class="auth-input" id="pf-tin" type="text" placeholder="000-000-000-000" required />
+                    <input class="auth-input" id="pf-tin" type="text" inputmode="numeric" autocomplete="off" maxlength="15" placeholder="000-000-000-000" required />
                   </div>
                   <span class="field-error" data-err></span>
                 </div>
               </div>
 
-              <!-- The business address: the shared picker, rendered into the host
-                   below at DOMContentLoaded. It was one required free-text field;
-                   a retailer's address is where stock is delivered on credit
-                   terms, the last address in the system that should be typed
-                   freehand. Every part is required here, street and ZIP included. -->
+              <!-- Business address uses the shared picker, fully required (street and ZIP included). -->
               </section>
 
               <section class="pf-sec">
@@ -248,13 +247,7 @@
                 <span class="field-error" data-err></span>
               </div>
 
-              <!-- Hidden wholesale for a signed-in customer: they already have a
-                   username and a password, asking for a second set invites a
-                   collision on the UNIQUE username column, and b2b/decide.php
-                   promotes with COALESCE(username, ?) so the existing login
-                   survives approval untouched. api/b2b/apply.php refuses
-                   credentials from a signed-in applicant, which is what makes
-                   this hiding true rather than decorative. -->
+              <!-- Hidden for signed-in customers, who already have a login (apply.php refuses credentials from them). -->
               </section>
 
               <section class="pf-sec" id="pf-credentials">
@@ -281,17 +274,7 @@
               </div>
               </section><!-- /#pf-credentials -->
 
-              <!-- A whole "Wholesale Volume" section used to stand here, and it is gone.
-                   It held two fields, removed one at a time:
-                     Requested Credit Tier — an applicant no longer picks Net 30/60/90;
-                       an approved retailer chooses the term on each order at checkout.
-                     Expected Monthly Volume — a band nobody acted on. It was preset
-                       to "₱50,000 – ₱100,000", so an applicant who skipped past it
-                       "declared" a volume they never chose, and the staff screen never
-                       displayed it anyway.
-                   The b2b_applications.monthly_volume column is KEPT: earlier
-                   applications have values in it, and dropping the column would delete
-                   that history to save nothing. Nothing writes to it now. -->
+              <!-- The Wholesale Volume section was removed; the monthly_volume column stays for older applications. -->
 
               <section class="pf-sec">
               <div class="pf-sec-head"><span class="pf-sec-num" aria-hidden="true"></span><div><h4 class="pf-sec-title">Additional Notes</h4><p class="pf-sec-desc">Optional — branches, target volume or delivery schedule.</p></div></div>
@@ -304,6 +287,12 @@
               </div>
 
               </section>
+
+              <!-- Retail Partner Terms consent, required (b2b/apply.php checks agree_partner_terms too). -->
+              <div class="auth-field">
+                <label class="tc-agree"><input type="checkbox" id="pf-terms"/><span>I have read and agree to the <a href="#" data-terms="partner">Retail Partner Terms</a> and the <a href="#" data-terms="customer">Terms and Conditions</a> on behalf of my business.</span></label>
+                <span class="field-error" data-err></span>
+              </div>
 
               <button type="submit" class="btn btn-red btn-block">
                 Submit Partnership Application
@@ -393,27 +382,11 @@
     <script defer src="../assets/js/public/address-picker.js"></script>
     <script defer src="../assets/js/public/site.js"></script>
 <script>
-/* Wrapped in DOMContentLoaded, and that is not cosmetic.
-
-   This IIFE ran DURING PARSE, before the deferred site.js above it had
-   executed — so `ICONS.eye` on the first working line threw
-
-       Uncaught ReferenceError: ICONS is not defined
-
-   which killed the whole function before it reached
-   form.addEventListener('submit', ...). The eye toggle never rendered and THE
-   SUBMIT HANDLER WAS NEVER ATTACHED: pressing Submit did a native form post
-   back to the same page, so even the fake "Application Submitted!" panel this
-   code used to show had stopped appearing.
-
-   Deferred scripts run before DOMContentLoaded fires, so waiting for it means
-   ICONS, EbApi, EbFormat and showToast are all present. */
+/* Runs on DOMContentLoaded so the deferred scripts (ICONS, EbApi, EbFormat, showToast) exist first. */
 window.addEventListener('DOMContentLoaded', function () {
   var form = document.getElementById('partner-form');
 
-  /* The business address picker — see assets/js/public/address-picker.js.
-     Rendered before anything below runs, because the prefill further down
-     writes into it. */
+  /* Render the business address picker before the prefill below. */
   var bpHost = document.getElementById('bp-addr-host');
   if (bpHost) bpHost.innerHTML = EbAddress.markup('bp', { variant: 'auth', required: true });
   var bpAddr = bpHost ? EbAddress.mount(bpHost, 'bp') : null;
@@ -436,38 +409,13 @@ window.addEventListener('DOMContentLoaded', function () {
     return false;
   }
 
-  /* ---- PREFILL FOR A SIGNED-IN CUSTOMER (decision I9) -------------------
-     The same four rules openCheckout() in assets/js/public/site.js follows,
-     and for the same reasons — read the long comment there:
-
-       1. Identity comes from the SESSION. shop/profile.php takes no customer
-          id and no email; there is nothing to pass and nothing to forge.
-       2. Only EMPTY fields are filled. The request is asynchronous and someone
-          who starts typing before it lands must not have it overwritten
-          mid-keystroke, which is exactly what a naive `el.value = …` does.
-       3. Every prefilled field stays EDITABLE. Nothing disabled, nothing
-          readonly. A returning customer's business address is often not their
-          delivery address.
-       4. A failed request logs and leaves the form alone. "Profile service
-          unavailable" is not something an applicant can act on.
-
-     What a returning customer should still have to type is the part we do not
-     know: the business name, its type, its TIN, the terms they want, their
-     volume and their notes. Everything about the PERSON is already on file.
-
-     `whenAuthReady()` rather than reading state.auth directly — the flag is
-     fail-closed `false` until shop/me.php answers, and sampling it once at
-     load is the bug that showed a signed-in customer the guard panel on
-     profile.html. */
+  /* Prefill for a signed-in customer, following the checkout's rules: identity from the session, only empty fields filled, everything editable, failures logged (uses whenAuthReady()). */
   async function prefillForSignedInCustomer() {
     if (typeof whenAuthReady !== 'function') return;
     var loggedIn = await whenAuthReady();
     if (!loggedIn) return;
 
-    /* Credentials go before the request resolves. They are not conditional on
-       the profile loading — the customer has a sign-in either way, and leaving
-       two `required` fields on screen for a second would fail validation on a
-       fast submit. */
+    /* Hide credentials before the profile request resolves, so a fast submit does not fail. */
     var creds = document.getElementById('pf-credentials');
     if (creds) {
       creds.classList.add('hide');
@@ -499,40 +447,43 @@ window.addEventListener('DOMContentLoaded', function () {
       if (el.value.trim() !== '') return;      /* never clobber typing */
       el.value = value;
       el.classList.add('is-prefilled');
-      /* The marker says where the value came from, so it goes the moment the
-         applicant makes it theirs. */
+      /* Remove the prefill marker once the applicant edits the field. */
       el.addEventListener('input', function () { el.classList.remove('is-prefilled'); }, { once: true });
     };
 
     fillIfEmpty('pf-contact-name',  profile.name);
     fillIfEmpty('pf-contact-phone', profile.contact);
     fillIfEmpty('pf-email',         profile.email);
-    /* The saved address, through the picker's own prefill: it fills only what
-       is still empty, walks the dropdowns in order, and stops the moment the
-       applicant touches one. A business address is often NOT the home address
-       saved on the profile, which is exactly why it is a suggestion that stays
-       fully editable rather than a copy. */
+    /* Prefill the saved address through the picker (fully editable, since a business address often differs). */
     if (bpAddr && profile.address && profile.address.hasAny) bpAddr.prefill(profile.address);
   }
 
   prefillForSignedInCustomer();
+
+  /* Terms reader for the consent links. */
+  import('../assets/js/public/terms.js').then(function (m) { m.wireTermsLinks(form); }).catch(function () {});
+
+  /* Sign-in gate, re-checked on eb:auth-changed so signing in reveals the form without a reload. */
+  (function signInGate() {
+    var gate = document.getElementById('pf-gate');
+    var view = document.getElementById('partner-form-view');
+    if (!gate || !view) return;
+    var show = function (loggedIn) {
+      gate.classList.toggle('hide', !!loggedIn);
+      view.classList.toggle('hide', !loggedIn);
+      if (loggedIn) prefillForSignedInCustomer();
+    };
+    view.classList.add('hide');
+    if (typeof whenAuthReady === 'function') whenAuthReady().then(show); else show(false);
+    window.addEventListener('eb:auth-changed', function (e) { show(e.detail && e.detail.loggedIn); });
+    document.getElementById('pf-gate-login').addEventListener('click', function () { openAuth('login'); });
+    document.getElementById('pf-gate-register').addEventListener('click', function () { openAuth('register'); });
+  })();
   function clearErrors() {
     form.querySelectorAll('[data-err]').forEach(function (e) { e.textContent = ''; });
   }
 
-  /* THIS HANDLER USED TO SUBMIT NOWHERE.
-
-     It validated the fields, advanced the stepper, and swapped in
-     "Application Submitted! ... we'll reach out within 2 business days" — with
-     no fetch, no endpoint, and no INSERT INTO b2b_applications anywhere in the
-     codebase. The staff Partner Applications screen could only ever show the
-     eight seeded rows.
-
-     A real business owner filled in twelve fields, was told it worked, and no
-     member of staff ever saw it.
-
-     The confirmation panel is now shown only after the server has the row and
-     has returned its reference code. */
+  /* Submit to api/b2b/apply.php and show the confirmation only after the server returns the reference code. */
   form.addEventListener('submit', async function (e) {
     e.preventDefault();
     clearErrors();
@@ -543,15 +494,12 @@ window.addEventListener('DOMContentLoaded', function () {
     var email = document.getElementById('pf-email');
     if (email.value && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.value)) { ok = fail(email, 'Enter a valid email.'); }
     var pass = document.getElementById('pf-password');
-    /* `pass.value &&` already skips an empty box, so a signed-in applicant with
-       the block hidden never reaches this. Kept as-is rather than gated on
-       signedIn, because that is one fewer condition that can disagree with the
-       one that hid the block. */
+    /* pass.value && already skips an empty box. */
     if (pass.value && pass.value.length < 8) { ok = fail(pass, 'Use at least 8 characters.'); }
-    /* The picker validates itself — region through barangay, street and ZIP.
-       Its fields carry aria-required rather than `required`, so the generic
-       loop above does not double up on them. */
+    /* The picker validates itself (it uses aria-required, not required). */
     if (bpAddr && !bpAddr.validate(true)) ok = false;
+    var terms = document.getElementById('pf-terms');
+    if (!terms.checked) { ok = fail(terms, 'Please agree to the Retail Partner Terms to submit your application.'); }
     if (!ok) return;
 
     var submitBtn = form.querySelector('[type=submit]');
@@ -564,17 +512,15 @@ window.addEventListener('DOMContentLoaded', function () {
       business_name:    val('pf-company'),
       business_type:    val('pf-type'),
       bir_tin:          val('pf-tin'),
-      /* Codes, not a string — apply.php looks the names up and composes the
-         printable line it stores as business_address. */
+      /* Send address codes; apply.php looks up names and builds business_address. */
       address:          bpAddr ? bpAddr.value() : null,
       applicant_name:   val('pf-contact-name'),
       phone:            val('pf-contact-phone'),
       email:            val('pf-email'),
-      notes:            val('pf-notes')
+      notes:            val('pf-notes'),
+      agree_partner_terms: terms.checked
     };
-    /* Credentials only from a stranger. apply.php refuses them from a signed-in
-       applicant, and sending empty strings would trip that refusal rather than
-       be quietly ignored — which is the point of it refusing. */
+    /* Send credentials only from a new applicant. */
     if (!signedIn) {
       payload.username = val('pf-username');
       payload.password = val('pf-password');
@@ -584,14 +530,12 @@ window.addEventListener('DOMContentLoaded', function () {
       var res = await EbApi.post('b2b/apply.php', payload);
       data = res.data;
     } catch (err) {
-      /* Field errors land on their input; anything else is said out loud. The
-         form is left filled in — losing twelve fields to a server hiccup is
-         how an applicant gives up. */
+      /* Field errors go to their inputs, others to a message, and the form stays filled in. */
       var map = {
         business_name: 'pf-company', business_type: 'pf-type', bir_tin: 'pf-tin',
         applicant_name: 'pf-contact-name',
         phone: 'pf-contact-phone', email: 'pf-email', username: 'pf-username',
-        password: 'pf-password'
+        password: 'pf-password', agree_partner_terms: 'pf-terms'
       };
       var handled = false;
       if (err.isValidation) {
@@ -631,5 +575,22 @@ window.addEventListener('DOMContentLoaded', function () {
   document.getElementById('year') && (document.getElementById('year').textContent = new Date().getFullYear());
 });
 </script>
+  <script>
+    /* BIR TIN auto-formats as 000-000-000-000 while typing, keeping the caret in place. */
+    (function () {
+      var el = document.getElementById('pf-tin');
+      if (!el) return;
+      var fmt = function (d) { return d.slice(0, 12).replace(/(\d{3})(?=\d)/g, '$1-'); };
+      el.addEventListener('input', function () {
+        var before = el.value.slice(0, el.selectionStart).replace(/\D/g, '').length;
+        var out = fmt(el.value.replace(/\D/g, ''));
+        el.value = out;
+        var pos = 0, seen = 0;
+        while (pos < out.length && seen < before) { if (/\d/.test(out[pos])) seen++; pos++; }
+        el.setSelectionRange(pos, pos);
+      });
+      if (el.value) el.value = fmt(el.value.replace(/\D/g, ''));
+    })();
+  </script>
 </body>
 </html>

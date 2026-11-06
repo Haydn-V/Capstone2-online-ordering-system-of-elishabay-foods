@@ -1,19 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/payments/received.php — money received on Net accounts, by date.
- *
- * Query: ?from=YYYY-MM-DD&to=YYYY-MM-DD   (both optional)
- *
- * Requires sales.report or payments.manage.
- *
- * Every VERIFIED, non-legacy payment toward a Net account: the part of revenue
- * that is not an order (api/core/Revenue.php). The portal adds these to the
- * revenue it computes in the browser — the dashboard, the Sales Report's
- * first-paint estimate and its chart — through receivedBetween(), so a figure
- * worked out on screen and one from reports/sales.php follow the same rule.
- */
+/** GET /api/payments/received.php (needs sales.report or payments.manage) lists verified non-legacy Net payments by date, which the portal adds to revenue via receivedBetween(). */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -46,6 +34,13 @@ $rows = Database::all(
     $params
 );
 
+/* Refunds paid out, by the day they come off revenue (see refundedBetween() in engine.js). */
+[$refClause, $refParams] = Revenue::refundClause('r');
+$refDate = Revenue::refundDateSql('r');
+$refunds = array_map(static fn(array $r): array => [
+    'id' => $r['id'], 'orderId' => $r['order_id'], 'amount' => (float) $r['refund_amount'], 'date' => $r['d'],
+], Database::all("SELECT r.id, r.order_id, r.refund_amount, $refDate AS d FROM product_returns r WHERE $refClause ORDER BY d", $refParams));
+
 Response::ok(array_map(static fn(array $r): array => [
     'id'        => (int) $r['id'],
     'accountId' => $r['account_id'],
@@ -55,4 +50,4 @@ Response::ok(array_map(static fn(array $r): array => [
     'method'    => $r['method'],
     'amount'    => (float) $r['amount'],
     'paidDate'  => $r['paid_date'],
-], $rows));
+], $rows), ['refunds' => $refunds]);

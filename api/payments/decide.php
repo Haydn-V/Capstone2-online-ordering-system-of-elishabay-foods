@@ -1,27 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/payments/decide.php — verify or reject a payment a retailer sent.
- *
- * Body: { "payment_id": 12, "decision": "verify"|"reject", "reason"?: "…" }
- *
- * Requires payments.manage.
- *
- * Net payments are checked HERE, in Payment Schemes, not in Payment
- * Verification: the question is not "is this order paid" but "does this
- * transfer count toward this account", and the answer needs the account's
- * history beside it.
- *
- *   verify   the amount counts as paid, on the payment's own paid_date. If it
- *            covers what is left, the account settles (Payments::refreshAccount).
- *   reject   a reason is REQUIRED — the retailer reads it on their Payment
- *            Schemes page, and "rejected" with no cause is indistinguishable
- *            from "ignored".
- *
- * Only a `pending` payment can be decided. A decision is final; a wrong
- * rejection is corrected by the retailer sending the payment again.
- */
+/** POST /api/payments/decide.php (needs payments.manage) verifies or rejects a pending Net payment (rejection needs a reason the retailer will see), and the decision is final. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -66,9 +46,7 @@ try {
     $amount = (float) $pay['amount'];
 
     if ($decision === 'verify') {
-        /* Another payment may have been verified since this one was sent, so
-           what is left can now be less than this transfer. Counting it anyway
-           would record the account as overpaid with nowhere for the extra to go. */
+        /* Refuse if this payment is now more than what is left, so the account is never overpaid. */
         if ($amount > $acct['remaining'] + 0.004) {
             $pdo->rollBack();
             Response::conflict(sprintf(

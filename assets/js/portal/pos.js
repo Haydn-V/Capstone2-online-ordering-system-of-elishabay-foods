@@ -1,15 +1,16 @@
 "use strict";
-/* ============================================================
-   POINT OF SALE — Walk-In Order + Payment
-   Ported from the former CashierModule. Reuses engine.js's shared helpers
-   ($, $$, peso, escHtml, fmtDate, fmtDateTime, toast, openModal,
-   closeModal, stockInfo, getProduct, payMethodLabel, PRODUCTS,
-   ORDERS, adminState) — nothing redefined here.
-   ============================================================ */
 
-/* ============================================================
-   CART OPERATIONS
-   ============================================================ */
+/* Same format rule as Payments::checkRef (the server also refuses a reference already used). */
+function refFormatError(method, ref){
+  const c = String(ref || "").replace(/[\s-]/g, "").toUpperCase();
+  if(method === "gcash" && !/^\d{13}$/.test(c)) return "GCash reference numbers are 13 digits.";
+  if(method === "bank" && !/^[A-Z0-9]{6,20}$/.test(c)) return "Enter the 6–20 character reference from your bank's confirmation.";
+  return "";
+}
+
+/* ===== POINT OF SALE: Walk-In Order + Payment (uses engine.js helpers and globals) ===== */
+
+/* ===== CART OPERATIONS ===== */
 function addToCart(productId, qty){
   const existing = adminState.cart.find(c=>c.productId===productId);
   if(existing){ existing.qty = qty; }
@@ -23,6 +24,26 @@ function updateCartQty(productId, delta){
   const p = getProduct(productId);
   item.qty = Math.max(1, Math.min(item.qty + delta, p?.stock || 99));
   refreshCartUI();
+}
+
+/* Typed quantity: clamped to 1…stock like the +/− buttons. */
+function setCartQty(productId, qty){
+  const item = adminState.cart.find(c=>c.productId===productId);
+  if(!item) return;
+  const p = getProduct(productId), max = p?.stock || 99;
+  const n = Math.floor(Number(qty));
+  item.qty = Math.max(1, Math.min(Number.isFinite(n) ? n : item.qty, max));
+  if(Number.isFinite(n) && n > max) toast(`Only ${max} left in stock.`, "warn");
+  refreshCartUI();
+}
+/* Wire the typed-quantity boxes in a cart list. */
+function wireQtyInputs(root){
+  root.querySelectorAll("input.qty-val").forEach(inp=>{
+    inp.addEventListener("focus", ()=>inp.select());
+    inp.addEventListener("input", ()=>{ inp.value = inp.value.replace(/\D/g, "").slice(0, 4); });
+    inp.addEventListener("keydown", e=>{ if(e.key==="Enter") inp.blur(); if(e.key==="Escape"){ inp.value=inp.defaultValue; inp.blur(); } });
+    inp.addEventListener("change", ()=>setCartQty(inp.dataset.pid, inp.value || inp.defaultValue));
+  });
 }
 
 function removeFromCart(productId){
@@ -50,9 +71,7 @@ function updateCartBadge(){
   if(badge){ badge.textContent=total; badge.classList.toggle("hide", total===0); }
 }
 
-/* ============================================================
-   WALK-IN ORDER — Product grid
-   ============================================================ */
+/* ===== WALK-IN ORDER: product grid ===== */
 function renderPosProducts(){
   const search = ($("#prod-search")?.value||"").toLowerCase();
   const cat    = adminState.catFilter;
@@ -60,18 +79,18 @@ function renderPosProducts(){
 
   const cf = $("#cat-filter");
   if(cf && !cf.dataset.rendered){
-    cf.innerHTML = cats.map(c=>`<button class="cat-btn${c===cat?" active":""}" data-cat="${escHtml(c)}">${escHtml(c)}</button>`).join("");
+    cf.innerHTML = cats.map(c=>`<button class="tab-btn${c===cat?" active":""}" data-cat="${escHtml(c)}">${escHtml(c)}</button>`).join("");
     cf.dataset.rendered="1";
-    cf.querySelectorAll(".cat-btn").forEach(btn=>{
+    cf.querySelectorAll(".tab-btn").forEach(btn=>{
       btn.addEventListener("click",()=>{
         adminState.catFilter=btn.dataset.cat;
-        cf.querySelectorAll(".cat-btn").forEach(b=>b.classList.toggle("active",b===btn));
+        cf.querySelectorAll(".tab-btn").forEach(b=>b.classList.toggle("active",b===btn));
         renderPosProducts();
       });
     });
     $("#prod-search")?.addEventListener("input", renderPosProducts);
   } else if(cf){
-    cf.querySelectorAll(".cat-btn").forEach(btn=>btn.classList.toggle("active",btn.dataset.cat===cat));
+    cf.querySelectorAll(".tab-btn").forEach(btn=>btn.classList.toggle("active",btn.dataset.cat===cat));
   }
 
   const filtered = PRODUCTS.filter(p=>{
@@ -96,11 +115,7 @@ function createPosProductTile(p){
   const inCart = adminState.cart.find(c=>c.productId===p.id);
   const oos    = p.stock===0;
   const stripColor = p.cat.includes("Deboned")?"var(--red)":"var(--gold)";
-  /* imageUrl(), not p.image directly. The stored value is now
-     /uploads/products/….webp — application-root-relative — and this page lives
-     at /elishabay/portal/cashier/, so a raw src would resolve to the web root
-     and 404. That mismatch, in the opposite direction, is the whole of defect
-     3.2. One resolver, every screen (decision I6). */
+  /* Use imageUrl() so app-root-relative upload paths resolve from this page. */
   const imgSrc  = imageUrl(p);
   const imgZone = imgSrc
     ? `<div class="tile-img"><img src="${escHtml(imgSrc)}" alt="${escHtml(p.name)}" loading="lazy"></div>`
@@ -160,9 +175,7 @@ function openAddModal(productId){
   },50);
 }
 
-/* ============================================================
-   CART PANEL
-   ============================================================ */
+/* ===== CART PANEL ===== */
 function renderCart(){
   const items = adminState.cart;
   const total = computeTotal();
@@ -179,13 +192,7 @@ function renderCart(){
     cartEl.innerHTML=items.map(item=>{
       const p=getProduct(item.productId);
       if(!p) return "";
-      /* THE SAME PICTURE THE TILE SHOWED. A cart line that is only a name is
-         hard to check against a counter full of jars, and the name is
-         ellipsised at this width — "Asian Steak Ban…" is not enough to catch a
-         wrong tap. imageUrl() resolves the application-root-relative path the
-         same way createPosProductTile() does; the placeholder carries the same
-         category tint as the tile, so a product with no photo still reads as
-         the product it was. */
+      /* Cart lines show the same picture as the tile (or the same tinted placeholder) so a wrong tap is easy to spot. */
       const thumbSrc = imageUrl(p);
       const tint = p.cat.includes("Deboned") ? "var(--red)" : "var(--gold)";
       const thumb = thumbSrc
@@ -194,12 +201,7 @@ function renderCart(){
                  style="background:linear-gradient(135deg,${tint}18,${tint}35)">
              <svg viewBox="0 0 24 24" fill="none" stroke="${tint}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
            </span>`;
-      /* TWO ROWS, not one. The cart column is 340px and the controls take most
-         of it — stepper, line total and the remove button. Beside them the
-         name had 119px, and once the thumbnail took its 40 it had 69: every
-         product read as "Asian Steak Ban…". The name and price now have the
-         column to themselves and the controls sit underneath, with the
-         thumbnail spanning both. */
+      /* Two rows: name and price on top with the full width, controls below, thumbnail spanning both. */
       return `<div class="cart-item">
         ${thumb}
         <div class="cart-item-info">
@@ -209,7 +211,7 @@ function renderCart(){
         <div class="cart-item-controls">
           <div class="qty-stepper">
             <button class="qty-btn" data-delta="-1" data-pid="${p.id}" aria-label="Decrease">−</button>
-            <span class="qty-val">${item.qty}</span>
+            <input class="qty-val" type="text" inputmode="numeric" value="${item.qty}" data-pid="${p.id}" aria-label="Quantity of ${escHtml(p.name)}">
             <button class="qty-btn" data-delta="1"  data-pid="${p.id}" aria-label="Increase">+</button>
           </div>
           <div class="cart-item-total">${peso(p.price*item.qty)}</div>
@@ -225,28 +227,26 @@ function renderCart(){
     cartEl.querySelectorAll(".cart-item-remove").forEach(btn=>{
       btn.addEventListener("click",()=>removeFromCart(btn.dataset.pid));
     });
+    wireQtyInputs(cartEl);
   }
 
   const totalEl = $("#cart-total"); if(totalEl) totalEl.textContent=peso(total);
+  const pcs = items.reduce((n, i) => n + i.qty, 0);
+  const qtyEl = $("#cart-qty-sum"); if(qtyEl) qtyEl.textContent = `${pcs} pc${pcs === 1 ? "" : "s"}`;
   const payBtn  = $("#cart-pay-btn");
   const gotoBtn = $("#goto-payment-btn");
   if(payBtn)  payBtn.disabled=items.length===0;
   if(gotoBtn) gotoBtn.disabled=items.length===0;
 }
 
-/* ============================================================
-   PAYMENT / CHECKOUT
-   ============================================================ */
+/* ===== PAYMENT / CHECKOUT ===== */
 function renderPayment(){
   const orderReviewCol  = $("#order-review-col");
   const paymentFormCol  = $("#payment-form-col");
   if(!orderReviewCol || !paymentFormCol) return;
 
   if(!adminState.cart.length){
-    /* data-goto, not onclick. The inline handler this replaces lived inside a
-       template string, so a grep of the .html files could never see it — and it
-       depended on navigate() being a global, which breaks silently the moment
-       this file becomes a module. */
+    /* data-goto instead of an inline onclick. */
     orderReviewCol.innerHTML=`<div style="text-align:center;padding:40px;color:var(--text-muted)">
       <p>No items in order.</p>
       <button class="btn btn-gold" style="margin-top:16px" data-goto="pos">← Add Products</button>
@@ -260,14 +260,16 @@ function renderPayment(){
   const total = computeTotal();
   const reviewItems = adminState.cart.map(item=>{
     const p=getProduct(item.productId); if(!p) return "";
+    const src = imageUrl(p);
     return `<div class="review-item">
+      ${src ? `<img class="review-item-thumb" src="${escHtml(src)}" alt="" loading="lazy">` : `<span class="review-item-thumb" aria-hidden="true"></span>`}
       <div class="cart-item-info" style="flex:1">
         <div class="review-item-name">${escHtml(p.name)}</div>
         <div class="review-item-unit">${peso(p.price)} × ${item.qty}</div>
       </div>
       <div class="qty-stepper">
         <button class="qty-btn" data-delta="-1" data-pid="${p.id}">−</button>
-        <span class="qty-val">${item.qty}</span>
+        <input class="qty-val" type="text" inputmode="numeric" value="${item.qty}" data-pid="${p.id}" aria-label="Quantity of ${escHtml(p.name)}">
         <button class="qty-btn" data-delta="1"  data-pid="${p.id}">+</button>
       </div>
       <div class="review-item-total">${peso(p.price*item.qty)}</div>
@@ -278,11 +280,33 @@ function renderPayment(){
   }).join("");
 
   orderReviewCol.innerHTML=`
-    <div class="panel-header"><span class="panel-title">Order Summary</span></div>
+    <div class="panel-header">
+      <span class="panel-title">Order Summary</span>
+      <span class="badge badge-info">${adminState.cart.reduce((n, i) => n + i.qty, 0)} pcs</span>
+    </div>
     <div id="review-items">${reviewItems}</div>
-    <div class="billing-row total-row" style="margin-top:12px">
-      <span>Total</span>
+    <div class="billing-row total-row review-total">
+      <span>Items total</span>
       <span class="billing-total-val" id="billing-total">${peso(total)}</span>
+    </div>
+    <!-- Totals + Place Order live beside the form (right column), so the
+         cashier never scrolls to finish a sale. -->
+    <div class="order-detail-section pay-checkout-box">
+    <!-- Filled from pos/quote.php: the discount, VAT, withholding and the amount
+         DUE, which is what the cashier tenders against. Starts as the plain
+         total so the screen is never blank while the quote is on its way. -->
+    <div id="pos-tax-box" style="margin-bottom:16px">
+      <div class="billing-row total-row">
+        <span>Amount Due</span>
+        <span class="billing-total-val">${EbFormat.pesoExact(total)}</span>
+      </div>
+    </div>
+
+    <button class="btn btn-gold btn-block" id="place-order-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      Place Order
+    </button>
+    <span class="field-error" id="err-general" style="margin-top:8px;display:block;text-align:center"></span>
     </div>`;
 
   orderReviewCol.querySelectorAll(".qty-btn").forEach(btn=>{
@@ -291,10 +315,25 @@ function renderPayment(){
   orderReviewCol.querySelectorAll(".cart-item-remove").forEach(btn=>{
     btn.addEventListener("click",()=>removeFromCart(btn.dataset.pid));
   });
+  wireQtyInputs(orderReviewCol);
+
+  /* Place Order is rebuilt with this column every time, so bind it here (wirePaymentForm() is skipped when the form is kept, which left later sales with a dead button). */
+  $("#place-order-btn")?.addEventListener("click", ()=> posPlaceOrder?.());
+
+  /* If the cart changes while the form is filled in, keep the entries and just re-quote. */
+  if(paymentFormCol.querySelector("#order-type-toggle") && typeof posRefreshQuote === "function"){
+    posRefreshQuote();
+    return;
+  }
 
   paymentFormCol.innerHTML=`
-    <div class="panel-header"><span class="panel-title">Payment Details</span></div>
+    <div class="panel-header">
+      <span class="panel-title">Payment Details</span>
+    </div>
 
+    <section class="order-detail-section pay-sec">
+    <div class="order-detail-heading">Order</div>
+    <div class="pay-row">
     <div class="field">
       <label>Order Type</label>
       <div class="order-type-toggle" id="order-type-toggle">
@@ -311,6 +350,7 @@ function renderPayment(){
         <button type="button" class="order-type-btn" data-ctype="retailer">Retailer</button>
       </div>
     </div>
+    </div>
 
     <!-- Shown only for a credit sale. A Net 30/60/90 sale creates a debt, and a
          debt has to be owed by somebody: the receivable needs a customer row to
@@ -318,13 +358,29 @@ function renderPayment(){
          would have to either refuse the sale or open an account belonging to
          nobody. -->
     <div class="field hide" id="retailer-field">
-      <label>Retailer Account <span class="muted" style="font-weight:400;font-size:.78rem">(required for Net terms · applies their withholding tax)</span></label>
+      <label>Retailer Account <span class="muted" style="font-weight:400;font-size:.78rem">(required for Net terms · applies their retailer discount)</span></label>
       <select class="control" id="pay-retailer"><option value="">Select a retailer…</option></select>
       <span class="field-error" id="err-retailer"></span>
       <span class="field-hint" id="retailer-standing"></span>
     </div>
 
-    <div id="customer-info-fields">
+    </section>
+
+    <section class="order-detail-section pay-sec">
+    <div class="order-detail-heading">Customer</div>
+    <div id="customer-info-fields" class="pay-row">
+      <!-- Regular sales only: file the sale under a customer on record (pos/customers.php), so it shows in their
+           order history and lifetime spend. Retailers are picked in the Retailer Account field instead. -->
+      <div class="field pos-cust-field" id="cust-lookup-field">
+        <label>Customer on Record <span class="muted" style="font-weight:400;font-size:.78rem">(optional · adds this sale to their history)</span></label>
+        <div class="pos-cust-lookup">
+          <input class="control" id="pay-cust-search" placeholder="Search name, email or phone…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="pay-cust-results"/>
+          <div class="pos-cust-results hide" id="pay-cust-results" role="listbox"></div>
+        </div>
+        <div class="pos-cust-chip hide" id="pay-cust-chip"></div>
+        <input type="hidden" id="pay-customer-id"/>
+        <span class="field-error" id="err-customer"></span>
+      </div>
       <div class="field">
         <label>Customer Name <span class="muted" style="font-weight:400;font-size:.78rem" id="name-req-hint">(optional)</span></label>
         <input class="control" id="pay-customer-name" placeholder="Walk-In Customer" value="Walk-In Customer"/>
@@ -336,36 +392,27 @@ function renderPayment(){
       <div class="field hide" id="address-field">
         <label>Delivery Address <span style="color:var(--out)">*</span></label>
         <input class="control" id="pay-address" placeholder="Street, City"/>
+        <!-- Shown when a retailer's saved address filled the field: locked until
+             the cashier switches this on, like the saved address at checkout. -->
+        <label class="vat-check pos-check addr-edit hide" id="addr-edit-wrap">
+          <span class="switch">
+            <input type="checkbox" role="switch" id="addr-edit"/>
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+          </span>
+          <span>Deliver to a different address</span>
+        </label>
         <span class="field-error" id="err-address"></span>
+        <!-- Where the delivery fee is estimated to (api/core/Shipping.php).
+             "Detect" reads the province or city from the address typed above. -->
+        <label for="pay-dest" style="margin-top:12px">Delivery Destination</label>
+        <select class="control" id="pay-dest"><option value="">Detect from address</option></select>
       </div>
     </div>
 
-    <!-- SENIOR CITIZEN / PWD. Hidden until pos/quote.php says the discount is
-         switched on in VAT Maintenance, and never offered on a retailer sale.
-         The ID number and name are required: the BIR wants both on the invoice,
-         and api/pos/checkout.php refuses the discount without them. -->
-    <div class="field hide" id="scpwd-field">
-      <label class="vat-check pos-check">
-        <span class="switch">
-          <input type="checkbox" role="switch" id="scpwd-on"/>
-          <span class="switch-track"><span class="switch-thumb"></span></span>
-        </span>
-        <span>Senior citizen / PWD discount</span>
-      </label>
-      <div class="hide" id="scpwd-details">
-        <div class="order-type-toggle" id="scpwd-type" style="margin-bottom:8px">
-          <button type="button" class="order-type-btn active" data-scpwd="senior">Senior Citizen</button>
-          <button type="button" class="order-type-btn" data-scpwd="pwd">PWD</button>
-        </div>
-        <input class="control" id="scpwd-id" placeholder="ID number on the card" maxlength="40" style="margin-bottom:6px"/>
-        <span class="field-error" id="err-scpwd-id"></span>
-        <input class="control" id="scpwd-name" placeholder="Name on the ID" maxlength="100"/>
-        <span class="field-error" id="err-scpwd-name"></span>
-        <span class="field-hint" id="scpwd-hint"></span>
-      </div>
-      <span class="field-error" id="err-scpwd"></span>
-    </div>
+    </section>
 
+    <section class="order-detail-section pay-sec">
+    <div class="order-detail-heading">Payment</div>
     <div class="field">
       <label>Payment Method</label>
       <div class="pay-method-grid" id="pay-method-grid">
@@ -376,8 +423,8 @@ function renderPayment(){
     </div>
 
     <div class="field hide" id="ref-num-field">
-      <label>Reference Number <span style="color:var(--out)">*</span></label>
-      <input class="control" id="pay-refnum" placeholder="e.g. GC-20260617-0001"/>
+      <label><span data-ref-label>Reference Number</span> <span style="color:var(--out)">*</span></label>
+      <input class="control" id="pay-refnum" maxlength="30" autocomplete="off"/>
       <span class="field-error" id="err-refnum"></span>
     </div>
 
@@ -388,38 +435,14 @@ function renderPayment(){
         <span>Change</span><strong id="change-val">${peso(0)}</strong>
       </div>
     </div>
-
-    <!-- Filled from pos/quote.php: the discount, VAT, withholding and the amount
-         DUE, which is what the cashier tenders against. Starts as the plain
-         total so the screen is never blank while the quote is on its way. -->
-    <div id="pos-tax-box" style="margin-bottom:16px">
-      <div class="billing-row total-row">
-        <span>Amount Due</span>
-        <span class="billing-total-val">${EbFormat.pesoExact(total)}</span>
-      </div>
-    </div>
-
-    <button class="btn btn-gold btn-block" id="place-order-btn">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-      Place Order
-    </button>
-    <span class="field-error" id="err-general" style="margin-top:8px;display:block;text-align:center"></span>`;
+    </section>
+`;
 
   wirePaymentForm(total);
 }
 
-/* The credit methods, mirroring Payments::CREDIT in api/core/Payments.php.
-
-   Two lists in two languages is exactly what broke this: the grid below offered
-   net30/net60/net90 while pos/checkout.php accepted only cash/gcash/bank, so a
-   credit sale returned 422 and — because placeOrder() had no branch for a
-   `pay_method` field error — displayed nothing at all. The server is the
-   authority; this list decides only what to RENDER, and every value in it is
-   re-checked there. */
-/* wirePaymentForm()'s handle on its own senior/PWD reset, published so the
-   checkout can clear the switch after a completed sale without reaching into
-   that function's scope. Null until the payment screen has been rendered,
-   which is the only time there is anything to clear. */
+/* Credit methods, mirroring Payments::CREDIT; only used to decide what to show, the server re-checks. */
+/* Hook to the Senior/PWD reset, so checkout can clear the switch after a sale (null until the payment screen renders). */
 let posResetScPwd = null;
 
 const POS_CREDIT_METHODS = ["net30", "net60", "net90"];
@@ -443,14 +466,15 @@ function buildPayMethodGrid(ctype, orderType){
   </button>`).join("");
 }
 
-function wirePaymentForm(total){
-  let orderType="pickup", customerType="regular", payMethod="cash";
+/* Set by wirePaymentForm(): re-quotes the live form (see renderPayment). */
+let posRefreshQuote = null;
+/* Set by wirePaymentForm(): places the order with the live form state (bound to Place Order in renderPayment). */
+let posPlaceOrder = null;
 
-  /* WHAT THE CASHIER TENDERS AGAINST. Starts as the plain total and is replaced
-     by the server's amount due as soon as the quote lands — after a senior/PWD
-     discount, or the tax a withholding retailer keeps. The arithmetic is in
-     api/core/Tax.php and nowhere in this file: a second copy in the browser is
-     how a till and a checkout come to disagree about money. */
+function wirePaymentForm(total){
+  let orderType="pickup", customerType="regular", payMethod="cash", posRef=null;
+
+  /* The amount the cashier tenders against: the plain total, replaced by the server's amount due once the quote arrives (tax maths lives only in api/core/Tax.php). */
   let due = total;
   let scPwdType = "senior";
   let quoteTimer = null, quoteSeq = 0;
@@ -465,18 +489,7 @@ function wirePaymentForm(total){
     };
   }
 
-  /* BACK TO OFF, AND EMPTY, FOR THE NEXT CUSTOMER.
-
-     The discount belongs to one person and one ID, so it must not survive the
-     sale it was granted on — the next customer in the queue is a different
-     person until someone says otherwise. Left on, the switch would quietly
-     apply a 20% discount to the following sale under the previous customer's
-     ID number, which is both wrong money and a BIR record naming the wrong
-     buyer.
-
-     The ID and the name are cleared with it for the same reason. The type
-     goes back to Senior Citizen, which is what the markup ships with, so the
-     screen after a sale is the screen the cashier first saw. */
+  /* Reset the Senior/PWD switch, ID and name after each sale, so the discount never carries over to the next customer. */
   function resetScPwd(){
     const on = $("#scpwd-on");
     if(on) on.checked = false;
@@ -487,8 +500,7 @@ function wirePaymentForm(total){
     scPwdType = "senior";
     $$("#scpwd-type .order-type-btn").forEach(b =>
       b.classList.toggle("active", b.dataset.scpwd === "senior"));
-    /* Any error left over from a refused submit refers to fields that are now
-       empty and hidden. */
+    /* Clear leftover errors for the now-empty fields. */
     ["err-scpwd", "err-scpwd-id", "err-scpwd-name"].forEach(k => {
       const el = $("#" + k); if(el) el.textContent = "";
     });
@@ -502,8 +514,26 @@ function wirePaymentForm(total){
     box.innerHTML =
       row("Subtotal", money(t.grossTotal))
       + (t.scPwdDiscount > 0 ? row(`${scPwdType === "pwd" ? "PWD" : "Senior citizen"} discount`, "− " + money(t.scPwdDiscount)) : "")
-      + row(t.vatAmount > 0 ? `VAT (${+t.vatRate}%)` : "VAT", t.vatAmount > 0 ? money(t.vatAmount) : "VAT-exempt")
-      + (t.withholdingTax > 0 ? row(`Withholding tax (${+t.withholdingRate}%)`, "− " + money(t.withholdingTax)) : "")
+      /* VAT breakdown explaining the VAT-inclusive total. */
+      + row("VATable Sales", money(t.vatableSales), "vat-sub")
+      + row(t.vatAmount > 0 ? `VAT (${+t.vatRate}%)` : "VAT", t.vatAmount > 0 ? money(t.vatAmount) : "VAT-exempt", "vat-sub")
+      + (t.vatExemptSales > 0 ? row("VAT-Exempt Sales", money(t.vatExemptSales), "vat-sub") : "")
+      + `<div class="vat-note">Prices already include VAT.</div>`
+      /* Delivery: our own estimate by distance zone + weight, not an LBC quote. */
+      + (orderType === "delivery" && t.shipping ? `<div class="pos-ship">
+          ${row("Delivery Destination", t.shipping.destination ? escHtml(t.shipping.destination) : "Enter the address", "vat-sub")}
+          ${t.shipping.distanceKm != null ? row("Estimated Distance", `${Math.round(t.shipping.distanceKm).toLocaleString()} km`, "vat-sub") : ""}
+          ${row("Total Product Weight", `${(+t.shipping.weightKg).toFixed(2)} kg`, "vat-sub")}
+          ${t.shipping.remote ? row("Island / remote area fee", "+ " + money(t.shipping.remoteFee), "vat-sub") : ""}
+          ${row("Estimated Delivery Fee", t.shipping.destination ? "+ " + money(t.shipping.fee) : "—")}
+          ${t.shipping.destination && t.shipping.eta ? row("Estimated Arrival", escHtml(etaText(t.shipping.eta)), "vat-sub") : ""}
+          ${t.shipping.paused ? `<div class="vat-note" style="color:var(--out)">Deliveries to ${escHtml(t.shipping.destination)} are paused right now${t.shipping.remote && t.shipping.remote.note ? ` (${escHtml(t.shipping.remote.note)})` : ""}.</div>`
+            : t.shipping.remote ? `<div class="vat-note" style="color:var(--warn)">Island / remote area: may take longer than estimated (boat/flight schedules, weather).</div>` : ""}
+        </div>` : "")
+      + (t.withholdingTax > 0 ? row(`Retailer discount (${+t.withholdingRate}%)`, "− " + money(t.withholdingTax)) : "")
+      /* Retailer has a discount but the sale is under the minimum item count. */
+      + (t.termInterest > 0 ? row(`${escHtml(t.termScheme || "Net terms")} interest (${+t.termInterestRate}%)`, "+ " + money(t.termInterest)) : "")
+      + (t.discountShortfall ? `<div class="vat-note" style="color:var(--warn)">Add ${t.discountShortfall.short} more item${t.discountShortfall.short === 1 ? "" : "s"} for the ${+t.discountShortfall.rate}% retailer discount (minimum ${t.discountShortfall.minQty} items).</div>` : "")
       + `<div class="billing-row total-row"><span>Amount Due</span><span class="billing-total-val">${money(t.amountDue)}</span></div>`;
   }
 
@@ -514,8 +544,7 @@ function wirePaymentForm(total){
     if(cd){ cd.classList.toggle("hide", !t || change<0); if(cv) cv.textContent=money(Math.max(0,change)); }
   }
 
-  /* Debounced, and sequenced: a slow response to an older request must not
-     overwrite the figures for the cart as it is now. */
+  /* Debounced and sequenced so an older, slower response never overwrites the latest figures. */
   function refreshQuote(){
     clearTimeout(quoteTimer);
     quoteTimer = setTimeout(async ()=>{
@@ -525,6 +554,10 @@ function wirePaymentForm(total){
           items: adminState.cart.map(c => ({ id: c.productId, qty: c.qty })),
           sc_pwd: scPwdPayload(),
           retailer_id: customerType === "retailer" ? ($("#pay-retailer")?.value || null) : null,
+          order_type: orderType,
+          destination: $("#pay-dest")?.value || "",
+          address: $("#pay-address")?.value.trim() || "",
+          pay_method: payMethod,
         });
         if(seq !== quoteSeq) return;
         const t = data.tax;
@@ -544,8 +577,7 @@ function wirePaymentForm(total){
         if(tendered){ tendered.placeholder=String(due); tendered.min=String(due); }
         syncChange();
       } catch(err){
-        /* The checkout computes everything again; a failed preview must not
-           stop a sale, but it must not pass silently either. */
+        /* A failed preview never blocks the sale, but it is reported. */
         if(seq === quoteSeq) toast("Could not work out the tax preview: " + err.message, "warn");
       }
     }, 200);
@@ -564,6 +596,7 @@ function wirePaymentForm(total){
   });
   /* The ID matters to the weekly cap, so it re-quotes; the name does not. */
   $("#scpwd-id")?.addEventListener("input", refreshQuote);
+  posRefreshQuote = refreshQuote;
   refreshQuote();
 
   $$("#order-type-toggle .order-type-btn").forEach(btn=>{
@@ -577,8 +610,18 @@ function wirePaymentForm(total){
       const nameHint=$("#name-req-hint"), phoneHint=$("#phone-req-hint");
       if(nameHint) nameHint.textContent=orderType==="delivery"?"(required)":"(optional)";
       if(phoneHint) phoneHint.textContent=orderType==="delivery"?"(required)":"(optional)";
+      refreshQuote();
     });
   });
+
+  /* Load the delivery destinations once and re-estimate when the address changes. */
+  EbApi.get("shipping/rates.php").then(({ data }) => {
+    const sel = $("#pay-dest"); if(!sel || !data.destinations) return;
+    sel.insertAdjacentHTML("beforeend", data.destinations.map(d => `<option value="${escHtml(d)}">${escHtml(d)}</option>`).join(""));
+    if(window.EbSelect) EbSelect.sync(sel);
+  }).catch(()=>{});
+  $("#pay-dest")?.addEventListener("change", refreshQuote);
+  $("#pay-address")?.addEventListener("input", refreshQuote);
 
   $$("#customer-type-toggle .order-type-btn").forEach(btn=>{
     btn.addEventListener("click",()=>{
@@ -588,48 +631,40 @@ function wirePaymentForm(total){
       grid.innerHTML=buildPayMethodGrid(customerType, orderType);
       payMethod="cash"; $("#pay-method").value="cash";
       wirePayCards();
-      /* Selecting Regular clears any retailer choice, so switching back and
-         forth cannot leave a credit sale pointed at a stale account. */
+      /* Choosing Regular clears any retailer selection. */
       syncRetailerField();
-      if(customerType!=="retailer"){ const sel=$("#pay-retailer"); if(sel) sel.value=""; }
-      else loadRetailers();
-      /* A retailer sale is never a senior/PWD sale; clear it rather than hide
-         a switch that is still on and would still be sent. */
+      if(customerType!=="retailer"){ const sel=$("#pay-retailer"); if(sel && sel.value){ sel.value=""; fillFromRetailer(); } }
+      else { loadRetailers(); pickCustomer(null); }
+      $("#cust-lookup-field")?.classList.toggle("hide", customerType !== "regular");
+      /* A retailer sale clears the Senior/PWD discount. */
       if(customerType!=="regular") resetScPwd();
       refreshQuote();
     });
   });
 
-  /* The picker is only relevant to a credit sale. Shown by payment method
-     rather than by customer type: a retailer paying cash is an ordinary sale
-     and should not be made to pick an account. */
+  /* Show the account picker based on payment method (credit sales only). */
   function syncRetailerField(){
     const field=$("#retailer-field");
-    /* Any retailer sale, not only a credit one: naming the account is what
-       applies a withholding agent's tax on a cash or transfer sale too. */
+    /* Any retailer sale can name the account (needed for withholding tax). */
     if(field) field.classList.toggle("hide", customerType !== "retailer");
     const err=$("#err-retailer"); if(err) err.textContent="";
     showRetailerStanding();
   }
 
-  /* Fetched once per payment screen. pos/retailers.php returns id, name and
-     what the retailer already owes — deciding whether to extend more credit is
-     a person's call, and not showing them the number is how it stops being
-     one. */
+  /* Fetch retailers once per payment screen, including what each already owes. */
   async function loadRetailers(){
     const sel=$("#pay-retailer");
     if(!sel || sel.dataset.loaded==="1") return;
     try {
       const { data } = await EbApi.get("pos/retailers.php");
       sel.innerHTML = `<option value="">Select a retailer…</option>` +
-        data.map(r=>`<option value="${escHtml(r.id)}" data-outstanding="${r.outstanding}" data-overdue="${r.overdue}">${escHtml(r.name)}</option>`).join("");
+        data.map(r=>`<option value="${escHtml(r.id)}" data-outstanding="${r.outstanding}" data-overdue="${r.overdue}" data-tier="${escHtml(r.tier || "")}" data-limit="${r.creditLimit ?? ""}" data-left="${r.creditLeft ?? ""}" data-contact="${escHtml(r.contact || "")}" data-address="${escHtml(r.address || "")}">${escHtml(r.name)}</option>`).join("");
       sel.dataset.loaded="1";
       if(!data.length){
         sel.innerHTML = `<option value="">No retailer accounts exist yet</option>`;
       }
     } catch(err){
-      /* Said out loud. A picker that silently stays empty is how the cashier
-         concludes the feature is broken and stops using it. */
+      /* Say plainly when there are no retailers. */
       sel.innerHTML = `<option value="">Could not load retailers</option>`;
       toast("Could not load the retailer list: " + err.message, "err");
     }
@@ -641,15 +676,122 @@ function wirePaymentForm(total){
     const opt=sel.selectedOptions[0];
     if(!opt || !sel.value){ hint.textContent=""; return; }
     const owed=+opt.dataset.outstanding||0, late=+opt.dataset.overdue||0;
-    hint.textContent = owed>0
-      ? `Currently owes ${peso(owed)}${late>0?` — ${late} account(s) overdue`:""}`
-      : "No outstanding balance.";
+    const tier = opt.dataset.tier
+      ? ` ${opt.dataset.tier} tier: ${peso(+opt.dataset.left||0)} of ${peso(+opt.dataset.limit||0)} Net budget left.`
+      : "";
+    hint.textContent = (owed>0
+      ? `Currently owes ${peso(owed)}${late>0?` — ${late} account(s) overdue`:""}.`
+      : "No outstanding balance.") + tier;
     hint.style.color = late>0 ? "var(--out)" : "var(--text-muted)";
   }
+
+  /* Picking a retailer fills the customer fields (saved address locked unless "Deliver to a different address"); clearing restores walk-in defaults. */
+  function fillFromRetailer(){
+    const sel=$("#pay-retailer"), opt=sel?.selectedOptions[0];
+    const name=$("#pay-customer-name"), phone=$("#pay-phone"), addr=$("#pay-address");
+    const wrap=$("#addr-edit-wrap"), sw=$("#addr-edit");
+    const on = customerType==="retailer" && !!sel?.value;
+    if(name)  name.value  = on ? opt.textContent : "Walk-In Customer";
+    if(phone) phone.value = on ? (opt.dataset.contact || "") : "";
+    const saved = on ? (opt.dataset.address || "") : "";
+    if(addr){ addr.value = saved; addr.readOnly = !!saved; addr.dataset.saved = saved; }
+    if(sw) sw.checked = false;
+    wrap?.classList.toggle("hide", !saved);
+  }
+  $("#addr-edit")?.addEventListener("change", e=>{
+    const addr=$("#pay-address"); if(!addr) return;
+    addr.readOnly = !e.target.checked;
+    if(e.target.checked){ addr.value=""; addr.focus(); }
+    else addr.value = addr.dataset.saved || "";
+  });
+
+  /* Customer on record: search as the cashier types (2+ characters), pick one to file the sale under them. */
+  function pickCustomer(c){
+    const idEl=$("#pay-customer-id"), chip=$("#pay-cust-chip"), search=$("#pay-cust-search"), box=$("#pay-cust-results");
+    const name=$("#pay-customer-name"), phone=$("#pay-phone"), addr=$("#pay-address");
+    const err=$("#err-customer"); if(err) err.textContent="";
+    if(!idEl) return;
+    const had = !!idEl.value;
+    idEl.value = c ? c.id : "";
+    box?.classList.add("hide"); search?.setAttribute("aria-expanded","false");
+    search?.classList.toggle("hide", !!c);
+    if(search) search.value = "";
+    chip?.classList.toggle("hide", !c);
+    if(c && chip){
+      chip.innerHTML = `<span class="pos-cust-av">${escHtml((c.name||"?").trim().charAt(0).toUpperCase())}</span>
+        <span class="pos-cust-who"><strong>${escHtml(c.name)}</strong><small>${escHtml([c.email, c.contact].filter(Boolean).join(" · "))}${c.hasAccount ? "" : " · no online account yet"}</small></span>
+        <button type="button" class="btn btn-ghost btn-sm" id="pay-cust-clear">Change</button>`;
+      $("#pay-cust-clear").addEventListener("click", ()=>{ pickCustomer(null); $("#pay-cust-search")?.focus(); });
+      if(name)  name.value  = c.name;
+      if(phone && c.contact) phone.value = c.contact;
+      if(addr && c.address && !addr.value) addr.value = c.address;
+    } else if(had){
+      if(name)  name.value  = "Walk-In Customer";
+      if(phone) phone.value = "";
+    }
+    refreshQuote();
+  }
+  /* Suggestions drop down from the first letter typed (the matching part highlighted); arrow keys and Enter pick one. */
+  let custTimer = 0, custSeq = 0, custHits = [], custActive = -1;
+  const custBox = () => $("#pay-cust-results");
+  const showCustBox = (html, input) => {
+    const box = custBox(); box.innerHTML = html; box.classList.remove("hide");
+    input.setAttribute("aria-expanded","true");
+  };
+  const markHit = (text, q) => {
+    const s = String(text || ""), i = s.toLowerCase().indexOf(q.toLowerCase());
+    return i < 0 ? escHtml(s) : escHtml(s.slice(0, i)) + `<mark>${escHtml(s.slice(i, i + q.length))}</mark>` + escHtml(s.slice(i + q.length));
+  };
+  const setCustActive = i => {
+    const opts = [...custBox().querySelectorAll(".pos-cust-opt")];
+    custActive = opts.length ? (i + opts.length) % opts.length : -1;
+    opts.forEach((o, k) => o.classList.toggle("active", k === custActive));
+    opts[custActive]?.scrollIntoView({ block: "nearest" });
+  };
+  const custHint = `<div class="pos-cust-none">Start typing a name, email or phone number to see matching customers.</div>`;
+  $("#pay-cust-search")?.addEventListener("focus", e=>{ if(!e.target.value.trim()) showCustBox(custHint, e.target); });
+  $("#pay-cust-search")?.addEventListener("input", e=>{
+    const q = e.target.value.trim();
+    clearTimeout(custTimer);
+    if(!q){ custHits = []; showCustBox(custHint, e.target); return; }
+    showCustBox(`<div class="pos-cust-none">Searching…</div>`, e.target);
+    custTimer = setTimeout(async ()=>{
+      const seq = ++custSeq;
+      try {
+        const { data } = await EbApi.get("pos/customers.php", { q });
+        if(seq !== custSeq) return;
+        custHits = data;
+        showCustBox(data.length
+          ? data.map((c,i)=>`<button type="button" class="pos-cust-opt" role="option" data-i="${i}">
+              <span class="pos-cust-av">${escHtml((c.name||"?").trim().charAt(0).toUpperCase())}</span>
+              <span class="pos-cust-who"><strong>${markHit(c.name, q)}</strong><small>${[c.email, c.contact].filter(Boolean).map(x => markHit(x, q)).join(" · ")}</small></span>
+            </button>`).join("")
+          : `<div class="pos-cust-none">No customer matches “${escHtml(q)}”. Leave it empty for a plain walk-in sale.</div>`, e.target);
+        custBox().querySelectorAll(".pos-cust-opt").forEach(b => {
+          b.addEventListener("mousedown", ev => ev.preventDefault());
+          b.addEventListener("click", ()=> pickCustomer(custHits[+b.dataset.i]));
+        });
+        setCustActive(0);
+      } catch(err){
+        showCustBox(`<div class="pos-cust-none">Could not search customers: ${escHtml(err.message)}</div>`, e.target);
+      }
+    }, 200);
+  });
+  $("#pay-cust-search")?.addEventListener("keydown", e=>{
+    const open = !custBox().classList.contains("hide");
+    if(e.key === "ArrowDown" && open){ e.preventDefault(); setCustActive(custActive + 1); }
+    else if(e.key === "ArrowUp" && open){ e.preventDefault(); setCustActive(custActive - 1); }
+    else if(e.key === "Enter" && open && custHits[custActive]){ e.preventDefault(); pickCustomer(custHits[custActive]); }
+    else if(e.key === "Escape"){ custBox().classList.add("hide"); e.target.setAttribute("aria-expanded","false"); }
+  });
+  document.addEventListener("click", e=>{
+    if(!e.target.closest?.(".pos-cust-lookup")) $("#pay-cust-results")?.classList.add("hide");
+  });
 
   $("#pay-retailer")?.addEventListener("change", ()=>{
     const err=$("#err-retailer"); if(err) err.textContent="";
     showRetailerStanding();
+    fillFromRetailer();
     refreshQuote();
   });
 
@@ -660,12 +802,16 @@ function wirePaymentForm(total){
         $$("#pay-method-grid .pay-card").forEach(c=>c.classList.toggle("selected",c===card));
         $("#pay-method").value=payMethod;
         const refField=$("#ref-num-field");
+        /* GCash and bank each have their own reference field and rules (EbUI.splitRefField). */
+        (posRef ||= EbUI.splitRefField($("#pay-refnum"), () => payMethod, $("#ref-num-field label"))).refresh();
         refField?.classList.toggle("hide", payMethod!=="gcash" && payMethod!=="bank");
         const tenderedField=$("#tendered-field");
         tenderedField?.classList.toggle("hide", payMethod!=="cash");
         if(payMethod==="cash") { const t=$("#pay-tendered"); if(t) t.placeholder=String(due); }
         syncRetailerField();
         if(customerType==="retailer") loadRetailers();
+        /* A Net term adds interest to the amount due, so re-quote. */
+        refreshQuote();
       });
     });
   };
@@ -673,16 +819,11 @@ function wirePaymentForm(total){
 
   $("#pay-tendered")?.addEventListener("input", syncChange);
 
-  /* async so the button can be disabled for the duration — a double-click here
-     used to be capable of ringing up two sales. */
-  $("#place-order-btn")?.addEventListener("click", async ()=> {
-    await placeOrder(orderType, customerType, payMethod, due, $("#pay-retailer")?.value || null, scPwdPayload());
-  });
+  /* Reads the live form state at click time; placeOrder() disables the button during the request, preventing double sales. */
+  posPlaceOrder = () => placeOrder(orderType, customerType, payMethod, due, $("#pay-retailer")?.value || null, scPwdPayload());
 }
 
-/* ============================================================
-   PLACE ORDER + RECEIPT
-   ============================================================ */
+/* ===== PLACE ORDER + RECEIPT ===== */
 function genTxnId(){
   const today = dAgo(0);
   const d = today.replace(/-/g,"");
@@ -690,26 +831,7 @@ function genTxnId(){
   return `TXN-${d}-${n}`;
 }
 
-/* Sends the cart to the server and shows the receipt it returns.
-
-   WHAT CHANGED AND WHY
-   --------------------
-   This used to compute the total in the browser, decrement p.stock in a loop,
-   unshift the order onto an array and call it done. Three problems, in order of
-   seriousness:
-
-     1. The amount charged was decided by code running on the till's own
-        machine. api/pos/checkout.php now prices every line from products.price
-        and ignores anything the client says a thing costs.
-     2. Stock moved in memory only, so it was correct until the next refresh
-        and then silently wasn't.
-     3. Order and stock could not be kept consistent — there was no transaction
-        to be consistent within. They are now written together or not at all.
-
-   The `total` argument is still accepted so the existing call sites do not have
-   to change, but it is used only for the pre-submit cash check; the receipt
-   shows the server's figure.
-*/
+/* Send the cart to api/pos/checkout.php, which prices every line from the database and saves order and stock together; total is only used for the pre-submit cash check. */
 async function placeOrder(orderType, customerType, payMethod, total, retailerId, scPwd = null){
   const name     = $("#pay-customer-name")?.value.trim()||"Walk-In Customer";
   const phone    = $("#pay-phone")?.value.trim()||"";
@@ -719,6 +841,7 @@ async function placeOrder(orderType, customerType, payMethod, total, retailerId,
 
   $("#err-address").textContent="";
   $("#err-refnum").textContent="";
+  $("#pay-refnum")?.classList.remove("is-invalid");
   $("#err-general").textContent="";
   const errRetailer = $("#err-retailer");
   if(errRetailer) errRetailer.textContent="";
@@ -726,10 +849,15 @@ async function placeOrder(orderType, customerType, payMethod, total, retailerId,
 
   if(!adminState.cart.length){ toast("The cart is empty.","warn"); return; }
 
-  /* Kept client-side too: catching these before the round trip is faster for
-     the cashier. The server checks all of them again regardless. */
+  /* Quick client-side checks; the server checks everything again. */
   if(orderType==="delivery" && !address){ if($("#err-address")) $("#err-address").textContent="Delivery address required."; return; }
   if((payMethod==="gcash"||payMethod==="bank") && !refNum){ if($("#err-refnum")) $("#err-refnum").textContent="Reference number required."; return; }
+  if((payMethod==="gcash"||payMethod==="bank") && refFormatError(payMethod, refNum)){
+    if($("#err-refnum")) $("#err-refnum").textContent=refFormatError(payMethod, refNum);
+    $("#pay-refnum")?.classList.add("is-invalid");
+    ($("#pay-refnum")?._ebRef ? $("#pay-refnum")._ebRef.focus() : $("#pay-refnum")?.focus());
+    return;
+  }
   if(isCreditMethod(payMethod) && !retailerId){
     if(errRetailer) errRetailer.textContent="Choose which retailer this credit sale is for.";
     return;
@@ -739,21 +867,17 @@ async function placeOrder(orderType, customerType, payMethod, total, retailerId,
     if(!scPwd.name) { const e=$("#err-scpwd-name"); if(e) e.textContent="Enter the name on the ID."; }
     return;
   }
-  /* `total` here is the AMOUNT DUE from the last quote — after any discount or
-     withholding. The server checks tendered cash against its own figure too. */
+  /* total is the amount due from the last quote. */
   if(payMethod==="cash" && tendered < total && tendered !== 0){ toast(`Amount tendered must be at least ${EbFormat.pesoExact(total)}.`,"warn"); return; }
 
-  /* #place-order-btn is the real control (built at pos.js:323). The dead
-     `$("#pay-confirm-btn") ||` branch that used to lead this line matched
-     nothing — harmless here because of the fallback, but it is the same shape
-     as the dangling id that made batch registration silently do nothing. */
+  /* place-order-btn is the real control. */
   const btn = $("#place-order-btn");
   const restore = EbUI.busy(btn, "Placing…");
 
   let order;
   try {
     const { data } = await EbApi.post("pos/checkout.php", {
-      /* Ids and quantities only. Prices are the server's business. */
+      /* Send only ids and quantities; prices are the server's business. */
       items: adminState.cart.map(c => ({ id: c.productId, qty: c.qty })),
       order_type: orderType,
       customer_type: customerType,
@@ -761,41 +885,25 @@ async function placeOrder(orderType, customerType, payMethod, total, retailerId,
       customer_name: name,
       contact: phone || null,
       address: address || null,
+      destination: $("#pay-dest")?.value || "",
       ref_num: refNum || null,
       tendered: tendered || 0,
-      /* Sent for any retailer sale: required for Net terms, and what applies a
-         withholding agent's tax otherwise. The server re-reads the customer row
-         and checks the status itself — this is a selection, not an assertion. */
+      /* Send the retailer id for any retailer sale; the server re-checks it. */
       retailer_id: customerType === "retailer" ? (retailerId || null) : null,
-      /* Senior citizen / PWD details, or null. api/pos/checkout.php applies the
-         discount from VAT Maintenance's rules and stores the ID for the invoice. */
+      /* A regular sale filed under a customer on record; the server re-checks it. */
+      customer_id: customerType === "regular" ? ($("#pay-customer-id")?.value || null) : null,
+      /* Senior/PWD details or null; the server applies the discount. */
       sc_pwd: scPwd,
     });
     order = data;
   } catch(err){
-    /* Out of stock, archived product, short cash — all reported plainly, and
-       the cart is left intact so the cashier can adjust and retry.
-
-       THIS BLOCK WAS THE SILENT FAILURE.
-       ----------------------------------
-       It listed four field names and fell back to a toast only when
-       `err.fields` was EMPTY. A 422 naming any other field — `pay_method`, for
-       one — matched no branch, was not empty, and so produced nothing: no
-       inline error, no toast, no console entry. The cashier pressed Place
-       Order and watched the button do nothing.
-
-       That is how a server-side refusal became "the payment does not appear in
-       Payment History". The order was never written, and nothing said so.
-
-       Every field error is now shown. Known fields go against their input;
-       anything unrecognised goes to the general line rather than being
-       dropped. A field this screen has never heard of is exactly the case that
-       must not be silent. */
+    /* Show every field error (known ones next to their input, others in the general line) and keep the cart for a retry, so a refusal is never silent. */
     if(err.isValidation){
       const fieldTargets = {
         address:     "#err-address",
         ref_num:     "#err-refnum",
         retailer_id: "#err-retailer",
+        customer_id: "#err-customer",
         sc_pwd:      "#err-scpwd",
         sc_pwd_id:   "#err-scpwd-id",
         sc_pwd_name: "#err-scpwd-name",
@@ -808,8 +916,13 @@ async function placeOrder(orderType, customerType, payMethod, total, retailerId,
         else leftover.push(msg);
       });
       if(leftover.length) $("#err-general").textContent = leftover.join(" ");
-      /* A validation error with no fields at all still has a message. */
-      toast(Object.keys(err.fields).length ? (leftover[0] || err.message) : err.message, "err");
+      /* The reference box: outline it and put the cursor there (e.g. a reference already used). */
+      if(err.fields.ref_num){
+        $("#pay-refnum")?.classList.add("is-invalid");
+        ($("#pay-refnum")?._ebRef ? $("#pay-refnum")._ebRef.focus() : $("#pay-refnum")?.focus());
+      }
+      /* The toast names the actual problem; a validation error with no fields still has a message. */
+      toast(leftover[0] || Object.values(err.fields)[0] || err.message, "err");
     } else {
       $("#err-general").textContent = err.message;
       toast(err.message, "err");
@@ -819,19 +932,15 @@ async function placeOrder(orderType, customerType, payMethod, total, retailerId,
     restore();
   }
 
-  /* Only now is the sale real: clear the cart and refresh stock from the
-     database rather than assuming what it became. */
+  /* Only now clear the cart and reload stock from the database. */
   adminState.cart = [];
-  /* And the senior/PWD switch goes back to off with it — see resetScPwd().
-     It is scoped to the payment screen's own render, so it is called through
-     the hook that render publishes rather than reached into from here. */
+  /* Reset the Senior/PWD switch via the hook (see resetScPwd()). */
   if(typeof posResetScPwd === "function") posResetScPwd();
   updateCartBadge();
   await loadCatalog();
   await loadOrders();
 
-  /* The Sales Invoice, built once and used for both the screen and the
-     printout, so what the cashier checks is exactly what prints. */
+  /* Build the Sales Invoice once for both screen and print. */
   const invoice = EbInvoice.fromOrder(order);
   EbInvoice.ensureStyles();
   openModal({
@@ -848,20 +957,14 @@ async function placeOrder(orderType, customerType, payMethod, total, retailerId,
 }
 
 function buildReceipt(o, invoice = EbInvoice.fromOrder(o)){
-  /* TILL NOTES — ON SCREEN, NEVER PRINTED.
-     The invoice matches the client's paper form, which has nowhere for cash
-     tendered, change, a transfer reference or a due date. The cashier still
-     needs all four at the counter, so they sit above the invoice in the
-     modal and are left out of EbInvoice.print(). */
+  /* Till notes (cash, change, reference, due date) shown above the invoice but never printed. */
   const notes = [];
   if(o.payMethod === "cash" && o.tendered){
     notes.push(`Tendered <b>${peso(o.tendered)}</b>`, `Change <b>${peso(o.change)}</b>`);
   }
   if(o.refNum) notes.push(`Ref # <b>${escHtml(o.refNum)}</b>`);
   if(isCreditMethod(o.payMethod)){
-    /* The server's due date when it sent one; counted from today otherwise.
-       dAgo(0) used to be a constant, which made every NET-30 receipt say
-       "due 17 July 2026" forever. */
+    /* Use the server's due date, else count from today. */
     const due = (o.creditAccount && o.creditAccount.dueDate)
       || addDays(dAgo(0), {net30:30, net60:60, net90:90}[o.payMethod]);
     notes.push(`${escHtml(payMethodLabel(o.payMethod))} — due <b>${fmtDate(due)}</b>`);
@@ -870,9 +973,7 @@ function buildReceipt(o, invoice = EbInvoice.fromOrder(o)){
     ${EbInvoice.render(invoice)}`;
 }
 
-/* ============================================================
-   POS MODULE ENTRY POINTS (called from navigate()'s renders map)
-   ============================================================ */
+/* ===== POS MODULE ENTRY POINTS (called from navigate()'s renders map) ===== */
 function renderPos(){
   renderPosProducts();
   renderCart();

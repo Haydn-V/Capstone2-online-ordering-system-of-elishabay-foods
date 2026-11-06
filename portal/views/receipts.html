@@ -3,27 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <title>receipts module</title>
-  <!-- ============================================================
-       MODULE PARTIAL — section id="mod-receipts".
-
-       Wrapped as a complete HTML document ON PURPOSE.
-
-       Dev servers inject a live-reload script into every .html file
-       they serve, placed just before the closing body tag. A bare
-       fragment has no closing body tag, so VS Code Live Server falls
-       back to injecting before the first closing svg tag instead —
-       which lands inside the Elisha Bay logo mark, corrupts the
-       parse, and leaves the portal showing "Portal failed to load".
-
-       With a real body element the injection lands harmlessly at the
-       end, and Core/module-loader.js strips every script element
-       before using this markup.
-
-       Keep the html/head/body wrapper. Also avoid writing a literal
-       closing body, head or svg tag anywhere in a comment in these
-       files — Live Server matches raw text and will inject there,
-       breaking the comment and everything after it.
-       ============================================================ -->
+  <!-- Module partial for section mod-receipts, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
   </head>
   <body>
 <!-- ── ONLINE ORDERS: RECEIPT GENERATION ── -->
@@ -59,6 +39,12 @@
         data-refilters="receipts"
       />
     </div>
+    <!-- Channel filter: All / Online / Walk-in, sent to orders/list.php as type so it works with paging. -->
+    <select class="filter-select" id="receipt-channel" aria-label="Filter by channel" data-refilters="receipts">
+      <option value="">All channels</option>
+      <option value="online">Online</option>
+      <option value="walk-in">Walk-in</option>
+    </select>
   </div>
   <div id="receipts-content"></div>
 </section>

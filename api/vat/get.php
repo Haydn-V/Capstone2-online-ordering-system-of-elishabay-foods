@@ -1,16 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/vat/get.php
- *
- * Everything VAT Maintenance edits, in one response: the rules, every product's
- * tax type, and every current retailer with its TIN and withholding rate.
- *
- * SUPER ADMIN ONLY. vat.manage is a SYSTEM_ONLY permission (api/core/Rbac.php):
- * no other role can hold it, and this endpoint checks the role as well as the
- * permission, so neither check alone is what keeps it closed.
- */
+/** GET /api/vat/get.php (Super Admin only, vat.manage plus system role) returns VAT rules, product tax types and current retailers with TIN and withholding rate. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -26,8 +17,7 @@ $products = Database::all(
       ORDER BY p.archived ASC, c.name ASC, p.name ASC'
 );
 
-/* Current retailers only. A withholding agent is a retailer by definition —
-   Tax::withholdingRateFor() ignores the rate of anyone who is not one now. */
+/* Current retailers only, since only they can withhold. */
 $retailers = Database::all(
     "SELECT c.id, c.name, c.email, wa.rate,
             " . Orders::buyerTinSql('c.id') . " AS tin
@@ -45,6 +35,7 @@ Response::ok([
         'scPwdVatExempt'         => (int) $r['sc_pwd_vat_exempt'] === 1,
         'scPwdWeeklyCap'         => $r['sc_pwd_weekly_cap'],
         'withholdingDefaultRate' => $r['withholding_default_rate'],
+        'withholdingMinQty'      => (int) $r['withholding_min_qty'],
     ],
     'products' => array_map(static fn(array $p): array => [
         'id'       => $p['id'],

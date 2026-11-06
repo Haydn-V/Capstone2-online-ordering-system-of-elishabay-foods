@@ -1,15 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/b2b/list.php?status=&search=&page=&limit=
- *
- * Requires b2b.review. Retail partner applications.
- *
- * The stored username and password hash are never selected — an application
- * carries proposed credentials, and there is no reason for those to travel to
- * a reviewer's browser.
- */
+/** GET /api/b2b/list.php (needs b2b.review) lists partner applications and never returns the stored username or password hash. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -33,7 +25,7 @@ if ($search !== '') {
     array_push($params, $like, $like, $like, $like);
 }
 
-$sql = 'FROM b2b_applications b';
+$sql = 'FROM b2b_applications b LEFT JOIN customers c ON c.id = b.customer_id OR (b.customer_id IS NULL AND c.email = b.email)';
 if ($where) { $sql .= ' WHERE ' . implode(' AND ', $where); }
 
 $total = (int) Database::scalar("SELECT COUNT(*) $sql", $params);
@@ -42,7 +34,7 @@ $rows = Database::all(
     "SELECT b.id, b.app_id_code, b.customer_id, b.business_name, b.applicant_name,
             b.email, b.phone, b.business_type, b.bir_tin, b.business_address,
             b.requested_terms, b.monthly_volume, b.notes, b.submitted_date,
-            b.status, b.assigned_tier, b.rejection_reason
+            b.status, b.assigned_tier, b.rejection_reason, c.retailer_tier, c.status AS customer_status
      $sql
      ORDER BY b.submitted_date DESC, b.id DESC
      LIMIT {$paging['limit']} OFFSET {$paging['offset']}",
@@ -70,7 +62,11 @@ Response::ok(array_map(static fn(array $r): array => [
     'notes'          => $r['notes'],
     'submittedDate'  => $r['submitted_date'],
     'status'         => $r['status'],
-    'tier'           => $r['assigned_tier'],
+    /* The partner's current tier (it can change after approval); Bronze for an approved partner with none set. */
+    'tier'           => $r['status'] === 'approved'
+        ? ($r['customer_status'] === 'retailer' ? ($r['retailer_tier'] ?: 'Bronze') : null)
+        : $r['assigned_tier'],
+    'isRetailer'     => $r['customer_status'] === 'retailer',
     'reason'         => $r['rejection_reason'],
 ], $rows), [
     'page'   => $paging['page'],

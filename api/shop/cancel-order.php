@@ -1,49 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/shop/cancel-order.php
- * Body: { "order_id": "ORD-…", "reason": "…" }
- *
- * Requires a customer session. Cancels the customer's own pending order.
- *
- * WHAT THIS REPLACES
- * ------------------
- * The Scope names an "Order Cancellation Module". `public/profile/my-orders.html`
- * rendered a Cancel button for pending orders whose handler called `confirm()`
- * and `showToast("Order cancelled")` — and stopped. Nothing reached the server,
- * no reason was captured, and the order stayed pending. There was no
- * customer-facing cancel endpoint at all; the only way to cancel was staff
- * doing it from the portal.
- *
- * WHY THE REASON IS MANDATORY
- * ---------------------------
- * The Scope says the reason is recorded. It is also the only thing that makes a
- * cancellation useful afterwards: a queue of orders that vanished without
- * explanation tells the business nothing about why people change their minds.
- * `orders/status.php` already refuses a staff cancellation without one, and
- * this matches it rather than holding customers to a lower standard.
- *
- * WHY ONLY `pending`
- * ------------------
- * The Scope says "before they are approved for processing". `accepted` is the
- * point at which staff have committed stock and begun work, and it is a real
- * boundary rather than a policy preference — see the stock note below.
- *
- * STOCK IS DELIBERATELY NOT TOUCHED HERE
- * --------------------------------------
- * Do not add a Stock::reverseSale() call to this file.
- *
- * An online order commits stock when staff ACCEPT it, not when it is placed —
- * see the long comment in api/orders/status.php. A `pending` order has
- * therefore never committed any, so reversing it would credit inventory that
- * was never debited and silently inflate stock by the quantity of every
- * cancelled order.
- *
- * `orders/status.php` reverses stock on cancellation only when the order is
- * coming from a committed state (accepted/shipping/delivered/completed), which
- * this endpoint cannot reach.
- */
+/** POST /api/shop/cancel-order.php lets a customer cancel their own pending order with a required reason, and deliberately does not touch stock because pending orders never committed any. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -66,12 +24,9 @@ if ($reason === '') {
     ]);
 }
 
-/* Scoped by the session's customer id, never by anything in the request.
-   A missing order and somebody else's order return the SAME message: telling
-   the caller "that order exists but is not yours" confirms the id is real,
-   which is exactly what an enumeration attempt is looking for. */
+/* Look up the order by the session's customer only, giving the same message for missing and someone else's order. */
 $order = Database::one(
-    'SELECT id, status, total, customer_name FROM orders WHERE id = ? AND customer_id = ?',
+    'SELECT id, status, ' . Payments::dueSql('orders') . ' AS total, customer_name FROM orders WHERE id = ? AND customer_id = ?',
     [$data['order_id'], $customer['id']]
 );
 if ($order === null) {
@@ -79,8 +34,7 @@ if ($order === null) {
 }
 
 if ($order['status'] !== 'pending') {
-    /* The current status is named, because "you cannot cancel this" leaves the
-       customer with no idea what to do next. */
+    /* Name the current status so the customer knows why it cannot be cancelled. */
     $advice = [
         'accepted'  => 'This order is already accepted and can no longer be cancelled. Contact us if you need to change it.',
         'shipping'  => 'This order is already on its way and can no longer be cancelled. Contact us if you need to change it.',
@@ -101,17 +55,16 @@ try {
         "UPDATE orders SET status = 'cancelled' WHERE id = ? AND status = 'pending'",
         [$order['id']]
     );
+    /* A Net order's account goes too, so Payment Schemes stops billing it. */
+    Payments::closeForCancelledOrder($order['id']);
 
-    /* Conditional on the status we read, so a staff member accepting this order
-       in the same second wins and the customer is told to reload rather than
-       silently cancelling work that has already started. */
+    /* Conditional on the status read, so staff accepting at the same moment wins. */
     if (Database::pdo()->query('SELECT ROW_COUNT()')->fetchColumn() < 1) {
         $pdo->rollBack();
         Response::conflict('Somebody else just changed this order. Reload and try again.');
     }
 
-    /* Optional table — every writer in this codebase guards on it, because an
-       install that skipped db/schema-additions.sql must still work. */
+    /* Optional history table, guarded so installs without it still work. */
     if (Database::hasTable('order_status_history')) {
         Database::run(
             'INSERT INTO order_status_history (order_id, from_status, to_status, changed_by, note)
@@ -120,8 +73,7 @@ try {
         );
     }
 
-    /* actor_user_id stays NULL: the actor is a customer, and that column is a
-       users.id foreign key. Same shape as the checkout audit row. */
+    /* actor_user_id stays NULL because the actor is a customer. */
     Database::run(
         'INSERT INTO audit_logs (ts, actor, actor_user_id, type, description)
          VALUES (NOW(), ?, NULL, ?, ?)',
@@ -136,8 +88,7 @@ try {
     throw $e;
 }
 
-/* The new status and the stored reason come back so the page can re-render the
-   card without a second round trip. */
+/* Return the new status and reason so the page can update without another request. */
 Response::ok([
     'id'     => $order['id'],
     'status' => 'cancelled',

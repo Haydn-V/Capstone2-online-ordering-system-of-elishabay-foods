@@ -1,39 +1,17 @@
 "use strict";
 
-/* ============================================================
-   INVENTORY MANAGEMENT + EXPIRATION MONITORING
-   Ported from the former InventoryModule/inventory.js into the unified
-   Super Admin portal. Reads/writes the canonical PRODUCTS and
-   BATCHES arrays from engine.js (QA-rich batch schema) instead
-   of maintaining a second, simpler batch dataset.
-   ============================================================ */
+/* ===== INVENTORY MANAGEMENT + EXPIRATION MONITORING, using engine.js's PRODUCTS and BATCHES ===== */
 
-/* Today, according to the server.
-
-   Was: const INV_TODAY = "2026-06-17" — a date frozen in this file. Every
-   "days left" chip, expiry warning and restock date default in the UI was
-   measured from a clock that had stopped, so the figures drifted further from
-   reality every day the project sat.
-
-   api/batches/list.php reports its own CURDATE() in the response meta, which
-   loadInventoryData() records. Falling back to the browser's date is a
-   compromise (it trusts a clock the user can change) but it is strictly better
-   than a constant, and it only applies before the first batch load. */
+/* Today according to the server (from api/batches/list.php), falling back to the browser date only before the first batch load. */
 function invToday(){
-  /* ymd() and not toISOString(): the latter is UTC, which in UTC+8 names
-     yesterday for the first eight hours of every day. */
+  /* ymd() instead of toISOString(), which is UTC. */
   return adminState.serverToday || ymd(new Date());
 }
 
 /* Kept as a name because ~10 call sites use it as a default date value. */
 Object.defineProperty(window, "INV_TODAY", { get: invToday, configurable: true });
 
-/* A default expiry for a lot being opened: one year out from today.
-   The restock form had `value="2027-06-17"` written into it — the same frozen
-   clock the comment above describes, surviving in the one field where a wrong
-   date is not cosmetic but becomes a batch record. A year is a placeholder the
-   operator is expected to correct, not a claim about shelf life; it is simply
-   never in the past, which the constant eventually would have been. */
+/* Default expiry for a new lot: one year from today, for the operator to correct. */
 function defaultExpiry(){
   const d = new Date(invToday() + "T00:00:00");
   d.setFullYear(d.getFullYear() + 1);
@@ -60,54 +38,16 @@ function getExpiringSoon(days=90){
     .sort((a,b)=> daysUntilExpiry(a.expiryDate) - daysUntilExpiry(b.expiryDate));
 }
 
-/* ============================================================
-   STOCK ADJUSTMENTS LOG (seed data, folded from the former InventoryModule)
-   ============================================================ */
+/* ===== STOCK ADJUSTMENTS LOG ===== */
 /* Filled from api/inventory/adjustments.php by loadInventoryData(). */
-/* Filled from api/inventory/adjustments.php by loadInventoryData(). Empty until then.
-   Held mock rows until Phase 6. They were overwritten on every load, so
-   they changed nothing at runtime — but a load that failed left the screen
-   showing invented data that looked real. Empty is the honest starting
-   state: a failed load now shows an empty table and its error toast. */
+/* Filled from api/inventory/adjustments.php by loadInventoryData(); starts empty. */
 let ADJUSTMENTS = [];
 
-/* Five mock disposal/return rows used to be pushed onto AUDIT_LOG here, at
-   parse time. They are gone. The audit trail comes from api/audit/list.php via
-   loadAdminData(), and appending invented rows to it meant the Audit Log showed
-   five events that never happened — and showed them to roles whose own audit
-   query would not have returned them. */
+/* The audit trail comes only from api/audit/list.php (no fake rows are added here). */
 
-/* ============================================================
-   DATA MUTATIONS
-   ============================================================ */
-/* ============================================================
-   DATA MUTATIONS — all of these now go to the server.
-
-   They used to add to p.stock and unshift a row onto an in-memory
-   array, which looked identical on screen and survived exactly
-   until the next refresh. Stock, the batch row and the audit entry
-   are now written by api/inventory/adjust.php inside one
-   transaction, and the local arrays are reloaded from the database
-   afterwards rather than being guessed at.
-
-   Each returns a boolean so existing callers keep working, but they
-   are async now — callers must await them.
-   ============================================================ */
-/* `lotCode` is OPTIONAL and is a suggestion the operator may have edited. The
-   form prefills it with the server's next code, so leaving it alone and
-   clearing it both end up at the same place — passing nothing here makes
-   Inventory::nextLotCode() assign one at save time.
-
-   Callers used to pass "JBF-"+Date.now() when the field was blank, which is
-   not a lot code, it is a timestamp wearing one. A blank field now means
-   "assign it", which is why an empty string is never forwarded.
-
-   THE EXPIRY DATE is what decides whether a lot is opened at all. With one,
-   this restock records a new production run; without one it tops up stock
-   already on the shelf and writes no batch row — still a legitimate restock.
-
-   Returns the server's payload on success (truthy, so `if (await restock(…))`
-   still reads correctly) so the caller can report the assigned code. */
+/* ===== DATA MUTATIONS ===== */
+/* ===== DATA MUTATIONS: stock, batch and audit are written by api/inventory/adjust.php in one transaction, then reloaded; these functions are async and return a boolean ===== */
+/* Restock: lotCode is optional (blank lets Inventory::nextLotCode() assign one), an expiry date opens a new lot (without one it only tops up stock), and the server's payload is returned so the caller can show the code. */
 async function restock(productId, qty, prodDate, expiryDate, lotCode){
   if(qty <= 0) return false;
   try {
@@ -116,41 +56,27 @@ async function restock(productId, qty, prodDate, expiryDate, lotCode){
     if(expiryDate){
       body.production_date = prodDate || invToday();
       body.expiry_date = expiryDate;
-      /* Only when the operator actually supplied one. An empty field is not
-         an empty lot code — it means "assign it", and sending "" would make
-         the server validate a blank string instead of generating. */
+      /* Send the lot code only if the operator entered one. */
       if(lotCode) body.batch_code = lotCode;
     }
     const { data } = await EbApi.post("inventory/adjust.php", body);
     await refreshInventory();
     return data || true;
   } catch(err){
-    /* Field errors get shown against the form by the caller; anything else is
-       a toast. Either way it is reported — a failed write that looks like a
-       success is the worst outcome here. */
+    /* Field errors go to the form, anything else to a toast; failures are always reported. */
     if(err.isValidation) throw err;
     toast(err.message, "err");
     return false;
   }
 }
 
-/* Bulk replenishment. Sent one request per line rather than as a batch
-   endpoint: each line is independently valid or not, and a single failure
-   should not silently discard the rest. Failures are collected and reported
-   together so the operator sees exactly which lines did not land. */
+/* Bulk replenish sends one request per line so one failure does not lose the rest, then reports all failures together. */
 async function replenish(entries){
   const failed = [];
   for(const e of entries){
     if(e.qty <= 0) continue;
     try {
-      /* No batch_code: each line opens its own lot and the server assigns the
-         code, so fifteen of them never have to be typed or kept distinct by
-         hand. Sending the dates is what opens the lot at all; without them
-         this stays a plain top-up.
-
-         One request per line means nextLotCode() runs per line and sees the
-         lot the previous line just created, so the codes come out sequential
-         and unique without the client doing arithmetic on them. */
+      /* Each line opens its own lot with a server-assigned sequential code when dates are given. */
       const body = { product_id: e.productId, qty: e.qty, type: "restock",
                      reason: "Bulk replenishment via Inventory Management." };
       if(e.expiryDate){
@@ -173,9 +99,7 @@ async function replenish(entries){
 
 async function adjustStock({ productId, qty, type, reason, batch="" }){
   try {
-    /* The sign is the server's decision, from `type`. This used to be computed
-       here and applied to p.stock directly, which meant the browser decided
-       whether stock went up or down. */
+    /* The server decides the stock direction from type. */
     await EbApi.post("inventory/adjust.php", {
       product_id: productId, qty: Math.abs(qty), type, reason, batch_code: batch || null,
     });
@@ -188,17 +112,13 @@ async function adjustStock({ productId, qty, type, reason, batch="" }){
   }
 }
 
-/* Re-read products and batches after any stock movement, so what is on screen
-   is what is in the database rather than what the browser predicted. */
+/* Reload products and batches after any stock movement. */
 async function refreshInventory(){
   await loadCatalog();
   await loadInventoryData();
 }
 
-/* Archive and restore now go through products/archive.php, which refuses a
-   double-archive, reports remaining stock, and writes the audit row itself.
-   These used to flip p.archived in memory — the product reappeared on the next
-   reload as if nothing had happened. */
+/* Archive/restore go through products/archive.php, which also writes the audit row. */
 async function archiveInvProduct(productId){
   try {
     const { data } = await EbApi.post("products/archive.php", { id: productId, archived: true });
@@ -216,27 +136,10 @@ async function restoreInvProduct(productId){
   } catch(err){ toast(err.message, "err"); return false; }
 }
 
-/* ============================================================
-   MODULE: INVENTORY MANAGEMENT
-   ============================================================ */
-/* `preselect` is a product id for the Restock and Adjustment forms to open on.
-   The per-row "Restock" / "Adjust" buttons in Stock Overview pass their own
-   product; without it both forms opened on the FIRST product in the list, so
-   restocking "Bangus in Tomato Sauce" from its own row restocked whatever
-   sorted first — and the Adjustment form offered that other product's lots to
-   dispose from. Ignored by every other tab. */
+/* ===== MODULE: INVENTORY MANAGEMENT ===== */
+/* preselect is the product id the Restock/Adjustment forms open on (passed by Stock Overview row buttons). */
 function renderInventoryManage(tab="overview", preselect=null){
-  /* THE PILL ROW DOES NOT GO THROUGH navigate(), so it does not get
-     enterModule()'s reset. Without this, switching Restock -> Stock Overview on
-     the pills kept whatever filter the last visit left behind — the same stuck
-     filter the deep-link intent was rewritten to avoid, arriving by the other
-     door.
-
-     Keyed on the tab actually CHANGING, so a re-render of the tab you are
-     already on — a filter edit, a save, a restock that refreshes the list —
-     keeps what the operator set. And skipped when this render is carrying a
-     one-shot intent, because navigate() has just applied it and clearing it
-     here would undo the shortcut a line later. */
+  /* Reset filters when the pill tab actually changes (not on re-render, and not when a one-shot intent was just applied). */
   const changingTab = adminState.invTab !== tab;
   adminState.invTab = tab;
   const carryingIntent = typeof navIntent === "function" && navIntent("level") !== undefined;
@@ -246,24 +149,7 @@ function renderInventoryManage(tab="overview", preselect=null){
     adminState.stockOvwPager.page = 1;
   }
 
-  /* THE REPORTED BUG. This screen switched its panel and never told the
-     sidebar, so clicking Restock in the sidebar and then Replenish (Bulk) in
-     the pill row left the highlight on Restock. The pill keys and the sidebar's
-     data-tab values are already the same six strings, so nothing needs mapping.
-
-     Called from the render rather than from the pill handler below on purpose:
-     it then applies however the tab was reached — a pill, a sidebar click
-     through navigate(), or one of the in-panel jumps ("Restock" on an overview
-     row, "Archive" after archiving a product) that also change the tab and had
-     the same silent disagreement.
-
-     Deliberately NOT navigate("inventory-manage", tab) — navigate() scrolls
-     #main-content to the top and closes the mobile sidebar, which is right when
-     you are moving to another screen and wrong when you are switching tabs on
-     the screen already in front of you: it would throw away your scroll
-     position mid-form. syncNavHighlight() is the part that was missing; the
-     rest of navigate() is not wanted here. (engine.js and inventory.js are
-     classic scripts over the same globals, so this needs no wiring.) */
+  /* Sync the sidebar highlight from the render (without navigate(), which would scroll to top) however the tab was reached. */
   syncNavHighlight("inventory-manage", tab);
 
   $$("#invmgmt-action-tabs .inv-action-btn").forEach(btn=>{
@@ -271,14 +157,7 @@ function renderInventoryManage(tab="overview", preselect=null){
     btn.onclick = ()=> renderInventoryManage(btn.dataset.tab);
   });
 
-  /* Clear the merged row's controls before the tab rebuilds them.
-
-     Only the tabs with a TABLE mount anything — Restock, Replenish and
-     Adjustment are forms and have nothing to filter. Without this they kept
-     whichever control the previously open tab had left behind, so a form
-     screen showed a "10 per page" dropdown that paginated nothing. Clearing
-     here rather than inside each builder means a tab that mounts nothing
-     needs no code at all to say so. */
+  /* Clear the toolbar's controls before each tab rebuilds them, so form tabs show none. */
   const toolbarGroup = $("#mod-inventory-manage .view-toolbar .view-toolbar-filters");
   if(toolbarGroup) toolbarGroup.innerHTML = "";
 
@@ -293,8 +172,7 @@ function renderInventoryManage(tab="overview", preselect=null){
   wireInventoryManageView(tab, container);
 }
 
-/* Stock overview rows, from the API. The level filter is applied in the query
-   rather than to a page, so "show me everything critical" means everything. */
+/* Stock Overview rows from the API, with the level filter applied in the query. */
 function fillStockOverview(){
   return EbPaginate.list(
     "stock-ovw",
@@ -304,8 +182,7 @@ function fillStockOverview(){
       page, limit, status: "all", sort: "name",
       search: adminState.invOverviewQuery || null,
       level: adminState.invOverviewLevel === "all" ? null : adminState.invOverviewLevel,
-      /* The Level filter reads the bands, and the window is what the bands are
-         measured over — see STOCK_WINDOWS in engine.js. */
+      /* The Level filter uses the bands measured over the selected window (see STOCK_WINDOWS). */
       window: stockWindowParam(),
     }),
     p => {
@@ -344,13 +221,10 @@ function fillStockOverview(){
 function buildStockOverview(){
   const q  = adminState.invOverviewQuery;
   const lv = adminState.invOverviewLevel;
-  /* Shell only — fillStockOverview() draws the rows from the API after this
-     markup is injected. */
+  /* Shell only; fillStockOverview() draws the rows. */
   const rows = "";
 
-/* Search, level and rows-per-page all belong in the pill row above,
-     alongside Stock Overview / Restock / Archive — not in a second band
-     underneath it. */
+/* Search, level and per-page go in the pill row above. */
   mountToolbarControl("inventory-manage", "overview-filters", `
       <div class="search-box">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
@@ -383,52 +257,30 @@ function buildStockOverview(){
   </div>`;
 }
 
-/* ============================================================
-   WHAT TO RESTOCK, AND HOW MUCH
-   ============================================================
-   The restock form asked for a quantity and offered nothing to decide it
-   with. The number typed there was a guess, and the evidence that would have
-   settled it — how fast this product has actually been leaving — was two
-   screens away in the Inventory Report.
+/* ===== RESTOCK INSIGHT: recent daily sales chart, rate and suggested quantity beside the restock form, from completed orders already loaded ===== */
 
-   This panel puts the evidence beside the field: recent daily sales as a
-   chart, the rate they imply, and a suggested quantity built from that rate.
-   It fills the empty right-hand side of the form, which is where the operator
-   is already looking.
-
-   MEASURED FROM ORDERS ALREADY IN THE BROWSER. Every completed order is
-   loaded with its line items (api/orders/list.php sends `items`), so the
-   series needs no request of its own and cannot disagree with the order
-   screens. The load is the newest 500 orders, which covers this fortnight
-   many times over at present volume; if the shop ever trades 500 orders in
-   two weeks, this chart is one of the things that would need server-side
-   paging.
-
-   COMPLETED ORDERS ONLY, matching api/core/Inventory.php — an order that was
-   cancelled consumed nothing, and counting it would recommend replacing stock
-   that never left. */
-
-/* Both bases the user asked for. `yesterday` is the last COMPLETE day rather
-   than the last 24 hours, for the same reason as Inventory::windowSql(): today
-   is a part day, and at 9am it would halve the rate on its own. */
+/* Basis options: last week, or yesterday (the last complete day). */
 const RESTOCK_BASES = {
   week:      { days: 7, label: "Last 7 days",  phrase: "in the last 7 days" },
   yesterday: { days: 1, label: "Yesterday",    phrase: "yesterday" },
 };
 
-/* Two weeks of bars. Long enough to see a trend behind whichever basis is
-   selected, short enough that each bar is still readable. */
+/* Two weeks of bars. */
 const RESTOCK_CHART_DAYS = 14;
 
-/* Units of one product per day, oldest first, ending today. Days with no sale
-   are present as zeroes — a gap in a bar chart has to mean "sold nothing",
-   and it cannot if missing days are simply absent. */
+/* Units per day for one product, oldest first, with zeroes for days without sales. */
 function salesByDay(productId, days){
   const series = [];
   const slotOf = {};
   for(let i = days - 1; i >= 0; i--){
     slotOf[dAgo(i)] = series.length;
     series.push({ date: dAgo(i), units: 0 });
+  }
+  /* Server figures (api/inventory/daily-sales.php) when loaded: every completed order, for any inventory role. */
+  const daily = adminState.dailySales && adminState.dailySales[productId];
+  if(adminState.dailySales){
+    if(daily) series.forEach(s=>{ s.units = +daily[s.date] || 0; });
+    return series;
   }
   ORDERS.forEach(o=>{
     if(o.status !== "completed") return;
@@ -441,30 +293,18 @@ function salesByDay(productId, days){
   return series;
 }
 
-/* The suggestion, and every number behind it.
- *
- * ORDER UP TO A TARGET, rather than "add N". The question is not how much to
- * add, it is how much should be on the shelf when the delivery lands: the
- * rate, times the days that have to be covered, less what is already there.
- *
- * The days to cover are the restock lead time TWICE — once for the wait
- * itself, and once so the shelf is not empty again the day it arrives. The
- * lead time is the server's (`restock_lead_days`, the same setting the
- * Critical band uses), so changing it in settings moves this suggestion and
- * the bands together instead of leaving them to drift apart.
- */
+/* Suggested quantity: sales rate x (twice the restock lead time from settings) minus current stock. */
 function restockAdvice(product, basisKey){
   const basis  = RESTOCK_BASES[basisKey] || RESTOCK_BASES.week;
   const chart  = salesByDay(product.id, RESTOCK_CHART_DAYS);
-  /* The basis is the tail of the same series the chart draws, minus today for
-     `yesterday` — so the highlighted bars are exactly what was counted. */
+  /* The basis is the end of the same series the chart draws, so highlighted bars are what was counted. */
   const window = basis.days === 1
     ? chart.slice(chart.length - 2, chart.length - 1)
     : chart.slice(chart.length - basis.days);
 
   const units      = window.reduce((n, d)=> n + d.units, 0);
   const perDay     = units / basis.days;
-  const lead       = (product.inventory && product.inventory.leadDays) || 14;
+  const lead       = (product.inventory && product.inventory.lowDays) || 14;
   const targetDays = lead * 2;
   const target     = Math.ceil(perDay * targetDays);
   const cover      = perDay > 0 ? Math.round(product.stock / perDay) : null;
@@ -477,11 +317,7 @@ function restockAdvice(product, basisKey){
   };
 }
 
-/* The chart. Inline SVG rather than a library: fourteen rectangles do not
-   need one, and the portal's chart library is not loaded on this screen.
-   Colour is carried by CSS variables so it follows the theme, and each bar
-   carries a <title> so the exact figure is one hover away — the axis labels
-   below name only the ends, which is all fourteen bars have room for. */
+/* Inline SVG bar chart with theme colours and a <title> per bar. */
 function salesChartSvg(advice){
   const inBasis = new Set(advice.window.map(d=>d.date));
   const peak    = Math.max(1, ...advice.chart.map(d=>d.units));
@@ -489,8 +325,7 @@ function salesChartSvg(advice){
   const bw = (W - GAP * (advice.chart.length - 1)) / advice.chart.length;
 
   const bars = advice.chart.map(function(d, i){
-    /* A floor of 2px on any non-zero day: a single unit against a 400-unit
-       peak rounds to nothing, and "sold one" must not look like "sold none". */
+    /* At least 2px for any non-zero day so one sale is visible. */
     const h = d.units === 0 ? 0 : Math.max(2, (d.units / peak) * (H - 8));
     const x = i * (bw + GAP);
     const cls = inBasis.has(d.date) ? "rs-bar is-on" : "rs-bar";
@@ -513,9 +348,7 @@ function salesChartSvg(advice){
   </div>`;
 }
 
-/* The panel. Rebuilt whole whenever the product or the basis changes — it is
-   small, and rebuilding is what keeps the chart, the numbers and the sentence
-   underneath from ever describing different products. */
+/* Rebuild the whole panel when the product or basis changes. */
 function buildRestockInsight(product, basisKey){
   if(!product){
     return `<div class="panel rs-insight" id="rs-insight">
@@ -527,10 +360,7 @@ function buildRestockInsight(product, basisKey){
   const a    = restockAdvice(product, basisKey);
   const rate = a.perDay >= 10 ? Math.round(a.perDay) : Math.round(a.perDay * 10) / 10;
 
-  /* THREE OUTCOMES, EACH SAYING WHY. A bare number with no reasoning is a
-     number nobody can argue with, which is the opposite of useful when the
-     operator knows something the data does not (a delivery due, a promotion
-     starting). */
+  /* Each outcome explains its reasoning. */
   let verdict;
   if(a.units === 0){
     verdict = `<div class="rs-advice is-none">
@@ -575,16 +405,7 @@ function buildRestockInsight(product, basisKey){
   </div>`;
 }
 
-/* TWO LEVELS OF WIRING, and the split is load-bearing.
- *
- * Repainting the panel replaces its nodes, so the controls INSIDE it must be
- * re-bound every time. The product select is not inside it and survives — so
- * binding it here too would add one more listener per repaint, and each of
- * those would repaint again. Three product changes and a single click runs the
- * handler eight times.
- *
- * `wireRestockInsight` is therefore the once-per-render entry point, and
- * `wireInsightControls` is the part that runs again after each repaint. */
+/* wireRestockInsight binds the product select once per render; wireInsightControls re-binds the panel's own controls after each repaint (avoids stacking listeners). */
 function wireRestockInsight(container){
   const sel = container.querySelector("#rs-product");
   if(sel && !sel.dataset.insightWired){
@@ -610,8 +431,7 @@ function wireInsightControls(container){
     });
   });
 
-  /* Fills the field rather than submitting: it is a suggestion, and the
-     operator may know a delivery is due tomorrow. */
+  /* Fills the field without submitting. */
   container.querySelector("#rs-use-suggested")?.addEventListener("click", ()=>{
     const sel = container.querySelector("#rs-product");
     const qty = container.querySelector("#rs-qty");
@@ -625,9 +445,7 @@ function wireInsightControls(container){
 function buildRestockForm(preselect=null){
   const active = PRODUCTS.filter(p=>!p.archived);
   const opts = active.map(p=>`<option value="${p.id}"${p.id===preselect?" selected":""}>${escHtml(p.name)} (${p.stock} in stock)</option>`).join("");
-  /* The panel beside the form reads the SAME product the select opens on —
-     including the preselect a Stock Overview row passes in — so the two halves
-     of the screen can never describe different products. */
+  /* The panel follows the product the select opens on, including a preselect. */
   const shown = (preselect && active.find(p=>p.id===preselect)) || active[0] || null;
   return `<div class="restock-layout">
   <div class="panel">
@@ -655,14 +473,18 @@ function buildRestockForm(preselect=null){
                value="${escHtml(adminState.nextLotCode || "")}"/>
         <span class="field-error" id="rs-batch-err"></span>
       </div>
+      <!-- Production date: today or up to one month back. Expiry is automatic: production date + 1 year for
+           bottled, + 6 months for deboned (api/core/Inventory.php sets it; this field only shows it). -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="field"><label>Production Date</label>
-          <input class="control" type="date" id="rs-prod" value="${INV_TODAY}"/>
+          <input class="control" type="date" id="rs-prod" value="${INV_TODAY}" min="${prodDateMin()}" max="${lotToday()}"/>
+          <span class="field-error" id="rs-prod-err" data-error-for="production_date"></span>
         </div>
-        <div class="field"><label>Expiry Date</label>
-          <input class="control" type="date" id="rs-expiry" value="${defaultExpiry()}"/>
+        <div class="field"><label>Expiry Date <span class="muted" style="font-weight:400">(automatic)</span></label>
+          <input class="control lot-auto-date" type="date" id="rs-expiry" value="${autoExpiry(shown ? shown.id : "", INV_TODAY)}" disabled/>
         </div>
       </div>
+      <span class="field-hint" id="rs-expiry-hint" style="display:block;margin:-6px 0 14px"></span>
       <button type="submit" class="btn btn-gold">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
         Restock
@@ -705,38 +527,38 @@ function buildReplenishForm(){
 
          Leave both dates blank to top up existing stock without opening lots,
          which is the older behaviour and still valid. -->
-    <p style="font-size:.84rem;color:var(--text-muted);margin-bottom:14px">Check products, enter a quantity per line, then click Apply. The dates below apply to every line — each product opens its own lot, with a code assigned by the system. <strong>Leave the dates blank to top up existing stock without opening lots.</strong></p>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:420px;margin-bottom:16px">
-      <div class="field"><label>Production Date</label>
-        <input class="control" type="date" id="rep-prod" value="${INV_TODAY}"/>
+    <p style="font-size:.84rem;color:var(--text-muted);margin-bottom:14px">Check products, enter a quantity per line, then click Apply. The dates below apply to every line — each product opens its own lot, with a code assigned by the system. <strong>Clear the production date to top up existing stock without opening lots.</strong></p>
+    <!-- Shared dates on the left, one quantity for every checked product (or all when none is checked) on the right. -->
+    <div class="rep-top">
+      <div class="rep-group">
+        <div class="field"><label for="rep-prod">Production Date</label>
+          <input class="control" type="date" id="rep-prod" value="${INV_TODAY}" min="${prodDateMin()}" max="${lotToday()}"/>
+          <span class="field-error" id="rep-expiry-err"></span>
+        </div>
+        <div class="field"><label>Expiry Date</label>
+          <div class="lot-auto-note">Automatic per product: production date + <strong>1 year</strong> for bottled, + <strong>6 months</strong> for deboned.</div>
+        </div>
       </div>
-      <div class="field"><label>Expiry Date</label>
-        <input class="control" type="date" id="rep-expiry" value="${defaultExpiry()}"/>
-        <span class="field-error" id="rep-expiry-err"></span>
+      <span class="rep-divider" aria-hidden="true"></span>
+      <div class="field rep-bulk">
+        <label for="rep-qty-all">Same quantity for all <span class="rep-count" id="rep-selected-count">0 selected</span></label>
+        <div class="rep-bulk-row">
+          <input class="control" type="number" id="rep-qty-all" min="1" placeholder="e.g. 50" inputmode="numeric"/>
+          <button type="button" class="btn btn-ghost" id="rep-qty-all-btn">Apply to all</button>
+        </div>
       </div>
     </div>
     <div class="table-wrap"><table class="replenish-table">
-      <thead><tr><th class="check-col"></th><th>Product</th><th>Current Stock</th><th>Add Qty</th></tr></thead>
+      <thead><tr><th class="check-col"><input type="checkbox" id="rep-check-all" aria-label="Select all products"/></th><th>Product</th><th>Current Stock</th><th>Add Qty</th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
   </div>`;
 }
 
 function buildAdjustForm(preselect=null){
-  /* The lot picker is filled from whichever product is selected when the form
-     is wired, so opening on the right product is what makes it offer the
-     right product's lots. */
+  /* The lot picker is filled from the selected product. */
   const opts = PRODUCTS.filter(p=>!p.archived).map(p=>`<option value="${p.id}"${p.id===preselect?" selected":""}>${escHtml(p.name)}</option>`).join("");
-  /* TWO COLUMNS, because the form only ever needed 560px and the screen is
-     three times that. The empty right half is now the consequence of the
-     adjustment, drawn from PRODUCTS and BATCHES — both already in memory, both
-     refreshed after every movement — so it costs no request and cannot be
-     staler than the lot picker beside it.
-
-     It is worth the space because this form destroys stock. "9 left, becomes
-     8" in front of someone before they press Submit Adjustment is the cheapest
-     possible check on a typo in the quantity box, and the lot table answers
-     "which one has gone off" without leaving for the Expiry Monitor. */
+  /* Adjustment form plus a preview of the result (stock before/after and lots), built from data already in memory, as a check before destroying stock. */
   return `<div class="adj-split">
     <div class="panel adj-form-col">
     <div class="panel-header"><span class="panel-title">Stock Adjustment</span></div>
@@ -785,8 +607,10 @@ function buildAdjustForm(preselect=null){
   </div>`;
 }
 
-/* The right-hand column. Everything here is derived — no state of its own, no
-   request — so it cannot disagree with the form it is describing. */
+/* Units a lot can still take back: it never holds more than it started with (api/inventory/adjust.php checks too). */
+function lotRoom(b){ return b.totalQty ? Math.max(0, b.totalQty - b.remainingQty) : 0; }
+
+/* The preview column is derived only, with no state or request. */
 function paintAdjustPreview(container){
   const body = container.querySelector("#adj-preview-body");
   if(!body) return;
@@ -800,30 +624,33 @@ function paintAdjustPreview(container){
   if(!p){ body.innerHTML = `<div class="alert-empty"><strong>No product selected</strong></div>`; return; }
 
   const si    = stockInfo(p);
-  /* A disposal takes stock out; a return puts it back. Same arithmetic the
-     server does in inventory/adjust.php — shown here, not decided here. */
+  /* Disposal subtracts and return adds (shown here, decided by the server). */
   const after = type === "disposal" ? p.stock - qty : p.stock + qty;
-  const over  = type === "disposal" && qty > p.stock;
+  const selLot  = BATCHES.find(b => b.lotCode === lot && b.productId === pid);
+  /* A return can't fill a lot past its total; a disposal can't take a lot below zero. */
+  const lotOver = !!selLot && (type === "return" ? qty > lotRoom(selLot) : qty > selLot.remainingQty);
+  const over  = (type === "disposal" && qty > p.stock) || lotOver;
 
   const lots = BATCHES
     .filter(b => b.productId === pid)
-    .filter(b => type === "disposal" ? b.remainingQty > 0 : true)
+    .filter(b => type === "disposal" ? b.remainingQty > 0 : lotRoom(b) > 0)
     .sort((a, b) => String(a.expiryDate).localeCompare(String(b.expiryDate)));
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const rows = lots.map(b => {
     const isSel = b.lotCode === lot;
-    const left  = type === "disposal" && isSel ? Math.max(0, b.remainingQty - qty) : b.remainingQty;
-    /* How full the lot is, and how soon it expires — the two things that
-       decide which lot a disposal should come out of. */
+    const left  = !isSel ? b.remainingQty
+                : type === "disposal" ? Math.max(0, b.remainingQty - qty) : b.remainingQty + qty;
+    /* How full each lot is and how soon it expires. */
     const pct   = b.totalQty ? Math.max(0, Math.min(100, Math.round(left / b.totalQty * 100))) : 0;
     const days  = b.expiryDate ? Math.round((new Date(b.expiryDate + "T00:00:00") - today) / 864e5) : null;
     const tone  = days == null ? "" : days < 0 ? "is-expired" : days <= 30 ? "is-soon" : days <= 90 ? "is-near" : "is-ok";
     const when  = days == null ? "" : days < 0 ? `expired ${-days}d ago` : days === 0 ? "today" : `in ${days}d`;
-    return `<tr class="${isSel ? "is-selected" : ""}">
+    return `<tr class="adj-lot-row${isSel ? " is-selected" : ""}" data-lot="${escHtml(b.lotCode)}" tabindex="0" role="button"
+               aria-pressed="${isSel}" title="${isSel ? "Selected lot" : "Use this lot"}">
       <td class="mono">${escHtml(b.lotCode)}${isSel ? ` <span class="badge badge-warn">selected</span>` : ""}</td>
       <td class="num-cell">
-        <div class="adj-lot-qty">${isSel && type === "disposal" && qty
+        <div class="adj-lot-qty">${isSel && qty
           ? `<span class="adj-lot-was">${b.remainingQty}</span><span class="adj-lot-arrow" aria-hidden="true">→</span><b>${left}</b>`
           : `<b>${b.remainingQty}</b>`}${b.totalQty ? `<span class="adj-lot-of">/ ${b.totalQty}</span>` : ""}</div>
         ${b.totalQty ? `<div class="adj-lot-bar"><i style="width:${pct}%"></i></div>` : ""}
@@ -835,23 +662,16 @@ function paintAdjustPreview(container){
     </tr>`;
   }).join("");
 
-  /* The facts that bear on the decision, all already on the product record:
-     how long the shelf lasts at the current rate, how fast it moves, and
-     whether the earliest lot is going to expire before it sells. A disposal is
-     usually prompted by one of these three. */
+  /* Facts for the decision: days of cover, speed, and whether the earliest lot expires before selling. */
   const inv   = p.inventory || {};
-  const cover = inv.daysCover == null ? null : inv.daysCover;
   const risk  = inv.expiryRisk;
 
   const IC = {
-    cover: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
     move:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/></svg>',
     lots:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8l9 5 9-5z"/><path d="m3 16 9 5 9-5M3 12l9 5 9-5"/></svg>',
   };
   const moveTone = /fast/i.test(inv.movementLabel || "") ? "is-good" : /slow|dead|no/i.test(inv.movementLabel || "") ? "is-warn" : "";
   const facts = [
-    { ic: IC.cover, k: "Days of cover", v: cover == null ? "—" : `${cover}`,
-      hint: cover == null ? "Nothing has sold in the measured window." : `At the current rate. A restock takes ${inv.leadDays ?? "—"}.` },
     { ic: IC.move, tone: moveTone, k: "Movement", v: inv.movementLabel || "—",
       hint: inv.perMonth != null ? `About ${inv.perMonth} a month.` : "" },
     { ic: IC.lots, k: "Lots on record", v: String(lots.length), hint: "" },
@@ -884,7 +704,13 @@ function paintAdjustPreview(container){
       ${qty && !over ? `<span class="adj-prev-delta">${type === "disposal" ? "−" : "+"}${qty.toLocaleString()} unit${qty === 1 ? "" : "s"}</span>` : ""}
     </div>
 
-    ${over ? `<div class="adj-prev-warn">
+    ${lotOver && type === "disposal" ? `<div class="adj-prev-warn">
+      Lot ${escHtml(selLot.lotCode)} holds only ${selLot.remainingQty.toLocaleString()}, so no more than that can be
+      disposed from it. Lower the quantity or pick another lot.
+    </div>` : lotOver ? `<div class="adj-prev-warn">
+      Lot ${escHtml(selLot.lotCode)} started with ${selLot.totalQty.toLocaleString()} and holds ${selLot.remainingQty.toLocaleString()},
+      so only ${lotRoom(selLot).toLocaleString()} more can be returned to it. Lower the quantity or pick another lot.
+    </div>` : over ? `<div class="adj-prev-warn">
       That is more than the ${p.stock.toLocaleString()} on hand. The server refuses an
       adjustment it cannot take out of stock, so lower the quantity before submitting.
     </div>` : ""}
@@ -900,7 +726,7 @@ function paintAdjustPreview(container){
       <header class="adj-prev-lots-head">
         <span>Lots</span>
         <span class="adj-prev-lots-count">${lots.length
-          ? `${lots.length} on record${type === "disposal" ? " · soonest expiry first" : ""}`
+          ? `${lots.length} on record${type === "disposal" ? " · soonest expiry first" : ""} · click a lot to use it`
           : "none on record"}</span>
       </header>
       <div class="adj-prev-lots-box">
@@ -913,14 +739,23 @@ function paintAdjustPreview(container){
         </div></div>`}
       </div>
     </section>`;
+
+  /* Clicking a lot row selects it in the form's Lot dropdown. */
+  const pick = tr => {
+    const sel = container.querySelector("#adj-batch");
+    if(!sel || sel.value === tr.dataset.lot) return;
+    if(![...sel.options].some(o => o.value === tr.dataset.lot)) return;
+    sel.value = tr.dataset.lot;
+    if(window.EbSelect) EbSelect.sync(sel);
+    sel.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  body.querySelectorAll("tr.adj-lot-row").forEach(tr => {
+    tr.addEventListener("click", () => pick(tr));
+    tr.addEventListener("keydown", e => { if(e.key === "Enter" || e.key === " "){ e.preventDefault(); pick(tr); } });
+  });
 }
 
-/* Adjustment log — server-paged.
-
-   Returns the table shell with an empty tbody; fillAdjLog() populates it after
-   injection. The rows used to be baked into this string from a client-side
-   slice of ADJUSTMENTS, which meant holding every stock movement ever recorded
-   in memory to show ten of them. */
+/* Adjustment log is server-paged; fillAdjLog() fills the empty tbody. */
 function buildAdjLog(){
   /* Rows-per-page lives in the pill row, not in a strip of its own. */
   mountToolbarControl("inventory-manage", "page-size", `
@@ -958,7 +793,7 @@ function fillAdjLog(){
   );
 }
 
-/* Archive rows, from the API. fillArchiveView() populates the shell below. */
+/* Archive rows from the API, filled by fillArchiveView(). */
 function fillArchiveView(){
   return EbPaginate.list(
     "archive",
@@ -983,7 +818,7 @@ function fillArchiveView(){
   );
 }
 
-/* Archive/restore buttons. Called after each page of rows is drawn. */
+/* Wire archive/restore buttons after each page of rows. */
 function wireArchiveActions(){
   document.querySelectorAll("#archive-tbody [data-archive-prod]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
@@ -1036,10 +871,7 @@ function buildArchiveView(){
 function wireInventoryManageView(tab, container){
   if(tab==="overview"){
     const rerender = ()=> renderInventoryManage("overview");
-    /* NOT container.querySelector any more. These two moved out of the tab
-       panel and into the merged pill row above it, which is a different
-       subtree — scoped to the container they came back null and the search box
-       and the level filter silently stopped responding. */
+    /* These controls now live in the pill row, so look them up globally, not inside the container. */
     const filterSearch = $("#search-invmgmt-overview");
     const filterLevel  = $("#filter-invmgmt-overview-level");
     filterSearch?.addEventListener("input", ()=>{
@@ -1052,18 +884,14 @@ function wireInventoryManageView(tab, container){
       adminState.stockOvwPager.page = 1;
       rerender();
     });
-    /* Same control as the Inventory Report's, writing the same session state,
-       so the two screens cannot disagree about what they are showing. */
+    /* Same window control as the Inventory Report, sharing its session state. */
     const filterWindow = $("#filter-ovw-window");
     filterWindow?.addEventListener("change", ()=>{
       adminState.stockWindow = filterWindow.value;
       adminState.stockOvwPager.page = 1;
       rerender();
     });
-    /* focus was lost anyway on every rebuild under the old show/hide
-       approach too (attribute wasn't preserved) — re-focusing here just
-       makes typing feel continuous now that a real re-render happens
-       on each keystroke. */
+    /* Restore focus after each rebuild so typing feels continuous. */
     if(adminState.invOverviewQuery && filterSearch){
       filterSearch.focus();
       filterSearch.setSelectionRange(filterSearch.value.length, filterSearch.value.length);
@@ -1080,6 +908,9 @@ function wireInventoryManageView(tab, container){
 
   if(tab==="restock"){
     wireRestockInsight(container);
+    const syncExp = wireLotDates(container.querySelector("#rs-prod"), container.querySelector("#rs-expiry"),
+      container.querySelector("#rs-expiry-hint"), ()=> container.querySelector("#rs-product").value);
+    container.querySelector("#rs-product")?.addEventListener("change", syncExp);
     container.querySelector("#restock-form")?.addEventListener("submit", async e=>{
       e.preventDefault();
       const form      = e.target;
@@ -1087,26 +918,24 @@ function wireInventoryManageView(tab, container){
       const qty       = +container.querySelector("#rs-qty").value;
       const lot       = container.querySelector("#rs-batch").value.trim();
       const prodDate  = container.querySelector("#rs-prod").value;
-      const expiry    = container.querySelector("#rs-expiry").value;
+      const expiry    = prodDate ? autoExpiry(productId, prodDate) : "";
       container.querySelector("#rs-qty-err").textContent = "";
+      container.querySelector("#rs-prod-err").textContent = "";
       if(qty < 1){ container.querySelector("#rs-qty-err").textContent="Enter valid quantity."; return; }
+      const prodBad = prodDateProblem(prodDate);
+      if(prodBad){ container.querySelector("#rs-prod-err").textContent = prodBad; return; }
 
-      /* Disabled while in flight — this posts a stock movement, and a double
-         click used to mean two of them. */
+      /* Disable while the request runs to prevent double posts. */
       const restore = EbUI.busy(form.querySelector("[type=submit]"), "Restocking…");
       try {
         const res = await restock(productId, qty, prodDate, expiry, lot);
         if(res){
-          /* Read the new level back from the reloaded catalogue rather than
-             adding qty locally — the server is what decides the total. */
+          /* Read the new stock from the reloaded catalogue. */
           const p = getProduct(productId);
-          /* Name the lot that was opened. The operator no longer chooses the
-             code, so this message is the only place they learn it — and they
-             need it to label the carton. */
+          /* Show the opened lot code so the operator can label the carton. */
           const lot = res && res.lotCode ? ` Lot ${res.lotCode} opened.` : "";
           toast(`Restocked ${p.name} +${qty} units. New stock: ${p.stock}.${lot}`, "ok");
-          /* Stay on the product just restocked. Redrawing on the first product
-             made a successful restock look as if it had gone to the wrong one. */
+          /* Stay on the product just restocked. */
           renderInventoryManage("restock", productId);
         }
       } catch(err){
@@ -1117,28 +946,53 @@ function wireInventoryManageView(tab, container){
   }
 
   if(tab==="replenish"){
+    /* Select all, a running count, and one quantity applied to every checked row. */
+    const checks   = [...container.querySelectorAll(".rep-check")];
+    const allBox   = container.querySelector("#rep-check-all");
+    const countEl  = container.querySelector("#rep-selected-count");
+    const applyBtn = container.querySelector("#rep-qty-all-btn");
+    const syncSelection = ()=>{
+      const n = checks.filter(c=>c.checked).length;
+      if(allBox){ allBox.checked = n > 0 && n === checks.length; allBox.indeterminate = n > 0 && n < checks.length; }
+      if(countEl) countEl.textContent = `${n} selected`;
+      if(applyBtn) applyBtn.textContent = n ? "Apply to selected" : "Apply to all";
+    };
+    allBox?.addEventListener("change", ()=>{ checks.forEach(c=>{ c.checked = allBox.checked; }); syncSelection(); });
+    checks.forEach(c=>c.addEventListener("change", syncSelection));
+    /* Typing a quantity on a row checks it, so the row is not silently skipped. */
+    container.querySelectorAll(".rep-qty").forEach(inp=>inp.addEventListener("input", ()=>{
+      const cb = container.querySelector(`.rep-check[data-pid="${inp.dataset.pid}"]`);
+      if(cb && +inp.value > 0 && !cb.checked){ cb.checked = true; syncSelection(); }
+    }));
+    applyBtn?.addEventListener("click", ()=>{
+      const qty = Math.floor(+container.querySelector("#rep-qty-all")?.value || 0);
+      if(qty < 1){ toast("Enter a quantity of at least 1.", "warn"); return; }
+      let targets = checks.filter(c=>c.checked);
+      if(!targets.length){ targets = checks; targets.forEach(c=>{ c.checked = true; }); }
+      targets.forEach(c=>{ const q = container.querySelector(`.rep-qty[data-pid="${c.dataset.pid}"]`); if(q) q.value = qty; });
+      syncSelection();
+      toast(`Set ${qty} for ${targets.length} product${targets.length === 1 ? "" : "s"}.`, "ok");
+    });
+    syncSelection();
+
     container.querySelector("#rep-submit-btn")?.addEventListener("click", async (e)=>{
       const entries = [];
-      /* Read once, applied to every line — these are the form's shared dates,
-         not per-row values. Blank expiry means "top up, open no lots". */
+      /* Shared dates for every line; a blank expiry means top up without opening lots. */
       const prodDate   = container.querySelector("#rep-prod")?.value || "";
-      const expiryDate = container.querySelector("#rep-expiry")?.value || "";
       const expErr     = container.querySelector("#rep-expiry-err");
       if(expErr) expErr.textContent = "";
-      if(expiryDate && prodDate && expiryDate <= prodDate){
-        if(expErr) expErr.textContent = "Expiry must be after the production date.";
-        return;
-      }
+      const prodBad = prodDateProblem(prodDate);
+      if(prodBad){ if(expErr) expErr.textContent = prodBad; return; }
       container.querySelectorAll(".rep-check:checked").forEach(cb=>{
         const pid  = cb.dataset.pid;
         const qty  = +container.querySelector(`.rep-qty[data-pid="${pid}"]`)?.value||0;
-        if(qty > 0) entries.push({ productId:pid, qty, prodDate, expiryDate });
+        /* Each line's expiry follows its own category; the server sets the same value. */
+        if(qty > 0) entries.push({ productId:pid, qty, prodDate, expiryDate: prodDate ? autoExpiry(pid, prodDate) : "" });
       });
       if(!entries.length){ toast("No products selected or all quantities are 0.", "warn"); return; }
       const restore = EbUI.busy(e.currentTarget, "Replenishing…");
       try {
-        /* Only claims success if every line landed; replenish() reports the
-           failures itself. */
+        /* Report success only if every line worked. */
         if(await replenish(entries)){
           toast(`Replenished ${entries.length} product(s).`, "ok");
         }
@@ -1152,16 +1006,7 @@ function wireInventoryManageView(tab, container){
     const typeReturnBtn   = container.querySelector("#adj-type-return");
     const typeHidden      = container.querySelector("#adj-type");
 
-    /* The lot picker.
-       --------------
-       This was a free-text box marked "(optional)". Requiring a code without
-       showing which codes exist would only move the problem: the person
-       disposing expired stock would still have to leave for the Expiry Monitor,
-       find the lot and type it back. The list is the point.
-
-       Read from the BATCHES array engine.js already loads (limit 200, sorted by
-       expiry) and refreshes after every movement, so there is no fetch here and
-       the quantities cannot be staler than the last adjustment. */
+    /* Lot picker built from the loaded BATCHES, so the operator chooses from real lots. */
     const batchSel  = container.querySelector("#adj-batch");
     const batchHint = container.querySelector("#adj-batch-hint");
 
@@ -1170,13 +1015,10 @@ function wireInventoryManageView(tab, container){
       const type = typeHidden.value;
       const p    = getProduct(pid);
 
-      /* Disposal lists only lots that still hold something — there is nothing
-         to discard from an empty one. A RETURN lists every lot, including
-         emptied ones: a customer can return goods from a lot that has since
-         sold out, and refusing that would make the return unrecordable. */
+      /* Disposal lists lots with stock; returns list lots below what they started with (a lot never goes above its total). */
       const lots = BATCHES
         .filter(b => b.productId === pid)
-        .filter(b => type === "disposal" ? b.remainingQty > 0 : true)
+        .filter(b => type === "disposal" ? b.remainingQty > 0 : lotRoom(b) > 0)
         .sort((a, b) => String(a.expiryDate).localeCompare(String(b.expiryDate)));
 
       if(!lots.length){
@@ -1184,17 +1026,14 @@ function wireInventoryManageView(tab, container){
         batchSel.disabled = true;
         batchHint.textContent = type === "disposal"
           ? `No lot of ${p?.name || "this product"} has stock left to discard. Register one in Batch Tracking.`
-          : `No lots recorded for ${p?.name || "this product"}. Register one in Batch Tracking.`;
+          : `No lot of ${p?.name || "this product"} has room — every lot already holds what it started with.`;
         return;
       }
 
       batchSel.disabled = false;
-      /* Expiry is shown for a DISPOSAL because that is the decision being made
-         — which lot has gone off. A return is about the unit coming back, not
-         its date, so the same list is shown without it rather than with a
-         number nobody is acting on. */
+      /* Show expiry for disposals only. */
       batchSel.innerHTML = lots.map(b => {
-        const left = `${b.remainingQty} left`;
+        const left = type === "disposal" ? `${b.remainingQty} left` : `${b.remainingQty} of ${b.totalQty} · up to ${lotRoom(b)} more`;
         const exp  = type === "disposal" ? ` · expires ${fmtDate(b.expiryDate)}` : "";
         return `<option value="${escHtml(b.lotCode)}">${escHtml(b.lotCode)} — ${left}${exp}</option>`;
       }).join("");
@@ -1203,9 +1042,7 @@ function wireInventoryManageView(tab, container){
         : `${lots.length} lots, soonest expiry first.`;
     }
 
-    /* The side panel follows every input that changes what the adjustment
-       would do — product, type, quantity and the lot itself. Wrapped around
-       paintLots() so the two can never show different lots. */
+    /* The preview follows product, type, quantity and lot changes. */
     const repaint = () => { paintLots(); paintAdjustPreview(container); };
 
     container.querySelector("#adj-product")?.addEventListener("change", repaint);
@@ -1240,9 +1077,20 @@ function wireInventoryManageView(tab, container){
       container.querySelector("#adj-batch-err").textContent="";
       if(qty<1){ container.querySelector("#adj-qty-err").textContent="Enter valid quantity."; return; }
       if(!reason){ container.querySelector("#adj-reason-err").textContent="Reason is required."; return; }
-      /* The server enforces this too, and its check is the real one. Doing it
-         here as well only saves a round trip on the case the picker already
-         knows about — a product with no lots to offer. */
+      /* A lot never holds more than it started with (the server checks too). */
+      const lotB = BATCHES.find(b => b.lotCode === batch && b.productId === productId);
+      if(type === "disposal" && lotB && qty > lotB.remainingQty){
+        container.querySelector("#adj-qty-err").textContent =
+          `Lot ${lotB.lotCode} holds only ${lotB.remainingQty} — you can't dispose more than that.`;
+        return;
+      }
+      if(type === "return" && lotB && qty > lotRoom(lotB)){
+        container.querySelector("#adj-qty-err").textContent = lotRoom(lotB)
+          ? `Lot ${lotB.lotCode} can take back only ${lotRoom(lotB)} more (${lotB.remainingQty} of ${lotB.totalQty}).`
+          : `Lot ${lotB.lotCode} is already full (${lotB.remainingQty} of ${lotB.totalQty}).`;
+        return;
+      }
+      /* Quick check for a product with no lots (the server enforces it too). */
       if(!batch){
         container.querySelector("#adj-batch-err").textContent =
           "Select a lot. If none is listed, register one in Batch Tracking first.";
@@ -1268,30 +1116,18 @@ function wireInventoryManageView(tab, container){
   }
 
   if(tab==="archive"){
-    /* Rows arrive asynchronously now, so the buttons are wired by
-       fillArchiveView's `after` hook rather than here — binding to the
-       container before the rows exist would find nothing. */
+    /* Archive buttons are wired in fillArchiveView's after hook, once rows exist. */
     fillArchiveView();
   }
 
   if(tab==="adjlog"){
-    /* EbPaginate.list wires its own controls, so the old client-side
-       Paginate.render/wirePageSize pair is gone — leaving them would have
-       overwritten the working controls with ones that slice a stale array. */
+    /* EbPaginate wires its own controls, replacing the old client-side Paginate. */
     fillAdjLog();
   }
 }
 
-/* ============================================================
-   MODULE: EXPIRATION MONITORING
-   ============================================================ */
-/* Expiration Monitoring — server-paged.
-
-   days_to_expiry comes from the endpoint, computed against the server's
-   CURDATE() rather than the browser's clock. Search, status band and sort are
-   all query parameters rather than operations on one page, so "soonest first"
-   means soonest across every batch and "Expired" counts every expired lot —
-   not just the ones that happened to land on the page you are looking at. */
+/* ===== MODULE: EXPIRATION MONITORING ===== */
+/* Expiration Monitoring is server-paged, with days_to_expiry, search, status and sort all handled by the server across every batch. */
 function renderExpiry(){
   const status = $("#filter-expiry-status")?.value || "all";
   const sort   = $("#filter-expiry-sort")?.value || "soonest";
@@ -1360,10 +1196,7 @@ function wireExpiryActions(){
         onConfirm: async ()=>{
           const reason = $("#dispose-reason").value.trim();
           if(!reason){ $("#dispose-reason-err").textContent="Reason required."; return; }
-          /* No local edit of batchObj.remainingQty here any more — that was a
-             guess at what the server would do, and it disagreed with the
-             database the moment anything else changed the batch. adjustStock()
-             reloads both arrays from the API instead. */
+          /* No local stock edits; adjustStock() reloads from the API. */
           if(await adjustStock({ productId:pid, qty, type:"disposal", reason, batch:code })){
             closeModal();
             toast(`Disposed ${qty} unit(s) from ${code}.`,"warn");

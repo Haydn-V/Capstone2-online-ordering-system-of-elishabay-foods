@@ -1,12 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/categories/list.php?status=active|archived|all
- *
- * Product varieties. Readable by any signed-in staff member — the list drives
- * filter dropdowns across POS, inventory and products.
- */
+/** GET /api/categories/list.php returns product varieties to any signed-in staff member for filter dropdowns. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -22,8 +17,7 @@ if ($status === 'active') {
     $where = 'WHERE c.archived = 1';
 }
 
-/* Product count per category comes along for free and saves the Varieties
-   screen a second request per row. */
+/* Include each category's product count to save the Varieties screen extra requests. */
 $rows = Database::all(
     "SELECT c.id, c.name, c.description, c.archived,
             (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.archived = 0) AS product_count

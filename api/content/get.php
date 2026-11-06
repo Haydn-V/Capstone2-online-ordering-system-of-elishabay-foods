@@ -1,17 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/content/get.php
- *
- * PUBLIC — the storefront's About/Vision/Mission text, contact details, FAQs
- * and hero slides.
- *
- * This replaces the localStorage bridge: the admin's Landing Page module wrote
- * localStorage["eb-landing-content"] and the public page read it back, which
- * only ever worked inside one browser. An edit made by an administrator was
- * invisible to every actual visitor — the one audience it was for.
- */
+/** GET /api/content/get.php (public) returns the storefront's landing content, FAQs, contact details and hero slides from the database. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -23,13 +13,10 @@ foreach (Database::all('SELECT key_name, value_text FROM site_content') as $row)
 }
 
 $faqs = Database::all('SELECT question, answer FROM faqs ORDER BY display_order, id');
-/* image_path, not image_data — renamed by migration 003. The column holds an
-   application-root-relative path now; it held base64 before, and nothing ever
-   wrote it, which is why the landing hero images never survived a logout. */
-$hero = Database::all('SELECT title, image_path FROM hero_slides ORDER BY display_order, id');
+/* image_path holds an app-root-relative path (renamed from image_data in migration 003). */
+$hero = Database::all('SELECT id, title, image_path FROM hero_slides ORDER BY display_order, id');
 
-/* Empty means "fall back to each product's own is_best flag", which is what the
-   carousel already does. */
+/* An empty list means each product's own is_best flag decides. */
 $featured = array_column(
     Database::all('SELECT product_id FROM featured_products ORDER BY display_order'),
     'product_id'
@@ -39,6 +26,16 @@ Response::ok([
     'about'   => $content['about']   ?? '',
     'vision'  => $content['vision']  ?? '',
     'mission' => $content['mission'] ?? '',
+    /* Hero text; the defaults are the original wording, used until it is edited in Landing Page. */
+    'heroText' => [
+        'tagline'     => ($content['hero_tagline'] ?? '') ?: 'Every Mouthful is Delightful.',
+        'highlight'   => $content['hero_highlight'] ?? 'Delightful',
+        'lead'        => $content['hero_lead'] ?? 'Every product starts with fresh, locally-sourced milkfish — hand-deboned or bottled in small batches.',
+        'stat1_value' => $content['hero_stat1_value'] ?? '100%',
+        'stat1_label' => $content['hero_stat1_label'] ?? 'Natural',
+        'stat2_value' => $content['hero_stat2_value'] ?? '9+',
+        'stat2_label' => $content['hero_stat2_label'] ?? 'years of craft',
+    ],
     'contact' => [
         'address'  => $content['contact_address']  ?? '',
         'phone'    => $content['contact_phone']    ?? '',
@@ -46,18 +43,13 @@ Response::ok([
         'facebook' => $content['contact_facebook'] ?? '',
     ],
     'faqs'     => array_map(static fn(array $f): array => ['q' => $f['question'], 'a' => $f['answer']], $faqs),
-    /* Sent as `image`, matching every other endpoint that returns a picture.
-       `img` is kept alongside it for one release because the storefront's hero
-       accordion and the landing editor both read `img` today; imageUrl()
-       accepts either, so the two can be retired independently rather than in
-       one flag-day rename across three files. */
+    /* Send the picture as `image` like every other endpoint, keeping `img` for one release because older screens still read it. */
     'hero'     => array_map(static function (array $h): array {
         $path = $h['image_path'] ?? '';
-        return ['title' => $h['title'], 'image' => $path, 'img' => $path];
+        return ['id' => (int) $h['id'], 'title' => $h['title'], 'image' => $path, 'img' => $path];
     }, $hero),
     'featured' => $featured,
-    /* The accounts customers pay INTO, with their QR codes. Public, like the
-       contact details: it is exactly what a paying customer needs to see. */
+    /* The payment accounts and QR codes customers pay into are public, like the contact details. */
     'payment'  => [
         'gcash' => [
             'name'   => $content['pay_gcash_name']   ?? '',

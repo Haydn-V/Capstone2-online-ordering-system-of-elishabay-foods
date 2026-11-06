@@ -1,32 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/products/save.php
- *
- * Creates when `id` is absent, updates when present. One endpoint because the
- * validation, permission and audit rules are identical — two files would be
- * two places to forget a rule.
- *
- * Body: { "id": "db-pesto" (omit to create), "name": "...", "category_id": "cat-db",
- *         "price": 285, "description": "...", "tint": "#3f8f4f",
- *         "is_best": false, "image": "/uploads/products/<32 hex>.webp" | null }
- *
- * `image` is a path returned by api/uploads/image.php, not an image. Posting a
- * data URL here is refused with a message saying so — see the note by the
- * validation below.
- *
- * On update, `image` is read three ways: omit the key to keep the stored photo,
- * send a path to store it, send null or "" to REMOVE it. The removed file stays
- * on disk — tools/prune-uploads.php collects it.
- *
- * Requires products.manage.
- *
- * Note what is NOT accepted here: `stock`, `sold` and `rating`. Stock moves
- * only through inventory/adjust.php, which records why and writes an audit
- * row; letting the product form set it directly would be a way to change stock
- * with no trace. `sold` and `rating` are derived from orders and reviews.
- */
+/** POST /api/products/save.php (needs products.manage) creates or updates a product, where image is an uploaded path (omit = keep, path = set, null/"" = remove) and stock, sold and rating are never accepted here. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -43,8 +18,7 @@ $data = Validate::check($in)
     ->decimal('price', 'Price', 0)
     ->values();
 
-/* The category must exist. A form dropdown "guarantees" this, which is exactly
-   why it has to be checked — the dropdown is not what sends the request. */
+/* Check the category exists, since the dropdown is not what sends the request. */
 $category = Database::one('SELECT id, name FROM categories WHERE id = ?', [$data['category_id']]);
 if ($category === null) {
     Response::validation('Check the highlighted fields.', ['category_id' => 'That category does not exist.']);
@@ -54,36 +28,39 @@ $description = trim((string) ($in['description'] ?? '')) ?: null;
 $tint        = trim((string) ($in['tint'] ?? '')) ?: null;
 $isBest      = !empty($in['is_best']) ? 1 : 0;
 
-/* A hex colour or nothing. Anything else lands in a style attribute later. */
+/* A hex colour or nothing, since it ends up in a style attribute. */
 if ($tint !== null && !preg_match('/^#[0-9a-fA-F]{3,8}$/', $tint)) {
     Response::validation('Check the highlighted fields.', ['tint' => 'Use a hex colour such as #3f8f4f.']);
 }
 
-/* `image` is now a PATH, not the image.
-   ---------------------------------------------------------------------------
-   It used to be a base64 data URL: the client posted the whole file inside this
-   JSON body and it went into image_url as LONGTEXT. Three rows held 1.81MB
-   between them and every public storefront request carried all of it.
+/* Net weight (grams) and nutrition facts per serving are optional (NULL if blank), with nutrition limited to a fixed list of keys. */
+$weightRaw = trim((string) ($in['net_weight_g'] ?? ''));
+$netWeight = null;
+if ($weightRaw !== '') {
+    if (!ctype_digit($weightRaw) || (int) $weightRaw < 1 || (int) $weightRaw > 100000) {
+        Response::validation('Check the highlighted fields.', ['net_weight_g' => 'Enter the weight in whole grams (1–100000).']);
+    }
+    $netWeight = (int) $weightRaw;
+}
 
-   The file is uploaded first, to api/uploads/image.php, which validates the
-   real MIME, re-encodes through GD and returns a path. This endpoint stores
-   that path and never sees image bytes at all — which is why the validation
-   here is a shape check rather than an image check. The endpoint that has the
-   bytes is the endpoint that judges them.
+$nutrition = null;
+if (is_array($in['nutrition'] ?? null)) {
+    $clean = [];
+    foreach (['serving_size', 'servings', 'calories', 'fat', 'sat_fat', 'cholesterol',
+              'sodium', 'carbs', 'sugar', 'protein'] as $k) {
+        $v = trim((string) ($in['nutrition'][$k] ?? ''));
+        if ($v === '') continue;
+        if ($k === 'serving_size') { $clean[$k] = mb_substr($v, 0, 40); continue; }
+        if (!is_numeric($v) || (float) $v < 0) {
+            Response::validation('Check the highlighted fields.', ['nutrition' => 'Nutrition values must be numbers of 0 or more.']);
+        }
+        $clean[$k] = (float) $v;
+    }
+    $nutrition = $clean ? json_encode($clean, JSON_UNESCAPED_UNICODE) : null;
+}
 
-   Only a path this server produced is accepted. Without that constraint the
-   column would take `/../../api/config/config.php` or an off-site URL and hand
-   it to every page that renders a product image, and a stored `javascript:`
-   or `data:text/html` value would be an XSS delivered by the catalogue.
-
-   A data URL is now REFUSED rather than quietly stored, with a message that
-   says what to do. Silently accepting the old shape into a VARCHAR(255) would
-   truncate it to 255 characters of base64 — a corrupt value that looks like
-   data and renders as nothing. */
-/* ABSENT and NULL are different requests, and `?? null` could not tell them
-   apart — which is why there was no request an administrator could make that
-   cleared a photo. array_key_exists() draws the line the three-way rule below
-   needs. */
+/* image must be a path produced by api/uploads/image.php; data URLs and any other value are refused to block path tricks and XSS. */
+/* Use array_key_exists so a missing image key (keep) is different from null (remove). */
 $imageProvided = array_key_exists('image', $in);
 $image = $imageProvided ? $in['image'] : null;
 if ($image !== null && $image !== '') {
@@ -95,18 +72,14 @@ if ($image !== null && $image !== '') {
         ]);
     }
 
-    /* /uploads/products/<32 hex>.webp is the only shape this server writes.
-       Anchored at both ends, with no path separators inside the name, so
-       traversal has nowhere to live. */
+    /* Only /uploads/products/<32 hex>.webp is accepted, anchored so no path traversal is possible. */
     if (!preg_match('#^/uploads/products/[a-f0-9]{32}\.webp$#', $image)) {
         Response::validation('Check the highlighted fields.', [
             'image' => 'That is not a valid uploaded image path.',
         ]);
     }
 
-    /* The path must name a file that exists. A row pointing at nothing renders
-       as the placeholder and looks to an administrator exactly like the bug
-       this whole exercise is about. */
+    /* The image file must exist on disk. */
     if (!is_file(dirname(__DIR__, 2) . $image)) {
         Response::validation('Check the highlighted fields.', [
             'image' => 'That upload is no longer on the server. Upload the image again.',
@@ -122,23 +95,7 @@ if ($isUpdate) {
         Response::notFound('That product does not exist.');
     }
 
-    /* THREE-WAY RULE on `image`, not two.
-       -----------------------------------------------------------------------
-       This used to read `$image ?? $existing['image_url']` under a comment
-       saying the edit form only sends an image when a new one was chosen. That
-       client no longer exists — engine.js sends the field on every save, and
-       re-sends the product's existing path when nothing was touched. The effect
-       was that "keep the current one" was the ONLY reachable outcome: no
-       request could clear image_url, so a wrong photo could be replaced but
-       never removed.
-
-           field absent          → keep whatever is stored (any other caller,
-                                   and anything that posts a partial body)
-           field = a valid path  → store it (validated above)
-           field = null or ""    → store NULL, i.e. remove the photo
-
-       The file the cleared path named is NOT unlinked here — see the orphaned
-       uploads note in docs/API.md and tools/prune-uploads.php. */
+    /* Image rule: key absent keeps the stored photo, a valid path stores it, null or "" removes it (the old file is cleaned up by tools/prune-uploads.php). */
     $newImage = $imageProvided ? $image : $existing['image_url'];
 
     Database::run(
@@ -150,8 +107,7 @@ if ($isUpdate) {
          $tint, $isBest, $newImage, $existing['id']]
     );
 
-    /* Say what actually changed. "Updated product X" tells a later reader
-       nothing about whether the price moved. */
+    /* Audit line says exactly what changed (e.g. the price). */
     $changes = [];
     if ($existing['name'] !== $data['name']) {
         $changes[] = "name '{$existing['name']}' → '{$data['name']}'";
@@ -160,9 +116,7 @@ if ($isUpdate) {
         $changes[] = 'price ₱' . number_format((float) $existing['price'], 2) .
                      ' → ₱' . number_format((float) $data['price'], 2);
     }
-    /* Removal is a distinct act from replacement and reads as one in the log —
-       "image replaced" on a row that now has no photo would send a later reader
-       looking for a file that was never stored. */
+    /* Log photo removal separately from replacement. */
     if (($existing['image_url'] ?? null) !== $newImage) {
         $changes[] = $newImage === null
             ? 'image removed'
@@ -177,8 +131,7 @@ if ($isUpdate) {
 
     $id = $existing['id'];
 } else {
-    /* Readable, stable id derived from the name, in the style the seed data
-       uses (db-pesto, bg-adobo) rather than an opaque timestamp. */
+    /* Create a readable id from the name, like the seed data (db-pesto). */
     $id = makeProductId($data['name'], $category['id']);
 
     Database::run(
@@ -195,9 +148,23 @@ if ($isUpdate) {
     ));
 }
 
+/* Saved separately so the endpoint still works before migration 020. */
+$hasLabel = Database::hasColumn('products', 'nutrition');
+if (!$hasLabel && ($netWeight !== null || $nutrition !== null)) {
+    /* Say so rather than save the rest and drop these without a word. */
+    Response::error('MIGRATION_NEEDED',
+        'Product saved, but net weight and nutrition could not be stored: the database is missing '
+        . 'migration 020 (db/migrations/020-product-weight-nutrition.sql). Run it in phpMyAdmin, then save again.', 409);
+}
+if ($hasLabel) {
+    Database::run('UPDATE products SET net_weight_g = ?, nutrition = ? WHERE id = ?',
+                  [$netWeight, $nutrition, $id]);
+}
+
 $row = Database::one(
     'SELECT p.id, p.name, p.description, p.price, p.stock, p.rating, p.sold,
-            p.is_best, p.tint, p.image_url, p.archived, c.id AS category_id, c.name AS category
+            p.is_best, p.tint, p.image_url, p.archived, c.id AS category_id, c.name AS category'
+          . ($hasLabel ? ', p.net_weight_g, p.nutrition' : '') . '
        FROM products p JOIN categories c ON c.id = p.category_id
       WHERE p.id = ?',
     [$id]
@@ -215,6 +182,8 @@ Response::ok([
     'tint'       => $row['tint'],
     'image'      => $row['image_url'],
     'archived'   => (bool) $row['archived'],
+    'weightG'    => isset($row['net_weight_g']) ? (int) $row['net_weight_g'] : null,
+    'nutrition'  => !empty($row['nutrition']) ? json_decode($row['nutrition'], true) : null,
     'categoryId' => $row['category_id'],
     'cat'        => $row['category'],
 ], null, $isUpdate ? 200 : 201);

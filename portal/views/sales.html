@@ -3,27 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <title>sales module</title>
-  <!-- ============================================================
-       MODULE PARTIAL — section id="mod-sales".
-
-       Wrapped as a complete HTML document ON PURPOSE.
-
-       Dev servers inject a live-reload script into every .html file
-       they serve, placed just before the closing body tag. A bare
-       fragment has no closing body tag, so VS Code Live Server falls
-       back to injecting before the first closing svg tag instead —
-       which lands inside the Elisha Bay logo mark, corrupts the
-       parse, and leaves the portal showing "Portal failed to load".
-
-       With a real body element the injection lands harmlessly at the
-       end, and Core/module-loader.js strips every script element
-       before using this markup.
-
-       Keep the html/head/body wrapper. Also avoid writing a literal
-       closing body, head or svg tag anywhere in a comment in these
-       files — Live Server matches raw text and will inject there,
-       breaking the comment and everything after it.
-       ============================================================ -->
+  <!-- Module partial for section mod-sales, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
   </head>
   <body>
 <!-- ── SALES REPORT ── -->
@@ -32,6 +12,17 @@
     <div>
       <div class="eyebrow">Reports</div>
       <h2>Sales Report</h2>
+    </div>
+    <!-- Export the report for a chosen period (assets/js/portal/sales-export.js). -->
+    <div class="actions">
+      <button class="btn btn-ghost" id="sales-export-csv" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg>
+        Export CSV
+      </button>
+      <button class="btn btn-gold" id="sales-export-pdf" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        Export PDF
+      </button>
     </div>
   </div>
   <div
@@ -63,21 +54,7 @@
         Apply
       </button>
     </div>
-    <!-- COMPARE WITH — a switch, and a selector that greys out rather than
-         disappears.
-
-         The 15px checkbox was a keyboard control in name only: nothing about
-         it read as on or off at a glance, and the period selector beside it
-         was display:none until it was ticked, so the row changed width and
-         everything after it moved every time. Now the selector is always
-         there and simply disabled while the switch is off — the layout holds
-         still, and it is visible that there is a period to choose.
-
-         The switch is the portal's own (.switch, used by the role editor): a
-         real <input type="checkbox"> under a track and a thumb, so Tab and
-         Space work with no key handling of ours, and the thumb's POSITION —
-         not just the colour of the track — says which way it is set.
-         role="switch" is what a screen reader announces it as. -->
+    <!-- Compare With is a real switch (role="switch"), and the period selector is disabled rather than hidden while it is off, so the layout does not shift. -->
     <div class="compare-row" id="compare-row">
       <label class="compare-label">
         <span class="switch">
@@ -211,22 +188,7 @@
     </div>
   </div>
 
-  <!-- BEST SELLERS FOR THE SELECTED RANGE.
-
-       api/reports/sales.php has always computed this and nothing ever read it;
-       it is rendered by renderSales() from the response that was already
-       arriving.
-
-       The two labels below are load-bearing, not decoration:
-
-       "ranked by revenue" — the endpoint sorts by revenue on purpose, and its
-       comment says why: ranking by units flatters cheap products, and a report
-       used to decide what to make more of should rank by what earned. A reader
-       who assumes it is ordered by the units column will misread the table.
-
-       "in this period" — the Landing Page module has its own Best Sellers list
-       ranked by lifetime products.sold. These two WILL disagree, correctly, and
-       without the period on the heading someone will file that as a bug. -->
+  <!-- Best sellers for the selected range, ranked by revenue (so it can differ from the Landing Page's lifetime list). -->
   <div class="panel" style="margin-top: 20px">
     <div class="panel-header">
       <span class="panel-title"
@@ -238,11 +200,7 @@
     <div id="top-products-body"></div>
   </div>
 
-  <!-- The "Payment Methods in Period" panel stood here. It is gone, and so is
-       the pair of GROUP BY queries that fed it in api/reports/sales.php: the
-       Transactions table on this same screen already carries a Method column,
-       and Payment Schemes is where the money-by-scheme question is actually
-       answered. -->
+  <!-- The Payment Methods panel was removed; the Transactions table has a Method column. -->
 </section>
   </body>
 </html>

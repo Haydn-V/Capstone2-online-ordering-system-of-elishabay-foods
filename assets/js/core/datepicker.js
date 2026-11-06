@@ -1,34 +1,6 @@
-/* ============================================================
-   EbDate — one calendar, used for every date field
-   ------------------------------------------------------------
-   WHY THIS EXISTS
+/* EbDate: one themed calendar for every date field that keeps the native input as the source of truth (writing ISO values and firing input/change), honours min/max, allows typing, and leaves touch devices on the native picker. */
 
-   Same fault as the native <select>, one step worse. `input[type=date]`
-   renders its calendar from the browser, so the Sales Report's date
-   range opened a white Chrome popup with a blue selected day, Arial
-   type and square corners — no theme, no dark mode, nothing in common
-   with the application it appeared inside. On the dark skin it was a
-   slab of white light.
-
-   THE SAME CONTRACT AS EbSelect. The native input stays in the DOM and
-   stays the source of truth: `renderSales()` reads $("#sales-from").value,
-   the batch modal reads #m-batch-expiry, the restock form reads
-   #rs-prod. On selection this writes `input.value` in the ISO form those
-   readers already expect and dispatches bubbling `input` + `change`, so
-   every existing listener fires unchanged and forms still submit.
-
-   WHAT IT KEEPS THAT THE NATIVE CONTROL HAD
-   - min / max are honoured, so "expiry cannot be before production"
-     keeps working when those attributes are set.
-   - Typing. The native field is the only way to enter a date from the
-     keyboard without arrowing through a grid, so the trigger accepts
-     typed digits and parses them (see onType) rather than forcing
-     everyone through the calendar.
-   - Touch devices keep the native picker entirely — a phone's date wheel
-     is better than any grid this could draw.
-   ============================================================ */
-
-import { placeLayer, closeOn, isCoarsePointer, removeAfterExit } from "./popup.js";
+import { placeLayer, closeOn, isCoarsePointer, isPortal, removeAfterExit } from "./popup.js";
 
 const SELECTOR = 'input[type="date"]';
 
@@ -39,14 +11,7 @@ const MONTHS = ["January", "February", "March", "April", "May", "June",
 let seq = 0;
 let openInstance = null;
 
-/* ------------------------------------------------------------------
-   Date helpers.
-
-   ALL LOCAL, NEVER `new Date("2026-09-02")`. That parses as UTC, so east
-   of Greenwich it lands on the previous day — the exact class of bug the
-   dAgo() note in engine.js records. Every conversion here goes through
-   explicit y/m/d numbers.
-   ------------------------------------------------------------------ */
+/* Date helpers work with local y/m/d numbers, never new Date("YYYY-MM-DD"), which parses as UTC and can shift a day. */
 const iso   = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const parse = s => {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || "").trim());
@@ -63,7 +28,9 @@ const addMonths = (d, n) => {
   const last = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate();
   return new Date(t.getFullYear(), t.getMonth(), Math.min(d.getDate(), last));
 };
-const fmt = d => d ? `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)} ${d.getFullYear()}` : "";
+/* Shown as month/day/year (10/26/2026); the long form is for screen readers. */
+const fmt = d => d ? `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}` : "";
+const fmtLong = d => d ? `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}` : "";
 
 const CSS = `
 .ebd { position: relative; display: inline-flex; vertical-align: middle; }
@@ -82,6 +49,8 @@ const CSS = `
   transition: border-color var(--t, .2s), box-shadow var(--t, .2s);
 }
 .ebd-trigger:hover { border-color: var(--gold); }
+.ebd-trigger:disabled { cursor: default; border-color: var(--border); background: rgba(110,78,28,.06); color: var(--text-muted); }
+.ebd-trigger:disabled .ebd-ico { opacity: .45; }
 .ebd-trigger:focus-visible, .ebd.is-open .ebd-trigger {
   outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-dim);
 }
@@ -214,15 +183,9 @@ class EbDateInstance {
       (inp.id && document.querySelector(`label[for="${inp.id}"]`)?.textContent.trim()) || "Date";
     this.labelText = label;
     trigger.innerHTML = `<span class="ebd-value"></span>${ICON}`;
-    /* Inline width/padding the views set on the native input have to follow it
-       — the batch modal squeezes three date fields into one row. */
+    /* Copy the native input's inline width/padding to the trigger. */
     if (inp.style.cssText) trigger.style.cssText = inp.style.cssText;
-    /* Full width ONLY inside .field, because that is the exact condition the
-       stylesheet uses — `.field .control { width: 100% }`. Keying on the class
-       alone stretched the Sales Report's date range across the whole panel and
-       pushed its arrow and Apply button onto their own lines: those inputs
-       carry .control for the border and padding, not for the width, and size
-       themselves inside a flex row. */
+    /* Full width only inside .field, matching the stylesheet's rule. */
     if (inp.closest(".field")) { wrap.style.width = "100%"; trigger.style.width = "100%"; }
     wrap.appendChild(trigger);
 
@@ -240,7 +203,9 @@ class EbDateInstance {
     this.valueEl.textContent = d ? fmt(d) : "Select date";
     this.valueEl.classList.toggle("is-empty", !d);
     this.trigger.setAttribute("aria-label",
-      d ? `${this.labelText}: ${fmt(d)}` : `${this.labelText}: none selected`);
+      d ? `${this.labelText}: ${fmtLong(d)}` : `${this.labelText}: none selected`);
+    /* A disabled field (e.g. an automatic expiry date) shows its value the same way but cannot be opened. */
+    this.trigger.disabled = this.input.disabled;
     if (this.open) this.renderGrid();
   }
 
@@ -277,10 +242,8 @@ class EbDateInstance {
     this.trigger.setAttribute("aria-expanded", "true");
 
     this.renderGrid();
-    placeLayer(this.trigger, pop, { maxH: 380, matchWidth: false });
-    /* A forced reflow, not requestAnimationFrame: rAF is suspended in a hidden
-       or background tab, which would leave the panel at opacity 0 while still
-       taking clicks. Same reasoning as EbSelect. */
+    placeLayer(this.trigger, pop, { maxH: 380, minSpace: 340, matchWidth: false });
+    /* Force a reflow (not requestAnimationFrame, which pauses in background tabs) before showing the panel. */
     void pop.offsetHeight;
     pop.classList.add("is-in");
 
@@ -298,7 +261,7 @@ class EbDateInstance {
     });
 
     this.teardown = closeOn(pop, this.wrap, () => this.close(),
-      () => placeLayer(this.trigger, pop, { maxH: 380, matchWidth: false }));
+      () => placeLayer(this.trigger, pop, { maxH: 380, minSpace: 340, matchWidth: false }));
   }
 
   close(refocus) {
@@ -333,7 +296,7 @@ class EbDateInstance {
       if (sameDay(d, c)) cls.push("is-active");
       cells += `<button type="button" class="${cls.join(" ")}" data-d="${iso(d)}"
         ${dis ? "disabled" : ""} tabindex="${sameDay(d, c) ? 0 : -1}"
-        aria-label="${fmt(d)}"${sameDay(d, sel) ? ' aria-current="date"' : ""}>${d.getDate()}</button>`;
+        aria-label="${fmtLong(d)}"${sameDay(d, sel) ? ' aria-current="date"' : ""}>${d.getDate()}</button>`;
     }
 
     this.pop.innerHTML = `
@@ -352,12 +315,7 @@ class EbDateInstance {
       </div>`;
   }
 
-  /**
-   * Commit. THE CONTRACT: write the native value in ISO, then dispatch
-   * bubbling input + change. renderSales(), the batch modal and the restock
-   * form all read the input directly and listen for change; none of them knows
-   * this component exists and none of them needs to.
-   */
+  /** Commit: write the ISO value to the native input and fire bubbling input and change events. */
   choose(d) {
     if (d && this.outOfRange(d)) return;
     const next = d ? iso(d) : "";
@@ -403,15 +361,7 @@ class EbDateInstance {
     }
   }
 
-  /**
-   * Typing a date without opening the calendar.
-   *
-   * The native control's one real advantage is that somebody who knows the
-   * date can just type it. Digits accumulate into ddmmyyyy and commit at eight
-   * — the order the placeholder in the views already promises — and the buffer
-   * resets after a second's pause so a later keystroke starts a new date
-   * rather than extending an abandoned one.
-   */
+  /** Typing a date: digits build up as ddmmyyyy and commit at eight; the buffer resets after a one-second pause. */
   onType(ch) {
     const now = Date.now();
     this.typeBuf = (now - this.typeAt > 1200 ? "" : this.typeBuf) + ch;
@@ -441,8 +391,9 @@ class EbDateInstance {
 function shouldEnhance(inp) {
   if (inp.dataset.ebDate === "off") return false;
   if (inp.closest(".ebd")) return false;
-  /* Touch keeps the platform date wheel — see the note at the top. */
-  if (isCoarsePointer()) return false;
+  /* Touch keeps the platform date wheel (see the note at the top), except on the staff portal, whose themed
+     calendar opens from a button and so works with a finger too. */
+  if (isCoarsePointer() && !isPortal()) return false;
   return true;
 }
 
@@ -464,8 +415,7 @@ document.addEventListener("keydown", e => {
   if (e.key === "Escape" && openInstance) { e.stopPropagation(); openInstance.close(true); }
 }, true);
 
-/* Date fields appear inside modals and inside tab panels that render after
-   load, so the same observer strategy EbSelect uses applies here. */
+/* Watch for date fields added later (modals, tab panels), the same way EbSelect does. */
 let pending = null;
 function watch() {
   new MutationObserver(muts => {

@@ -1,24 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/vat/save.php
- *
- * One change per request, named by `section`:
- *
- *   { "section": "rules", "rules": { "vatRate": 12, "scPwdEnabled": true,
- *       "scPwdDiscountRate": 20, "scPwdVatExempt": true, "scPwdWeeklyCap": 0,
- *       "withholdingDefaultRate": 1 } }          any subset
- *   { "section": "product", "product_id": "db-pesto", "tax_type": "vatable"|"exempt" }
- *   { "section": "withholding", "customer_id": "cus-02", "rate": 1 }   rate null = stops withholding
- *
- * SUPER ADMIN ONLY — see get.php. Every change is written to the audit log with
- * the value before and after: these settings decide what every Sales Invoice
- * says, and "who changed the VAT rate, and from what" must always be answerable.
- *
- * Changes apply to sales made AFTER them. Orders store their own breakdown
- * (migration 014), so no past invoice moves.
- */
+/** POST /api/vat/save.php (Super Admin only) saves one change per request (rules, a product's tax type, or a retailer's withholding rate), audited with before and after values; past invoices never change. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -47,11 +30,8 @@ if ($section === 'rules') {
     /* API name => [settings key, label, boolean?] */
     $map = [
         'vatRate'                => ['vat_rate',                 'VAT rate (%)',                    false],
-        'scPwdEnabled'           => ['sc_pwd_enabled',           'Senior/PWD discounts',            true],
-        'scPwdDiscountRate'      => ['sc_pwd_discount_rate',     'Senior/PWD discount (%)',         false],
-        'scPwdVatExempt'         => ['sc_pwd_vat_exempt',        'Senior/PWD sales are VAT-exempt', true],
-        'scPwdWeeklyCap'         => ['sc_pwd_weekly_cap',        'Weekly discount cap per ID (₱)',  false],
-        'withholdingDefaultRate' => ['withholding_default_rate', 'Default withholding rate (%)',    false],
+        'withholdingDefaultRate' => ['withholding_default_rate', 'Default retailer discount (%)',   false],
+        'withholdingMinQty'      => ['withholding_min_qty',      'Retailer discount minimum items', false],
     ];
 
     $errors = [];
@@ -68,6 +48,10 @@ if ($section === 'rules') {
         }
         if (!is_numeric($value)) {
             $errors[$name] = 'Enter a number.';
+            continue;
+        }
+        if ($key === 'withholding_min_qty' && floor((float) $value) != (float) $value) {
+            $errors[$name] = 'Enter a whole number of items.';
             continue;
         }
         [$lo, $hi] = Tax::LIMITS[$key];
@@ -145,14 +129,14 @@ if ($section === 'withholding') {
     if ($rate === null || $rate === '') {
         if ($current !== null) {
             Database::run('DELETE FROM withholding_agents WHERE customer_id = ?', [$customerId]);
-            vat_audit($actor, sprintf('%s (%s) is no longer a withholding agent (was %s%%).',
+            vat_audit($actor, sprintf('%s (%s) retailer discount turned off (was %s%%).',
                 $c['name'], $c['id'], $current));
         }
         Response::ok(['customerId' => $customerId, 'withholdingRate' => null]);
     }
 
     if ($c['status'] !== 'retailer') {
-        Response::conflict("{$c['name']} is not a retailer. Only a retailer can be a withholding agent.");
+        Response::conflict("{$c['name']} is not a retailer. Only a retailer can get the retailer discount.");
     }
     if (!is_numeric($rate) || (float) $rate <= 0 || (float) $rate > 50) {
         Response::validation('Check the rate.', ['rate' => 'Use a rate above 0 and at most 50%.']);
@@ -165,7 +149,7 @@ if ($section === 'withholding') {
              ON DUPLICATE KEY UPDATE rate = VALUES(rate), updated_by = VALUES(updated_by)',
             [$customerId, $rate, $actor['id']]
         );
-        vat_audit($actor, sprintf('%s (%s) withholding rate: %s → %s%%. Applies to sales from now on.',
+        vat_audit($actor, sprintf('%s (%s) retailer discount: %s → %s%%. Applies to sales from now on.',
             $c['name'], $c['id'], $current === null ? 'none' : $current . '%', $rate));
     }
     Response::ok(['customerId' => $customerId, 'withholdingRate' => $rate]);

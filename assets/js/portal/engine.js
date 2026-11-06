@@ -1,102 +1,48 @@
 "use strict";
 
-/* ============================================================
-   CONFIG — mirrors the public site's brand config
-   ============================================================ */
+/* ===== CONFIG (mirrors the public site's brand config) ===== */
 const CONFIG = {
   brand: "Elisha Bay", company: "Juris Bay Foods, Inc.", currency: "₱",
   address: "148 Brgy. Mangin, Dagupan City, Pangasinan",
   phone: "+63 900 000 0000", email: "hello@elishabay.ph",
-  facebook: "facebook.com/ElishaBayPH",
+  facebook: "facebook.com/elishabayfoods",
 };
 
-/* ============================================================
-   PROJECT ROOT — derived, never hardcoded
-   ------------------------------------------------------------
-   Every portal entry is portal/<role>/index.html, but this file is
-   also the engine for the landing-page preview iframe and the logout
-   redirect, both of which need a path back out to public/. Deriving
-   it from this script's own URL keeps those working no matter what
-   folder the project is served from — the previous absolute paths
-   (/V4Home/HomePage/index.html) 404'd anywhere but the web root.
-   ============================================================ */
+/* Project root derived from this script's URL, so links back to public/ work in any install folder. */
 const PORTAL_BASE_PATH = (() => {
   const src = (document.currentScript && document.currentScript.src) || "";
   const i = src.indexOf("assets/js/portal/");
   return i >= 0 ? src.slice(0, i) : "/";
 })();
 
-/* ============================================================
-   CATALOGUE — loaded from the database
-   ------------------------------------------------------------
-   These were `const` arrays that every screen read directly. They
-   are now `let`, filled by loadCatalog() from api/products/list.php
-   and api/categories/list.php before the first render.
-
-   Declared with their old seed contents still in place on purpose:
-   ~40 render functions across four files reference PRODUCTS
-   synchronously, and an empty array during the moment before the
-   fetch resolves would render four screens blank. The seed is
-   overwritten wholesale by the first successful load, so what you
-   see after login is the database — the literals below are only
-   scaffolding for the first few hundred milliseconds.
-
-   Phase 5 removes them entirely as each module gains its own
-   loading state.
-   ============================================================ */
-/* Filled from api/categories/list.php by loadCatalog(). Empty until then.
-   Held mock rows until Phase 6. They were overwritten on every load, so
-   they changed nothing at runtime — but a load that failed left the screen
-   showing invented data that looked real. Empty is the honest starting
-   state: a failed load now shows an empty table and its error toast. */
+/* ===== CATALOGUE: PRODUCTS and CATEGORIES_DATA are filled from the API by loadCatalog() before the first render, replaced in place ===== */
+/* Filled from api/categories/list.php by loadCatalog(); starts empty so a failed load shows an empty table and an error, not fake data. */
 let CATEGORIES_DATA = [];
 
-/* Filled from api/products/list.php by loadCatalog(). Empty until then.
-   Held mock rows until Phase 6. They were overwritten on every load, so
-   they changed nothing at runtime — but a load that failed left the screen
-   showing invented data that looked real. Empty is the honest starting
-   state: a failed load now shows an empty table and its error toast. */
+/* Filled from api/products/list.php by loadCatalog(); starts empty so a failed load shows an empty table and an error, not fake data. */
 let PRODUCTS = [];
 
-/* ============================================================
-   STAFF ACCOUNTS (login source of truth)
-   ============================================================ */
-/* PASSWORDS DELIBERATELY REMOVED.
-
-   This array used to carry a plaintext password per account, and this file is
-   served to every visitor — so every staff credential in the system was one
-   "view source" away. Authentication now happens in api/auth/login.php against
-   bcrypt hashes in MySQL; nothing in the browser ever sees a password.
-
-   What remains is display data for the User Management screen, still hardcoded
-   because that screen has not been wired to the API yet. Phase 5 replaces this
-   with GET api/users/list.php and deletes the array. Do not re-add a password
-   field to it. */
-/* Filled from api/users/list.php by loadAdminData(). Empty until then.
-   Also removed a staff roster (names, emails, roles) that engine.js served
-   to anyone who opened a portal page, signed in or not.
-   Held mock rows until Phase 6. They were overwritten on every load, so
-   they changed nothing at runtime — but a load that failed left the screen
-   showing invented data that looked real. Empty is the honest starting
-   state: a failed load now shows an empty table and its error toast. */
+/* ===== STAFF ACCOUNTS ===== */
+/* Passwords were removed from the browser; sign-in uses api/auth/login.php with bcrypt hashes. Never add a password field here. */
+/* Filled from api/users/list.php by loadAdminData(); starts empty (no staff roster is shipped to the browser). */
 let STAFF_ACCOUNTS = [];
 
-/* ============================================================
-   RBAC — permissions catalog + role→permission grants
-   ============================================================ */
+/* ===== RBAC: permission catalogue and role grants ===== */
 const PERMISSIONS = {
-  "users.manage":     { area:"Maintenance",    label:"Manage customer & employee accounts" },
+  "users.manage":     { area:"Maintenance",    label:"Manage customer accounts" },
+  "employees.manage": { area:"Maintenance",    label:"Manage employee accounts" },
   "rbac.manage":       { area:"System",         label:"Manage roles & permissions" },
-  /* SUPER ADMIN ONLY — systemOnly. Mirrors Rbac::SYSTEM_ONLY on the server: the
-     matrix shows it locked for every other role, and roles/save.php refuses it
-     if it is sent anyway. */
+  /* Super Admin only (systemOnly), mirroring Rbac::SYSTEM_ONLY; roles/save.php refuses it for other roles. */
   "vat.manage":        { area:"System",         label:"Manage VAT settings", systemOnly:true },
+  "credit.limits":     { area:"Finance",        label:"Edit retailer tier credit budgets & Net term interest rates", systemOnly:true },
   "b2b.review":         { area:"Maintenance",    label:"Review B2B partner applications" },
   "landing.manage":      { area:"Maintenance",    label:"Manage landing page content" },
   "products.manage":      { area:"Maintenance",    label:"Manage products & varieties" },
   "inventory.report":       { area:"Inventory",      label:"View inventory report" },
   "inventory.manage":         { area:"Inventory",      label:"Restock, adjust & archive inventory" },
   "sales.report":               { area:"Reports",        label:"View sales report" },
+  /* Expenses and the net income statement in the Sales Report export (migration 032; Admin by default). */
+  "reports.financial":          { area:"Reports",        label:"View net income & enter expenses" },
   "batches.manage":               { area:"Reports",        label:"Manage batch tracking & QA" },
   "payments.manage":                 { area:"Finance",        label:"Manage payment schemes" },
   "transactions.view":                 { area:"Finance",        label:"View transaction history" },
@@ -106,27 +52,29 @@ const PERMISSIONS = {
   "orders.accept":                             { area:"Online Orders",  label:"Accept/hold/reject orders, verify payments" },
   "orders.status":                               { area:"Online Orders",  label:"Update order status" },
   "orders.returns":                                { area:"Online Orders",  label:"Process returns & refunds" },
-  /* Was missing here while the database had it (migration 011), so it drew no
-     switch yet counted in "Total Permissions" — Admin showed 13 with 12 on. */
+  /* Added to match migration 011 so its switch shows and the count is right. */
   "reviews.moderate": { area:"Maintenance",    label:"Moderate customer product reviews" },
+  /* Super Admin only (Rbac::SYSTEM_ONLY): shown on the matrix so the full list is visible, but never grantable. */
+  "shipping.manage":      { area:"Maintenance",   label:"Manage shipping rates", systemOnly:true },
+  /* Super Admin and Admin only (Rbac::ADMIN_ONLY): the Super Admin can switch it on for the Admin role. */
+  "refunds.large":        { area:"Online Orders", label:"Approve & process large refunds", adminOnly:true },
 };
 
-/* Roles editable from the Roles & Permissions screen. "Super Admin" is
-   not listed here — it always has every permission, unconditionally. */
+/* Super Admin's current permissions (from roles/list.php); its locked ones (superLocked) are always on. */
+const SUPER_PERMS = [];
+
+/* Roles editable on the Roles & Permissions screen (Super Admin is kept apart in SUPER_PERMS). */
 const ROLE_PERMISSIONS = {
-  "Admin":               Object.keys(PERMISSIONS).filter(k => k !== "rbac.manage" && !PERMISSIONS[k].systemOnly),
+  "Admin":               Object.keys(PERMISSIONS).filter(k => k !== "rbac.manage" && !PERMISSIONS[k].systemOnly && !PERMISSIONS[k].adminOnly),
   "Cashier":             ["pos.use","transactions.view","sales.report","payments.manage"],
   "Inventory Staff":     ["inventory.report","inventory.manage","batches.manage","audit.view"],
   "Online Orders Staff": ["orders.view","orders.accept","orders.status","orders.returns","transactions.view","payments.manage"],
 };
 
-/* Display metadata (slug badge + blurb) for the Roles & Permissions cards.
-   Custom roles created via "Create New Role" get an entry pushed here too. */
-/* Factory permissions of the built-in roles — the same grants db/seed.sql
-   writes. The matrix's "Default" button restores these (then Save Matrix
-   persists them). Custom roles have no default and show no button. */
+/* Display info (badge and blurb) for role cards; custom roles are added here too. */
+/* Default permissions of the built-in roles (same as db/seed.sql), restored by the matrix's Default button. */
 const ROLE_DEFAULTS = {
-  "Admin": ["users.manage","b2b.review","landing.manage","products.manage","inventory.report","inventory.manage",
+  "Admin": ["users.manage","employees.manage","b2b.review","landing.manage","products.manage","inventory.report","inventory.manage",
             "sales.report","batches.manage","payments.manage","transactions.view","audit.view","pos.use",
             "orders.view","orders.accept","orders.status","orders.returns","reviews.moderate"],
   "Cashier": ["pos.use","transactions.view","sales.report","payments.manage"],
@@ -141,24 +89,19 @@ const ROLE_META = {
   "Online Orders Staff": { slug:"online-orders-staff",   desc:"Accepts, verifies, and fulfills online orders; processes returns & refunds." },
 };
 
-/* Consults the grants the server sent with the session, which come from the
-   role_permissions table — so an edit made on the Roles & Permissions screen
-   takes effect for real rather than only in this file's copy.
-
-   ROLE_PERMISSIONS below is still the source for the Roles matrix UI until
-   Phase 5 wires that screen to the API; it is no longer what decides access.
-   The fallback exists only for the moment between page load and the session
-   resolving, where no permission should be granted anyway. */
+/* Checks the permissions the server sent with the session (from role_permissions); no permission is granted before the session loads. */
 function hasPerm(key){
   const user = adminState.currentUser;
   if(!user) return false;
+  /* "a|b" means any of the listed permissions (e.g. User Management opens with either accounts permission). */
+  if(String(key).includes("|")) return String(key).split("|").some(k => hasPerm(k));
   if(window.EbSession && EbSession.isSignedIn()) return EbSession.can(key);
   return false;
 }
 
 /* mod key -> required permission (mods not listed here are always visible, e.g. dashboard) */
 const MOD_PERM = {
-  users:"users.manage", b2b:"b2b.review", landing:"landing.manage", products:"products.manage",
+  users:"users.manage|employees.manage", b2b:"b2b.review", landing:"landing.manage", products:"products.manage",
   inventory:"inventory.report", "inventory-manage":"inventory.manage", expiry:"inventory.manage",
   sales:"sales.report", batches:"batches.manage",
   payments:"payments.manage", transactions:"transactions.view", audit:"audit.view",
@@ -168,52 +111,20 @@ const MOD_PERM = {
   roles:"rbac.manage",
   reviews:"reviews.moderate",
   vat:"vat.manage",
+  shipping:"shipping.manage",
 };
 
-/* Hide every [data-perm] element the current user lacks, then collapse
-   any nav-group left with no visible items. Run once right after login. */
-/* Delegates to assets/js/core/rbac.js. Worth repeating where it is easy to
-   forget: this hides things, it does not protect them. Rbac::require() in PHP
-   is the control, on every endpoint. */
+/* Hide every [data-perm] element the user lacks and collapse empty nav groups (run after login). */
+/* Delegates to core/rbac.js; this only hides things, while Rbac::require() in PHP is the real control. */
 function applyRBAC(){ return EbRbac.apply(); }
 
-/* ============================================================
-   SEED DATA — customers
-   ============================================================ */
-/* Filled from api/customers/list.php by loadAdminData(). Empty until then.
-   Held mock rows until Phase 6. They were overwritten on every load, so
-   they changed nothing at runtime — but a load that failed left the screen
-   showing invented data that looked real. Empty is the honest starting
-   state: a failed load now shows an empty table and its error toast. */
+/* ===== CUSTOMERS ===== */
+/* Filled from api/customers/list.php by loadAdminData(); starts empty. */
 let CUSTOMERS = [];
 
-/* ============================================================
-   DATES
-   ------------------------------------------------------------
-   Two rules, and every date string in the portal goes through them.
+/* ===== DATES: always use the real (server) date, never a fixed one, and format in local time, never toISOString() (UTC), so dates match MySQL's CURDATE() ===== */
 
-   1. THE CLOCK IS THE CLOCK. dAgo() used to read
-      `new Date("2026-06-17")` — a constant, chosen when the seed data was
-      written so the dashboard would have something to show. Once the system
-      was wired to a database that stopped being a convenience and became a
-      lie: "Today" on the Sales Report meant 17 June 2026 no matter what day
-      it was, and a receipt's NET-30 due date was counted from a date in the
-      past. The seed orders run to 17 June 2026 and are deliberately left
-      alone, so Today / This Week / This Month will read empty until fresh
-      orders arrive. An empty report that is correct beats a populated one
-      that is not.
-
-   2. LOCAL, NOT UTC. `toISOString()` formats in UTC. In UTC+8 that is a day
-      behind local for the first eight hours of every day, and the previous
-      code mixed the two conventions: `new Date("2026-06-17")` parses a
-      date-only string as UTC, while `new Date("2026-06-17T00:00:00")` parses
-      as LOCAL, so addDays("2026-06-17", 30) returned 16 July rather than the
-      17th. ymd() below reads the local calendar fields directly, and
-      parseYmd() parses a date-only string back as local midnight, so a round
-      trip is lossless and matches MySQL's CURDATE() on the same machine.
-   ============================================================ */
-
-/** A Date as local YYYY-MM-DD. Never toISOString() — that is UTC. */
+/** A Date as local YYYY-MM-DD (never toISOString(), which is UTC). */
 function ymd(d){
   return d.getFullYear() + "-" +
     String(d.getMonth() + 1).padStart(2, "0") + "-" +
@@ -226,11 +137,7 @@ function parseYmd(str){
   return new Date(y, m - 1, d);
 }
 
-/** Today, or n days before it.
-
-    Prefers the SERVER's date (Asia/Manila) over the browser's clock, which the
-    user can change and which may sit in another timezone entirely. Falls back
-    to the local clock only before system/dates.php has answered. */
+/** Today or n days before it, using the server's Manila date (local clock only before system/dates.php answers). */
 function dAgo(n){
   const base = SERVER_DATES?.today;
   if(base) return n === 0 ? base : addDays(base, -n);
@@ -239,9 +146,7 @@ function dAgo(n){
 
 function addDays(str, n){ const d = parseYmd(str); d.setDate(d.getDate() + n); return ymd(d); }
 
-/* ============================================================
-   BATCH TRACKING & QA TRACEABILITY
-   ============================================================ */
+/* ===== BATCH TRACKING & QA TRACEABILITY ===== */
 const QUALITY_GRADES = ["Grade A Export Quality","Grade B Standard Quality","Grade C Local Market"];
 const LAB_STATUSES = {
   passed:  "Passed (Commercial Sterility Certified)",
@@ -249,47 +154,36 @@ const LAB_STATUSES = {
   failed:  "Failed (Contamination Detected)",
 };
 
-/* Filled from api/batches/list.php by loadCatalog(). Seed rows below are
-   scaffolding for the moment before that resolves — see the CATALOGUE note. */
-/* Filled from api/batches/list.php by loadInventoryData(). Empty until then.
-   Held mock rows until Phase 6. They were overwritten on every load, so
-   they changed nothing at runtime — but a load that failed left the screen
-   showing invented data that looked real. Empty is the honest starting
-   state: a failed load now shows an empty table and its error toast. */
+/* Filled from api/batches/list.php. */
+/* Filled from api/batches/list.php by loadInventoryData(); starts empty. */
 let BATCHES = [];
 
-/* Canonical order/transaction ledger — POS walk-in sales (type:"walk-in") and
-   online orders (type:"online") in one array. Filled from api/orders/list.php
-   by loadOrders(). Empty until then.
-
-   This used to be assembled at parse time from two seed literals, ORDERS_SEED
-   (30 historical rows) and ONLINE_ORDERS_SEED (5 live ones), merged by a .map()
-   that filled in workflow defaults and normalised `method` to `payMethod`.
-   All of it is gone:
-
-   - The rows were mock data. loadOrders() overwrote them on every load, so they
-     changed no outcome — but a failed load left every order screen showing
-     invented orders that looked real.
-   - The payMethod normalisation is redundant. orders/list.php emits `payMethod`
-     directly (list.php:195), so nothing needs renaming on arrival.
-   - ONLINE_ORDERS_SEED.map() called payMethodLabel() at PARSE time, which is
-     what made the temporal-dead-zone crash possible when that helper was later
-     rewritten as a const arrow. With the seed gone, no function is called
-     before the module finishes loading. */
+/* ORDERS holds walk-in and online orders together, filled from api/orders/list.php by loadOrders(); starts empty (the old seed arrays were removed). */
 let ORDERS = [];
 
-/* ============================================================
-   ONLINE ORDERS — status workflow + returns + notifications
-   ============================================================ */
+/* ===== ONLINE ORDERS: status workflow, returns and notifications ===== */
 const STATUS_TRANSITIONS = {
-  "pending":   ["accepted","on-hold","cancelled"],
-  "accepted":  ["shipping","on-hold","cancelled"],
-  "shipping":  ["delivered","on-hold"],
-  "delivered": ["completed","on-hold"],
+  /* One straight line; cancelling only before acceptance. On Hold is retired: only an order already held can leave it. */
+  "pending":   ["accepted","cancelled"],
+  "accepted":  ["shipping"],
+  "shipping":  ["delivered"],
+  "delivered": ["completed"],
   "on-hold":   ["accepted","cancelled"],
   "completed": [],
   "cancelled": [],
 };
+/* Online pickup orders skip shipping: staff complete them at handover or cancel (mirrors PICKUP_TRANSITIONS in api/orders/status.php). */
+const PICKUP_TRANSITIONS = {
+  "pending":  ["completed","cancelled"],
+  "on-hold":  ["completed","cancelled"],
+  "accepted": ["completed"],
+};
+/* The statuses an order can move to next, using the pickup map for online pickups. */
+function nextStatuses(o){
+  if(!o) return [];
+  const map = o.type === "online" && o.orderType === "pickup" ? PICKUP_TRANSITIONS : STATUS_TRANSITIONS;
+  return map[o.status] || [];
+}
 const STATUS_LABEL = {
   pending:"Pending", accepted:"Accepted", shipping:"Shipping",
   delivered:"Delivered", completed:"Completed",
@@ -304,57 +198,25 @@ const RETURN_STATUS_STEP = {
   received:1, validated:2, eligible:3, ineligible:4, approved:5, rejected:4, processed:7,
 };
 
-/* Filled from api/returns/list.php by loadOpsData(). Empty until then.
-   Held mock rows until Phase 6. They were overwritten on every load, so
-   they changed nothing at runtime — but a load that failed left the screen
-   showing invented data that looked real. Empty is the honest starting
-   state: a failed load now shows an empty table and its error toast. */
+/* Filled from api/returns/list.php by loadOpsData(); starts empty. */
 let RETURNS = [];
 
-/* Filled from api/notifications/list.php by loadOpsData(). Empty until then.
-   Held mock rows until Phase 6. They were overwritten on every load, so
-   they changed nothing at runtime — but a load that failed left the screen
-   showing invented data that looked real. Empty is the honest starting
-   state: a failed load now shows an empty table and its error toast. */
+/* Filled from api/notifications/list.php by loadOpsData(); starts empty. */
 let NOTIFICATIONS = [];
 
-/* ============================================================
-   SEED DATA — payment accounts (retailers)
-   ============================================================ */
-/* Filled from api/payments/list.php by loadOpsData(). Empty until then.
-   Held mock rows until Phase 6. They were overwritten on every load, so
-   they changed nothing at runtime — but a load that failed left the screen
-   showing invented data that looked real. Empty is the honest starting
-   state: a failed load now shows an empty table and its error toast. */
+/* ===== PAYMENT ACCOUNTS (retailers) ===== */
+/* Filled from api/payments/list.php by loadOpsData(); starts empty. */
 let PAYMENT_ACCOUNTS = [];
 
-/* ============================================================
-   B2B RETAIL PARTNER APPLICATIONS
-   ============================================================ */
+/* ===== B2B RETAIL PARTNER APPLICATIONS ===== */
 const PARTNER_TIERS = ["Bronze","Silver","Gold"];
 
-/* Filled from api/b2b/list.php by loadOpsData(). Empty until then.
-   Held mock rows until Phase 6. They were overwritten on every load, so
-   they changed nothing at runtime — but a load that failed left the screen
-   showing invented data that looked real. Empty is the honest starting
-   state: a failed load now shows an empty table and its error toast. */
+/* Filled from api/b2b/list.php by loadOpsData(); starts empty. */
 let B2B_APPLICATIONS = [];
 
-/* ============================================================
-   SEED DATA — site content (Landing Page Maintenance)
-   ============================================================ */
+/* ===== SITE CONTENT (Landing Page Maintenance) ===== */
 const SITE_CONTENT = {
-  /* Seeded from what the public page actually shows today. Before the
-     content bridge existed this module held a completely different set of
-     FAQs and About/Vision/Mission copy that no visitor ever saw, so the
-     live text is treated as the source of truth. The admin's own
-     business-hours question was worth keeping and is appended as #6.
-
-     NOTE — contact details conflicted between the two: the live page
-     shows +63 917 000 0000 / hello@jurisbayfoods.ph while this module
-     had +63 900 000 0000 / hello@elishabay.ph. Different email DOMAINS,
-     so one is simply wrong. The live values are used here; confirm which
-     is correct and edit in the module. */
+  /* Default landing content matching the live public page (confirm the contact details in the module). */
   about: "Elisha Bay is a family-owned artisan food brand rooted in Dagupan City — the Bangus Capital of the Philippines. Every product starts with fresh, locally-sourced milkfish, hand-deboned or bottled in small batches.",
   vision: "To bring Dagupan's gourmet bangus to every Filipino table — and put Pangasinan's handcrafted bottled fish on the world map.",
   mission: "To craft honest, high-quality fish products using local catch and traditional methods, while supporting Dagupan's fishing families and delighting every customer, one jar at a time.",
@@ -369,16 +231,16 @@ const SITE_CONTENT = {
   contact: {
     address: "148 Brgy. Mangin, Dagupan City, Pangasinan",
     phone: "+63 917 000 0000",
-    facebook: "facebook.com/ElishaBayPH",
+    facebook: "facebook.com/elishabayfoods",
     email: "hello@jurisbayfoods.ph",
   },
-  /* GCash / bank accounts customers pay into. Filled from content/get.php. */
+  /* GCash/bank accounts customers pay into, filled from content/get.php. */
   payment: {
     gcash: { name: "", number: "", qr: "" },
     bank:  { bank: "", name: "", number: "", qr: "" },
   },
 
-  /* Hero slide photos. Titles match HERO_PANELS on the public page. */
+  /* Hero slide photos; titles match HERO_PANELS on the public page. */
   hero: [
     { title:"Pesto Bangus",    img:"" },
     { title:"Adobo Bangus",    img:"" },
@@ -387,29 +249,17 @@ const SITE_CONTENT = {
     { title:"Ba-yo Signature", img:"" },
   ],
 
-  /* Product ids shown in the landing page's Best Sellers carousel.
-     Empty = fall back to each product's own `best` flag. Persisted to
-     featured_products by content/save.php. */
+  /* Product ids in the Best Sellers carousel (empty = each product's own best flag), saved to featured_products by content/save.php. */
   featured: [],
 
-  /* `productImages: {}` used to be here — a productId -> image map with no
-     table, no endpoint and no reader. Removed with the duplicate uploader that
-     filled it. A product's photo lives on the product. */
+  /* A product's photo lives on the product (the old productImages map was removed). */
 };
 
-/* ============================================================
-   SEED DATA — audit log
-   ============================================================ */
-/* Filled from api/audit/list.php by loadAdminData(). Empty until then.
-   Held mock rows until Phase 6. They were overwritten on every load, so
-   they changed nothing at runtime — but a load that failed left the screen
-   showing invented data that looked real. Empty is the honest starting
-   state: a failed load now shows an empty table and its error toast. */
+/* ===== AUDIT LOG ===== */
+/* Filled from api/audit/list.php by loadAdminData(); starts empty. */
 let AUDIT_LOG = [];
 
-/* ============================================================
-   APP STATE
-   ============================================================ */
+/* ===== APP STATE ===== */
 const adminState = {
   theme:         document.documentElement.getAttribute("data-theme") || "light",
   currentUser:   null,
@@ -424,9 +274,7 @@ const adminState = {
   b2bSort:       { col:"appId", dir:"desc" },
   b2bPage:       1,
   b2bPageSize:   10,
-  /* Pagers for tables that previously relied on a fixed-height scroll
-     cap (.table-wrap.scrollable / .viewport-bound) to stay usable.
-     Shape matches what pagination.js (Paginate) expects. */
+  /* Pagers for tables that used to rely on a fixed-height scroll area (Paginate format). */
   custPager:     { page: 1, pageSize: 10 },
   empPager:      { page: 1, pageSize: 10 },
   varietyPager:  { page: 1, pageSize: 10 },
@@ -446,10 +294,7 @@ const adminState = {
   returnTab:     "all",
   invTab:        "overview",
   notifFilter:   "all",
-  /* Urgency, so this screen opens in the same order the bell and the
-     dashboard panel are fixed at. It was "newest", which is what made the
-     Notifications module the one place an expired batch could sit below a
-     completed order. */
+  /* Sort by urgency, matching the bell and the dashboard panel. */
   notifSort:     "urgency",
   /* Pagers for admin-orders.js / admin-inventory.js tables. */
   onlineTxnPager:  { page: 1, pageSize: 10 },
@@ -460,37 +305,20 @@ const adminState = {
   adjLogPager:     { page: 1, pageSize: 10 },
   archivePager:    { page: 1, pageSize: 10 },
   expiryPager:     { page: 1, pageSize: 10 },
-  /* buildStockOverview() rebuilds its whole tbody on every keystroke now
-     (to make room for pagination), so its search/filter values have to
-     live here instead of being read off DOM inputs that get wiped by
-     the rebuild. */
+  /* Stock Overview's search and filter values live here because the table is rebuilt on every keystroke. */
   invOverviewQuery: "",
   invOverviewLevel: "all",
-  /* Which trailing sales window the stock bands are measured over on the
-     Inventory Report and Stock Overview: "default" | "week" | "yesterday"
-     | "month". See STOCK_WINDOWS. */
-  stockWindow:   "default",
-  /* What the restock form's suggested quantity is measured over:
-     "week" | "yesterday". See RESTOCK_BASES in inventory.js. */
+  /* Sales window for stock bands on the Inventory Report and Stock Overview (see STOCK_WINDOWS). */
+  stockWindow:   "month",
+  /* Window for the restock form's suggested quantity (see RESTOCK_BASES in inventory.js). */
   restockBasis:  "week",
 };
 
-/* ============================================================
-   HELPERS
-   ============================================================ */
+/* ===== HELPERS ===== */
 const $  = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
-/* Formatting lives in assets/js/core/format.js — one implementation shared
-   with the public site, which had drifted its own slightly different copies.
-   These names stay as thin aliases because ~200 call sites across engine.js,
-   pos.js, orders.js and inventory.js use them, and renaming all of them is
-   churn without benefit. */
-/* Function declarations, not const arrows, deliberately: several of these are
-   called at parse time by the seed-array .map() blocks near the top of this
-   file. A const is in the temporal dead zone until its line executes, so an
-   arrow here throws "Cannot access X before initialization" and takes the
-   whole script — and therefore the entire portal — down with it. Declarations
-   hoist, so they are safe to call from anywhere. */
+/* Thin aliases for the shared helpers in core/format.js, kept because hundreds of call sites use these names. */
+/* Function declarations (not const arrows) so they are hoisted and safe to call from anywhere. */
 function peso(n)         { return EbFormat.peso(n); }
 function escHtml(s)      { return EbFormat.escHtml(s); }
 function fmtDate(s)      { return EbFormat.fmtDate(s); }
@@ -498,56 +326,25 @@ function fmtDateTime(s)  { return EbFormat.fmtDateTime(s); }
 function stockInfo(n)    { return EbFormat.stockInfo(n); }
 function movementType(n) { return EbFormat.movementType(n); }
 
-/* ============================================================
-   THE SALES WINDOW THE STOCK BANDS ARE MEASURED OVER
-   ============================================================
-   Critical / Low / Safe and Fast / Slow / Non-Moving are not counts, they are
-   RATES — units sold per day over a trailing window — so the window is half of
-   what they mean. See api/core/Inventory.php.
-
-   It was a single stored setting, ninety days, for every screen at once. Ninety
-   days is the right lens on a slow mover and the wrong one the morning after a
-   bulk order empties a shelf: one big day inside ninety barely moves the rate,
-   and the band still reads Safe. A week answers "what is moving now"; yesterday
-   answers "what went out yesterday", noise and all.
-
-   SESSION-SCOPED, NOT STORED. This is a lens someone looks through, not a
-   business rule — two people can hold different ones at the same time, and
-   neither changes the other's screen or the stored default. It resets on
-   reload, which is the right default for a view nobody agreed to.
-
-   Deliberately NOT applied to PRODUCTS (loadCatalog), which every other screen
-   reads: the dashboard's Critical Stock card and the POS would silently change
-   meaning from a control on another screen. The two screens that offer the
-   toggle fetch their own rows and say in words what they measured. */
+/* Stock bands are rates over a sales window (see api/core/Inventory.php); the window is a per-session view choice on two screens and never changes PRODUCTS or the stored default. */
 const STOCK_WINDOWS = [
-  ["default",   "Default window"],
+  ["month",     "Last 30 days"],
   ["week",      "Last 7 days"],
   ["yesterday", "Yesterday"],
-  ["month",     "Last 30 days"],
 ];
 
-/* null for the stored default — the endpoint treats a missing param and the
-   string "default" alike, and sending nothing keeps the URL honest. */
 function stockWindowParam(){
-  return adminState.stockWindow === "default" ? null : adminState.stockWindow;
+  return adminState.stockWindow || "month";
 }
 
-/* The OPTIONS only, never the <select>. The element and its id belong to the
-   screen that mounts it, spelled out there as a literal — a JS-built id is
-   invisible to the structure check that catches a querySelector aimed at an
-   element nobody renders, which is exactly the typo this project's checker
-   exists to catch. The Inventory Report's copy is static markup in
-   portal/views/inventory.html; keep the two option lists in step. */
+/* Only the option list; the <select> and its id are written literally in each screen's markup (keep the inventory.html copy in step). */
 function stockWindowOptions(){
   return STOCK_WINDOWS.map(([v, label]) =>
     `<option value="${v}"${adminState.stockWindow === v ? " selected" : ""}>Measured: ${escHtml(label)}</option>`
   ).join("");
 }
 
-/* The caption is written from the RESPONSE, not from what was asked for: an
-   unknown window is refused by the endpoint, and a request that fell back to
-   the stored default must not be captioned "Yesterday". */
+/* Caption from the response, so a fallback to the default is never labelled "Yesterday". */
 function paintStockWindowNote(sel, meta){
   const el = $(sel);
   if(!el) return;
@@ -557,60 +354,71 @@ function paintStockWindowNote(sel, meta){
     : "";
 }
 
-/* THE RATING, SAID HONESTLY. One function, because every portal screen that
-   prints `rating` has to make the same decision and none of them should make
-   it differently.
-
-   products.rating is derived from PUBLISHED reviews by Reviews::recompute()
-   and is 0.00 when there are none. Printing that gives "0.0★", which reads as
-   a product people rated badly rather than one nobody has rated — the exact
-   misreading this feature exists to remove, just pointing the other way from
-   the seeded 4.9s it replaced.
-
-   Takes the whole product rather than (rating, count) so a caller physically
-   cannot pass one without the other. api/products/list.php sends reviewCount
-   beside rating for the same reason. */
+/* Show the rating honestly: "No ratings yet" when there are no published reviews instead of 0.0, taking the whole product so rating and count always go together. */
 function ratingText(p){
   const n = Number(p && p.reviewCount) || 0;
   if(n <= 0) return "No ratings yet";
   return `${Number(p.rating).toFixed(1)}★ (${n})`;
 }
 
-/* The one image resolver (decision I6). No screen in this file builds an image
-   src by hand any more — a stored path is application-root-relative, and
-   resolving it against whatever page is asking is exactly how the staff
-   screens found images the storefront could not. */
+/* The shared image resolver (EbFormat.imageUrl). */
 function imageUrl(rec)   { return EbFormat.imageUrl(rec); }
 
 function getProduct(id){ return PRODUCTS.find(p=>p.id===id); }
 
+/* Estimated arrival window as text: "Oct 29 – Oct 31, 2026" (or one date when both match). */
+function etaText(e){ return EbFormat.etaRange ? EbFormat.etaRange(e && (e.from || e.etaFrom), e && (e.to || e.etaTo)) : ""; }
+
+/* New-lot dates (mirrors Inventory::shelfLifeMonths / autoExpiry / productionDateError in api/core/Inventory.php):
+   the production date may be today or up to one month back, and the expiry is never typed in, it is the production
+   date plus the category's shelf life: bottled bangus 1 year, deboned (boneless) bangus 6 months. */
+function lotToday(){ return adminState.serverToday || ymd(new Date()); }
+function shelfLifeMonths(productId){
+  const p = getProduct(productId);
+  if(!p) return 6;
+  return p.categoryId === "cat-bg" || /bottled/i.test(p.cat || "") ? 12 : 6;
+}
+function addMonths(str, n){ const d = parseYmd(str); d.setMonth(d.getMonth() + n); return ymd(d); }
+function autoExpiry(productId, prodDate){ return addMonths(prodDate || lotToday(), shelfLifeMonths(productId)); }
+function prodDateMin(){ return addMonths(lotToday(), -1); }
+function shelfLifeText(productId){ return shelfLifeMonths(productId) === 12 ? "1 year (bottled)" : "6 months (deboned)"; }
+/* Lock a production-date input to [one month back, today] and keep its read-only expiry in step. */
+function wireLotDates(prodEl, expEl, hintEl, productIdFn){
+  if(!prodEl) return;
+  prodEl.min = prodDateMin(); prodEl.max = lotToday();
+  const sync = ()=>{
+    const pid = productIdFn();
+    if(expEl){ expEl.value = prodEl.value ? autoExpiry(pid, prodEl.value) : ""; window.EbDate?.sync(expEl); }
+    if(hintEl) hintEl.textContent = prodEl.value ? `Set automatically: production date + ${shelfLifeText(pid)}.` : "";
+  };
+  prodEl.addEventListener("change", sync);
+  prodEl.addEventListener("input", sync);
+  sync();
+  return sync;
+}
+function prodDateProblem(v){
+  if(!v) return "";
+  if(v > lotToday()) return "The production date cannot be later than today.";
+  if(v < prodDateMin()) return `The production date can be at most one month back (${fmtDate(prodDateMin())} or later).`;
+  return "";
+}
+
 function payMethodLabel(m){ return EbFormat.payMethodLabel(m); }
 
-/* Every payment method badge sitewide was flat badge-info blue —
-   couldn't tell GCash from Cash from Bank Transfer at a glance. */
+/* Different badge colours per payment method. */
 function methodBadgeClass(method){
   return {
     GCash:         "badge-info",
     Cash:          "badge-ok",
     "Bank Transfer":"badge-purple",
-    /* The Net schemes had no entry, so they fell through to badge-muted —
-       the SAME badge an unrecognised value gets. A sale on terms is not an
-       unknown method, and the two must not look alike: muted grey is what the
-       screen shows when it cannot name something. */
+    /* Net schemes get their own badge instead of the grey "unknown" one. */
     "Net 30":      "badge-warn",
     "Net 60":      "badge-warn",
     "Net 90":      "badge-warn",
   }[method] || "badge-muted";
 }
 
-/* CART PRICING ONLY.
-
-   Multiplies each line by the product's CURRENT price, which is correct for a
-   cart being priced right now and wrong for everything else. Using it on a past
-   order means editing a price silently rewrites history: raise the price of one
-   product and last quarter's revenue goes up.
-
-   For anything already sold, use orderTotal(). D3. */
+/* Cart pricing only (current prices); for past orders use orderTotal(). */
 function txTotal(items){
   return items.reduce((s,it) => {
     const p = PRODUCTS.find(x=>x.id===it.id);
@@ -618,42 +426,50 @@ function txTotal(items){
   }, 0);
 }
 
-/* What an order was actually charged. Reads orders.total, which the server
-   wrote at the time from price_at_purchase.
-
-   Falls back to recomputing only when `total` is genuinely absent, and says so
-   — a silent fallback here would reintroduce the bug it exists to prevent. */
-function orderTotal(o){
+/* What the buyer actually pays: orders.total less a retailer's discount (tax.amountDue), same as their invoice and
+   My Orders. Every list, card and revenue sum uses this; only the Order Detail popup shows the pre-discount total. */
+function orderGross(o){
   if(!o) return 0;
-  if(typeof o.total === "number") return o.total;
   const n = Number(o.total);
   if(Number.isFinite(n) && o.total !== null && o.total !== "") return n;
   console.warn("[money] order has no stored total, recomputing from current prices:", o.id);
   return txTotal(o.items || []);
 }
+function orderTotal(o){
+  const w = +(o?.tax?.withholdingTax || 0), i = +(o?.tax?.termInterest || 0);
+  return (w > 0 || i > 0) ? +o.tax.amountDue : orderGross(o);
+}
+function orderDueHtml(o){
+  const w = +(o?.tax?.withholdingTax || 0), i = +(o?.tax?.termInterest || 0);
+  const notes = [w > 0 ? `${EbFormat.pesoExact(w)} retailer discount` : "", i > 0 ? `+ ${EbFormat.pesoExact(i)} interest` : ""].filter(Boolean);
+  return notes.length
+    ? `${peso(orderTotal(o))}<div class="muted" style="font-size:.72rem;font-weight:500;white-space:nowrap">${w > 0 ? "after " : ""}${notes.join(" · ")}</div>`
+    : peso(orderTotal(o));
+}
 
-/* Which orders count as revenue — mirrors Revenue::STATUSES in
-   api/core/Revenue.php. The server is authoritative; this exists so the
-   dashboard's own arithmetic agrees with it instead of inventing a third rule.
-   If one changes, change both. */
+/* Statuses that count as revenue, mirroring Revenue::STATUSES in api/core/Revenue.php (change both together). */
 const REVENUE_STATUSES = ["completed"];
-/* Net 30/60/90 orders are not revenue in themselves — their verified payments
-   are, on the day each was paid (api/core/Revenue.php). Revenue in a range is
-   sumRevenue(orders in range) + receivedBetween(from, to). */
+/* Net orders count through their verified payments by paid date: revenue = sumRevenue(orders) + receivedBetween(from, to). */
 const CREDIT_PAY_METHODS = ["net30", "net60", "net90"];
 function isCreditOrder(o){ return !!o && CREDIT_PAY_METHODS.includes(o.payMethod); }
 function isRevenue(o){ return !!o && REVENUE_STATUSES.includes(o.status) && !isCreditOrder(o); }
-/* A SALE, for counting orders: paid-at-the-time orders that completed, and Net
-   orders once they committed stock — the same rule reports/sales.php counts. */
+/* A sale for counting: completed paid-at-sale orders plus Net orders that committed stock (same rule as reports/sales.php). */
 function isSaleOrder(o){
   return isRevenue(o) || (isCreditOrder(o) && ["accepted","shipping","delivered","completed"].includes(o.status));
 }
 /* Verified, non-legacy payments toward Net accounts, from api/payments/received.php. */
 let CREDIT_RECEIPTS = [];
+/* Net payments received, less refunds paid out, in the range; refunds come off on the day they were paid. */
+let REFUNDS_PAID = [];
+function refundedBetween(from, to){
+  return REFUNDS_PAID
+    .filter(r => (!from || r.date >= from) && (!to || r.date <= to))
+    .reduce((s, r) => s + r.amount, 0);
+}
 function receivedBetween(from, to){
   return CREDIT_RECEIPTS
     .filter(r => (!from || r.paidDate >= from) && (!to || r.paidDate <= to))
-    .reduce((s, r) => s + r.amount, 0);
+    .reduce((s, r) => s + r.amount, 0) - refundedBetween(from, to);
 }
 function sumRevenue(list){ return list.filter(isRevenue).reduce((s,o)=>s+orderTotal(o),0); }
 
@@ -664,50 +480,17 @@ function txItemsSummary(items){
   }).join(", ");
 }
 
-/* Overdue is decided by the SERVER, against its own CURDATE().
-
-   This used to read `new Date(acct.dueDate) < new Date("2026-06-17")` — a
-   frozen constant, so an account's overdue status was fixed relative to 17 June
-   2026 for ever. Every account due after that date read as current no matter
-   how long it went unpaid, and every account due before it read as overdue even
-   once settled terms changed.
-
-   api/payments/list.php already returns daysPastDue, computed with
-   DATEDIFF(CURDATE(), due_date), and the penalty is calculated from it
-   server-side. Recomputing it here was a second opinion nobody needed. */
+/* Overdue comes from the server's daysPastDue (computed against CURDATE()). */
 function isOverdue(acct){
   if(!acct || acct.paid) return false;
   if(typeof acct.daysPastDue === "number") return acct.daysPastDue > 0;
-  /* Pre-load fallback only. Uses the server's today, never the browser's. */
+  /* Fallback before load, using the server's today. */
   const today = SERVER_DATES?.today;
   return today ? String(acct.dueDate) < today : false;
 }
 
-/* LOCAL-ONLY audit entry — shows the action in the on-screen log immediately.
-
-   It does NOT persist. Every endpoint writes its own audit row inside the same
-   transaction as the change, which is the record that counts: if the browser
-   were responsible for logging, the one action worth hiding is the one that
-   would never get logged.
-
-   This remains only for the few screens whose writes do not yet go through an
-   endpoint. Each of those is a gap, not a design; when the last one is wired,
-   delete this function rather than leaving it as a tempting shortcut.
-
-   The timestamp used to be `new Date("2026-06-17")` — a frozen date, so every
-   locally-added entry claimed to have happened in June regardless of when it
-   actually did. */
-/* Raises the UI notification for an action. Does NOT write to AUDIT_LOG.
-
-   It used to unshift a row carrying id "local-<timestamp>" and localOnly:true.
-   That row never reached the database, vanished on reload, and was invisible to
-   every other user — and the endpoints already write a proper audit row inside
-   the same transaction as the action, so it was a second, fake copy of an event
-   that was already recorded correctly (D13, D14).
-
-   The returned object is deliberately transient. Nothing inserts it into
-   AUDIT_LOG; the genuine row appears there on the next load, with the server's
-   own timestamp and actor. */
+/* Local-only audit entry for screens not yet using an endpoint (endpoints write the real audit row); delete once all are wired. */
+/* Raises the UI notification for an action only; the real audit row is written by the server and appears on the next load. */
 function addAuditEntry(type, desc){
   const now = new Date();
   return {
@@ -721,50 +504,22 @@ function addAuditEntry(type, desc){
 
 function initials(name){ return EbFormat.initials(name); }
 
-/* ============================================================
-   TOAST
-   ============================================================ */
-/* Toast and modal live in assets/js/core/ui.js. Kept as aliases for the same
-   reason as the format helpers — the call sites number in the hundreds. */
+/* ===== TOAST ===== */
+/* Aliases for the toast and modal in core/ui.js. */
 function toast(msg, type="ok"){ return EbUI.toast(msg, type); }
 
-/* ============================================================
-   MODAL
-   ============================================================ */
+/* ===== MODAL ===== */
 function openModal(opts){ return EbUI.openModal(opts); }
 function closeModal(){ return EbUI.closeModal(); }
 
-/* ============================================================
-   IMAGE LIGHTBOX
-   ------------------------------------------------------------
-   The first one in this project. Written as a general overlay
-   taking (src, alt, opener) rather than as something the product
-   modal owns, because "show me that image bigger" is not a
-   product-maintenance idea — the payment proof, the hero slides
-   and the batch photos are all the same request.
-
-   It is HERE and not in core/ui.js only because its styles are in
-   portal.css. Moving the function without moving .eb-lightbox
-   would hand a public page an unstyled full-screen div; promote
-   both together when a storefront screen needs it.
-
-   Owns its own markup, built once on first use and reused, so no
-   page has to carry a container for an overlay it may never open.
-   ============================================================ */
+/* ===== IMAGE LIGHTBOX: a general "show this image bigger" overlay (here because its styles are in portal.css), built once on first use ===== */
 let lightboxOpener = null;      /* what to give focus back to on close */
 
 function lightboxEl(){
   let el = $("#eb-lightbox");
   if(el) return el;
 
-  /* Built from a markup string rather than assigned with el.id = "…", so the
-     id is DECLARED where verify-structure.py's dangling-selector check can see
-     it. That check reads id="…" out of the portal scripts; an id set through
-     the property would make every $("#eb-lightbox") here look dangling, which
-     is the same noise that would hide a real typo.
-
-     aria-modal + a label, because while this is open it is the dialog — the
-     product modal underneath is inert to the keyboard by the trap below. */
+  /* Built from a markup string so verify-structure.py can see the id; aria-modal while open. */
   const host = document.createElement("div");
   host.innerHTML = `
     <div id="eb-lightbox" class="eb-lightbox" role="dialog" aria-modal="true" aria-label="Image preview">
@@ -777,16 +532,9 @@ function lightboxEl(){
   document.body.appendChild(el);
 
   el.querySelector(".eb-lightbox-close").addEventListener("click", closeLightbox);
-  /* Scrim only. A click on the image itself must not close what it opened. */
-  el.addEventListener("click", e => { if(e.target === el) closeLightbox(); });
+  /* Closes only from its X or Escape, like every other popup. */
 
-  /* CAPTURE, and it stops propagation.
-     ---------------------------------------------------------------------
-     initModal() listens for Escape on document in the bubble phase and closes
-     the product modal. Both listeners are on document, so without capture one
-     Escape would close the lightbox AND the modal underneath it, losing the
-     administrator's unsaved edits. Capture runs first; stopping propagation
-     there means the modal's listener never sees the key. */
+  /* Escape is caught in the capture phase and stopped, so it closes only the lightbox and not the modal underneath. */
   document.addEventListener("keydown", e => {
     if(!el.classList.contains("open")) return;
 
@@ -795,9 +543,7 @@ function lightboxEl(){
       closeLightbox();
       return;
     }
-    /* Focus trap. Only the close button is focusable in here, so Tab and
-       Shift+Tab both mean "stay". Without this, Tab walks into the form
-       behind the scrim, which is still there and still editable. */
+    /* Focus trap: Tab stays on the close button. */
     if(e.key === "Tab"){
       e.preventDefault();
       el.querySelector(".eb-lightbox-close").focus();
@@ -822,18 +568,14 @@ function closeLightbox(){
   const el = $("#eb-lightbox");
   if(!el) return;
   el.classList.remove("open");
-  /* Dropped so a large image is not held decoded behind an invisible overlay,
-     and so reopening cannot flash the previous one. */
+  /* Clear the image on close so it is not kept in memory or flashed next time. */
   el.querySelector("img").removeAttribute("src");
-  /* Back where it came from — the image, which is a control now. Leaving focus
-     on a hidden button strands the keyboard at the top of the document. */
+  /* Return focus to the image that opened it. */
   if(lightboxOpener && document.contains(lightboxOpener)) lightboxOpener.focus();
   lightboxOpener = null;
 }
 
-/* ============================================================
-   SPARKLINE CHART (SVG line)
-   ============================================================ */
+/* ===== SPARKLINE CHART (SVG line) ===== */
 function drawSparkline(svgEl, data, { labels=[], color="var(--gold)", fillColor="", lineWidth=2, smooth=false }={}){
   if(!svgEl || !data.length) return;
   const W = svgEl.clientWidth || 600;
@@ -870,8 +612,7 @@ function drawSparkline(svgEl, data, { labels=[], color="var(--gold)", fillColor=
   const linePath = isArea
     ? bezierPath(coordPts)
     : coordPts.map(p=>p.join(",")).join(" ");
-  /* The gradient fill is always a <path>, so its `d` needs real path syntax in
-     both modes — polyline `points` format carries no moveto command. */
+  /* The gradient fill is always a <path>, so it needs real path syntax. */
   const areaTopD = isArea
     ? linePath
     : coordPts.map((p,i)=> `${i ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
@@ -964,14 +705,7 @@ function drawBarChart(svgEl, data, { labels=[], color="var(--gold)" }={}){
   svgEl.innerHTML = `${yTicksHtml}${barsHtml}${xLabelsHtml}`;
 }
 
-/* ============================================================
-   CHART RESIZE
-   Charts render to fixed pixel geometry measured from the SVG's
-   own width, so they go stale whenever that width changes —
-   collapsing the sidebar, or resizing the window. Each render
-   registers its redraw function here and one shared observer
-   replays it on the next frame after a size change.
-   ============================================================ */
+/* ===== CHART RESIZE: charts register a redraw function, replayed by one shared observer when their width changes ===== */
 let _chartResizeObserver = null;
 function observeChart(svgEl, redraw){
   if(!svgEl || typeof ResizeObserver === "undefined") return;
@@ -979,9 +713,7 @@ function observeChart(svgEl, redraw){
   if(!_chartResizeObserver){
     let timer = 0;
     _chartResizeObserver = new ResizeObserver(entries=>{
-      /* Debounced on a timer rather than rAF — rAF callbacks don't run in
-         a backgrounded/non-compositing tab, which would leave the chart
-         stale at its old width. */
+      /* Debounced with a timer, since rAF pauses in background tabs. */
       clearTimeout(timer);
       const targets = entries.map(e=>e.target);
       timer = setTimeout(()=>{
@@ -1007,11 +739,8 @@ window.addEventListener("resize", ()=>{
   _winResizeTimer = setTimeout(redrawCharts, 120);
 });
 
-/* ============================================================
-   THEME TOGGLE
-   ============================================================ */
-/* #theme-btn opens the Light / Dark / System menu (assets/js/theme.js), which
-   sets data-theme. Charts are drawn with theme colours, so they redraw. */
+/* ===== THEME TOGGLE ===== */
+/* The theme button opens the Light/Dark/System menu (theme.js); charts redraw in the new colours. */
 function initTheme(){
   window.addEventListener("eb-theme-change", e => {
     adminState.theme = e.detail.theme;
@@ -1019,40 +748,12 @@ function initTheme(){
   });
 }
 
-/* ============================================================
-   SESSION — server-backed
-   ------------------------------------------------------------
-   Was: read sessionStorage["eb-staff"] and trust whatever role
-   string it held. Anyone could set that key by hand and walk into
-   any portal, and the credentials it came from were shipped to
-   every browser in a plaintext array.
+/* ===== SESSION: identity comes from api/auth/me.php (httponly session cookie), with the role re-read from the database on every load ===== */
 
-   Now: ask api/auth/me.php. The PHP session cookie is httponly, so
-   this is the only way the page can learn who is signed in, and the
-   role is re-read from the database on every page load.
-   ============================================================ */
-
-/* ============================================================
-   CATALOGUE LOADING
-   ------------------------------------------------------------
-   Replaces the PRODUCTS and CATEGORIES_DATA seed arrays with real
-   rows. Called once after sign-in, before the first render.
-
-   Mutates in place via length/push rather than reassigning, so that
-   any code holding a reference to the original array — and there is
-   plenty across pos.js, orders.js and inventory.js — sees the new
-   data instead of quietly keeping the seed.
-   ============================================================ */
+/* ===== CATALOGUE LOADING: replaces PRODUCTS and CATEGORIES_DATA in place after sign-in, before the first render ===== */
 async function loadCatalog(){
   try {
-    /* Dates first, and awaited before anything renders: every screen with a
-       range filter asks getDateRange() what "this week" means, and until
-       system/dates.php has answered there is no authoritative answer. Fetched
-       alongside the catalogue rather than before it — they are independent —
-       but nothing is drawn until all three land.
-
-       limit=200 covers the whole catalogue in one request; the real fix for
-       larger catalogues is per-module server-side paging in Phase 5. */
+    /* Load dates, products and categories together and render only when all three arrive (limit=200 covers the catalogue for now). */
     const [products, categories] = await Promise.all([
       EbApi.get("products/list.php",   { limit: 200, status: "all" }),
       EbApi.get("categories/list.php", { status: "all" }),
@@ -1065,10 +766,7 @@ async function loadCatalog(){
     CATEGORIES_DATA.length = 0;
     categories.data.forEach(c => CATEGORIES_DATA.push(c));
 
-    /* Batches and the adjustment log are permission-gated server-side, and a
-       Cashier holds neither inventory.report nor batches.manage. Asking anyway
-       would earn a 403 and pop an error toast at every Cashier login for data
-       that role's screens never show — so only fetch what this role may read. */
+    /* Only fetch batches and the adjustment log for roles allowed to read them, avoiding 403 toasts. */
     if (EbRbac.canAny("inventory.report", "batches.manage", "inventory.manage")) {
       await loadInventoryData();
     }
@@ -1076,30 +774,20 @@ async function loadCatalog(){
     await loadAdminData();
     await loadOpsData();
 
-    /* The notification feed is part database rows and part alerts derived
-       from the records just loaded. Its derived half is cached on first read,
-       and the first read happens at sign-in — before any of this. Clearing it
-       here is what makes a Cashier's overdue-payment alerts and an Inventory
-       user's expiry alerts appear at all. */
+    /* Clear the cached derived alerts so overdue and expiry alerts appear after the data loads. */
     if(typeof refreshDerivedNotifications === "function") refreshDerivedNotifications();
 
     return true;
   } catch(err){
-    /* Loud, not silent. A screen showing seed data while the operator
-       believes it is live is worse than a visible failure. */
+    /* Show load failures loudly. */
     console.error("[catalog]", err);
     toast("Could not load the product catalogue: " + err.message, "err");
     return false;
   }
 }
 
-/* Admin tables: employees, customers, audit log, and the role matrix.
-   Each is permission-gated separately, because the roles that can see one
-   frequently cannot see another — an Inventory Staff member holds audit.view
-   but not users.manage. */
-/* Operational data: returns, notifications, payment accounts, B2B
-   applications and landing-page content. Each is gated by its own permission,
-   so a role only fetches what its screens actually show. */
+/* Admin tables (employees, customers, audit log, role matrix), each loaded only with its own permission. */
+/* Operational data (returns, notifications, payments, B2B, landing content), each loaded only with its own permission. */
 async function loadOpsData(){
   const jobs = [];
 
@@ -1108,16 +796,9 @@ async function loadOpsData(){
     NOTIFICATIONS.length = 0;
     r.data.forEach(n => NOTIFICATIONS.push(n));
     adminState.unreadNotifs = r.meta ? r.meta.unread : 0;
-    /* Per-level unread counts, so the bell can say "something is on fire"
-       separately from "three things happened" without recounting rows. */
+    /* Unread counts per level for the bell. */
     adminState.unreadByPriority = (r.meta && r.meta.unreadByPriority) || null;
-    /* The type→level table comes FROM the server, from the same helper that
-       stamps the stored rows. The portal derives some notifications in the
-       browser (expiring batches, failed QA lots, retailer payment schemes)
-       which have no row to carry a level; taking the table rather than
-       keeping a copy is what stops those from drifting out of step with the
-       ones the database orders. orders.js holds the same table as a hard
-       fallback for the window before this resolves. */
+    /* The type-to-level table comes from the server, so browser-derived alerts sort on the same scale (orders.js has a fallback copy). */
     if(r.meta && r.meta.priorityMap && typeof NOTIF_PRIORITY_MAP !== "undefined"){
       NOTIF_PRIORITY_MAP = r.meta.priorityMap;
     }
@@ -1127,26 +808,25 @@ async function loadOpsData(){
     jobs.push(EbApi.get("returns/list.php", { limit: 200 }).then(r => {
       RETURNS.length = 0;
       r.data.forEach(x => RETURNS.push(x));
+      adminState.largeRefund = (r.meta && r.meta.largeRefund) || null;
     }));
   }
 
-  /* Net-account payments, for every revenue figure computed in this browser
-     (dashboard, Sales Report estimate and chart) — see receivedBetween(). */
+  /* Net-account payments used by every revenue figure computed in the browser (see receivedBetween()). */
   if(EbRbac.canAny("sales.report", "payments.manage")){
-    jobs.push(EbApi.get("payments/received.php").then(r => { CREDIT_RECEIPTS = r.data || []; }));
+    jobs.push(EbApi.get("payments/received.php").then(r => {
+      CREDIT_RECEIPTS = r.data || [];
+      REFUNDS_PAID = (r.meta && r.meta.refunds) || [];
+    }));
   }
 
   if(EbRbac.can("payments.manage")){
     jobs.push(EbApi.get("payments/list.php").then(r => {
       PAYMENT_ACCOUNTS.length = 0;
       r.data.forEach(x => PAYMENT_ACCOUNTS.push(x));
-      /* The penalty rate is a stored setting now, not a number typed into the
-         screen and lost on reload. */
+      /* The penalty rate is a stored setting. */
       if(r.meta && r.meta.penaltyRate != null) adminState.penaltyRate = r.meta.penaltyRate;
-      /* The rest of the meta, kept for the dashboard's Payment Schemes badge.
-         Counted over EVERY account by payments/list.php rather than the page it
-         returns, so "3 to review" means three in the whole book — a badge built
-         from PAYMENT_ACCOUNTS would only ever count the first ten. */
+      /* Payment meta for the dashboard badge, counted over all accounts. */
       adminState.payMeta = r.meta || null;
     }));
   }
@@ -1164,6 +844,7 @@ async function loadOpsData(){
       SITE_CONTENT.vision  = r.data.vision;
       SITE_CONTENT.mission = r.data.mission;
       SITE_CONTENT.contact = r.data.contact;
+      if(r.data.heroText) SITE_CONTENT.heroText = r.data.heroText;
       if(r.data.payment) SITE_CONTENT.payment = r.data.payment;
       SITE_CONTENT.faqs    = r.data.faqs;
       if(Array.isArray(r.data.hero) && r.data.hero.length) SITE_CONTENT.hero = r.data.hero;
@@ -1184,7 +865,7 @@ async function loadOpsData(){
 async function loadAdminData(){
   const jobs = [];
 
-  if(EbRbac.can("users.manage")){
+  if(EbRbac.can("employees.manage")){
     jobs.push(
       EbApi.get("users/list.php", { limit: 200, status: "all" }).then(r => {
         STAFF_ACCOUNTS.length = 0;
@@ -1192,7 +873,11 @@ async function loadAdminData(){
           id: u.id, name: u.name, email: u.email, avatar: u.avatar,
           status: u.status, role: u.role, roleId: u.role_id,
         }));
-      }),
+      })
+    );
+  }
+  if(EbRbac.can("users.manage")){
+    jobs.push(
       EbApi.get("customers/list.php", { limit: 200 }).then(r => {
         CUSTOMERS.length = 0;
         r.data.forEach(c => CUSTOMERS.push(c));
@@ -1212,17 +897,16 @@ async function loadAdminData(){
 
   if(EbRbac.can("rbac.manage")){
     jobs.push(EbApi.get("roles/list.php").then(r => {
-      /* Rebuild the two structures the Roles screen renders from, so the
-         matrix reflects role_permissions rather than the old constants. */
-      /* The server's permission list is the authority: add any key this file
-         does not know yet, so a permission added by a migration always gets a
-         switch instead of being counted invisibly. */
+      /* Rebuild the Roles screen's data from role_permissions. */
+      /* Add any permission key the server has that this file does not, so it always gets a switch. */
       (r.data.permissions || []).forEach(p => {
-        if(!PERMISSIONS[p.key]) PERMISSIONS[p.key] = { area: p.area, label: p.label, systemOnly: !!p.systemOnly };
+        if(!PERMISSIONS[p.key]) PERMISSIONS[p.key] = { area: p.area, label: p.label };
+        Object.assign(PERMISSIONS[p.key], { systemOnly: !!p.systemOnly, adminOnly: !!p.adminOnly, superLocked: !!p.superLocked });
       });
       Object.keys(ROLE_PERMISSIONS).forEach(k => delete ROLE_PERMISSIONS[k]);
       r.data.roles.forEach(role => {
-        if(!role.isSystem) ROLE_PERMISSIONS[role.name] = role.permissions;
+        if(role.isSystem) SUPER_PERMS.splice(0, SUPER_PERMS.length, ...role.permissions);
+        else ROLE_PERMISSIONS[role.name] = role.permissions;
         ROLE_META[role.name] = { slug: role.slug, desc: role.desc || "" };
       });
       adminState.roleList = r.data.roles;
@@ -1239,14 +923,7 @@ async function loadAdminData(){
   }
 }
 
-/* Orders. Separate loader so an order action can refresh just this, and so a
-   role without orders access never asks for it.
-
-   limit=500 pulls the whole ledger in one request, which is honest at this
-   size (42 rows) and wrong at ten thousand. The real fix is per-screen
-   server-side paging via EbPaginate — the Queue and History screens each want
-   their own filtered page rather than a shared client-side array. Deferred
-   deliberately, and noted so it is not mistaken for finished. */
+/* Load orders separately (limit=500 for now; per-screen server paging is the real fix). */
 async function loadOrders(){
   if(!EbRbac.canAny("orders.view", "transactions.view", "orders.accept", "orders.status")) return false;
   try {
@@ -1261,9 +938,7 @@ async function loadOrders(){
   }
 }
 
-/* Batches + adjustment log. Separate from loadCatalog() so the inventory
-   screens can refresh just this after a stock movement, without re-fetching
-   the whole product catalogue. */
+/* Load batches and the adjustment log, so inventory screens can refresh just this after a stock movement. */
 async function loadInventoryData(){
   try {
     const jobs = [EbApi.get("batches/list.php", { limit: 200, sort: "expiry" })];
@@ -1275,22 +950,21 @@ async function loadInventoryData(){
     BATCHES.length = 0;
     batches.data.forEach(b => BATCHES.push(b));
 
-    /* The server reports its own date with the batch list. Recording it means
-       every "days left" figure in the UI is measured from the same clock that
-       computed daysToExpiry, instead of the browser's timezone or a hardcoded
-       constant. */
+    /* Store the server's date so every "days left" figure uses the same clock. */
     if (batches.meta && batches.meta.today) adminState.serverToday = batches.meta.today;
 
-    /* The lot code the next restock would be given. Prefilled into the restock
-       and replenish forms so the operator sees what is about to be created
-       instead of inventing one — and can still override it. Refreshed here,
-       which runs after every stock movement, so the suggestion never lags the
-       lots actually on record. */
+    /* The next suggested lot code, prefilled into restock forms and refreshed after every stock movement. */
     if (batches.meta && batches.meta.nextLotCode) adminState.nextLotCode = batches.meta.nextLotCode;
 
     if (adjustments) {
       ADJUSTMENTS.length = 0;
       adjustments.data.forEach(a => ADJUSTMENTS.push(a));
+    }
+
+    /* Units sold per product per day (Restock tab chart), from the server so roles without the order list see it too. */
+    if (EbRbac.canAny("inventory.report", "inventory.manage")) {
+      try { adminState.dailySales = (await EbApi.get("inventory/daily-sales.php", { days: 14 })).data || {}; }
+      catch(e){ console.warn("[inventory] daily sales", e); }
     }
     return true;
   } catch(err){
@@ -1300,8 +974,7 @@ async function loadInventoryData(){
   }
 }
 
-/* Paint the signed-in identity into the shell. Shared by the session check
-   and the login handler, which previously duplicated every line of it. */
+/* Show the signed-in user in the shell (shared by the session check and login). */
 function applySignedInUser(user){
   adminState.currentUser = user;
 
@@ -1309,19 +982,12 @@ function applySignedInUser(user){
   $("#admin-app").classList.remove("hide");
   $("#sidebar-name").textContent      = user.name;
   $("#sidebar-role").textContent      = user.role;
-  /* The header identity line. It used to read "Signed in as Super Admin" from a
-     <small> inside the SIDEBAR brand — a role with no person attached, in a
-     panel that collapses to an icon rail. Name and role now, in the topbar,
-     written from the same `user` the dropdown below is written from. */
+  /* Name and role in the top bar. */
   $("#topbar-user-name").textContent  = user.name;
   $("#topbar-role-label").textContent = user.role;
   $("#sidebar-avatar").textContent    = avatar;
   $("#topbar-avatar").textContent     = avatar;
-  /* The chip's accessible name. Its three text nodes are aria-hidden — a
-     screen reader would otherwise read the name, the role and the avatar
-     initials as three loose strings with nothing saying any of it opens a
-     menu — so the whole sentence is written here, from the same `user` the
-     visible text comes from. */
+  /* The chip's accessible name as one sentence (its text parts are aria-hidden). */
   const chip = $("#topbar-user-btn");
   if(chip){
     chip.setAttribute("aria-label", `User menu — ${user.name}, ${user.role}`);
@@ -1340,16 +1006,13 @@ function portalRole(){
   return (root && root.dataset.portalRole) || "";
 }
 
-/* True if a valid session was found and the app was revealed.
-   Async now — callers must await it. */
+/* True if a valid session was found and the app was shown (async). */
 async function checkSessionAuth(){
   try {
     const user = await EbSession.bootstrap();
     if(!user) return false;
 
-    /* Valid credentials, wrong door: send them out to the landing page
-       rather than showing a mostly-empty sidebar. The server enforces the
-       same rule on login, so this is convenience, not the control. */
+    /* Signed in to the wrong portal: send them to the landing page (the server enforces this too). */
     const expected = portalRole();
     if(expected && user.role !== expected){
       window.location.href = PORTAL_BASE_PATH + "public/index.html";
@@ -1359,6 +1022,15 @@ async function checkSessionAuth(){
     applySignedInUser(user);
     await loadCatalog();      /* real rows before anything renders */
     renderDashboard();
+    /* Reopen the module named in the address (#online-txns) after a reload, otherwise mark the dashboard as the first history entry. */
+    const fromHash = decodeURIComponent((location.hash || "").slice(1)).split("/");
+    /* A guard entry sits below the dashboard: pressing Back past the first page asks to sign out instead of leaving. */
+    const base = location.pathname + location.search;
+    history.replaceState({ ebMod: "dashboard", ebGuard: true }, "", base + "#dashboard");
+    history.pushState({ ebMod: "dashboard" }, "", base + "#dashboard");
+    if(fromHash[0] && fromHash[0] !== "dashboard" && document.getElementById("mod-" + fromHash[0])){
+      navigate(fromHash[0], fromHash[1] || undefined);
+    }
     return true;
   } catch(err){
     console.error("[session]", err);
@@ -1366,14 +1038,7 @@ async function checkSessionAuth(){
   }
 }
 
-/* ============================================================
-   SIGN-IN
-   ------------------------------------------------------------
-   Staff sign in on the landing page only. The portal used to carry
-   its own sign-in card as well — left over from testing — which
-   flashed on screen while the session check ran. Now: signed in →
-   the portal opens; not signed in → back to the landing page.
-   ============================================================ */
+/* ===== SIGN-IN: staff sign in on the landing page only; no session sends them back there ===== */
 const LANDING_URL = PORTAL_BASE_PATH + "public/index.html";
 
 async function initLogin(){
@@ -1381,63 +1046,34 @@ async function initLogin(){
   if(!ok) window.location.replace(LANDING_URL);
 }
 
-/* ============================================================
-   SIDEBAR / NAVIGATION
-   ============================================================ */
+/* ===== SIDEBAR / NAVIGATION ===== */
 
-/* Modules that REMEMBER which tab you were on.
-   ------------------------------------------------------------
-   Each of these resolves its own default inside its render function, which is
-   why the sidebar used to disagree with the screen: clicking the parent row
-   calls navigate(mod, undefined), the render then opened the remembered tab —
-   Restock, say — and the highlighter had been handed `undefined`, so it lit the
-   parent and no sub-item at all. The panel and the sidebar disagreed from the
-   first click.
-
-   Resolving it HERE means one value drives the highlight and the render. Adding
-   a module with a remembered tab means adding a line here; leaving it out only
-   costs the memory, not the highlight. */
+/* Modules that remember their last tab; resolved here so the sidebar highlight and the render use the same tab. */
 const TAB_MEMORY = {
   users:              () => adminState.userTabActive     || "customers",
   products:           () => adminState.productsTabActive || "catalog",
   "inventory-manage": () => adminState.invTab            || "overview",
 };
 
-/**
- * THE ONE SIDEBAR HIGHLIGHT RULE.
- *
- * This existed in three places and was wrong in two of them. navigate() had the
- * correct version; the Users and Products tab handlers each re-implemented it
- * inline and both dropped the parent line, so clicking a tab inside those
- * screens silently un-highlighted "User Management" / "Products". Inventory
- * Management had no copy at all, which is the reported bug: its pill row
- * switched the panel and left the sidebar pointing at whatever was clicked
- * last.
- *
- * Idempotent, so calling it from both navigate() and a render is safe — that
- * redundancy is deliberate: a render that owns its highlight cannot drift out
- * of sync with the panel it just drew.
- */
+/** The one sidebar highlight rule, called by navigate() and by renders (safe to call twice). */
 function syncNavHighlight(mod, tab){
   $$(".nav-item").forEach(btn => btn.classList.remove("active"));
 
   $$(".nav-item").forEach(btn => {
     if(btn.dataset.mod !== mod) return;
-    /* The parent row (or a plain module) — no data-tab of its own. In icon-only
-       sidebar mode this is the ONLY indicator there is, because .nav-item.sub
-       is display:none there, so it must stay in the rule. */
+    /* The parent row (or a plain module) stays highlighted, since it is the only indicator in icon-only mode. */
     if(!btn.dataset.tab) btn.classList.add("active");
     /* The matching sub-item. */
     if(btn.dataset.tab === tab) btn.classList.add("active");
   });
 
-  /* A highlight nobody can see is not a highlight.
-     Two things hide nav items: `.nav-parent.collapsed + .nav-sub-list` and
-     `.nav-group.collapsed .nav-item`. Arriving from a dashboard shortcut into a
-     group the operator had collapsed would otherwise light a row inside a
-     closed drawer. Both are reopened; the icon-only sidebar is NOT touched —
-     that is a deliberate global state, and a navigation event has no business
-     overriding it. */
+  /* Drawers (Inventory Management, User Management, Products) stay closed unless the open module is inside them. */
+  $$(".nav-parent").forEach(p => {
+    const sub = p.nextElementSibling;
+    const inside = sub?.classList.contains("nav-sub-list") && sub.querySelector(".nav-item.active");
+    p.classList.toggle("collapsed", !(inside || p.classList.contains("active")));
+  });
+  /* Reopen a collapsed group or drawer so the highlighted item is visible (icon-only mode is left alone). */
   $$(".nav-item.active").forEach(btn => {
     btn.closest(".nav-group")?.classList.remove("collapsed");
     const parent = btn.closest(".nav-sub-list")?.previousElementSibling;
@@ -1445,13 +1081,36 @@ function syncNavHighlight(mod, tab){
   });
 }
 
-/* Passed as navigate()'s intent by the topbar Refresh: re-render in place
-   WITHOUT enterModule(), so the screen's search, filters and page survive. */
+/* Refresh re-renders in place without enterModule(), keeping search, filters and page. */
 const NAV_REFRESH = "__refresh";
+/* True while navigate() runs because of the browser's Back/Forward, so it does not add another history entry. */
+let NAV_FROM_HISTORY = false;
+window.addEventListener("popstate", e => {
+  const st = e.state;
+  /* Back while a popup is open closes the popup and keeps the current module (the history step is put back). */
+  const overlay = document.getElementById("modal-overlay");
+  if(overlay && overlay.classList.contains("open")){
+    closeModal();
+    history.pushState({ ebMod: adminState.currentModule, ebTab: (TAB_MEMORY[adminState.currentModule]?.() || null) }, "",
+      location.pathname + location.search + "#" + adminState.currentModule);
+    return;
+  }
+  if(!st || !st.ebMod || typeof navigate !== "function") return;
+  /* Back from the first page: stay in the portal and offer to sign out (Cancel keeps you here). */
+  if(st.ebGuard){
+    history.pushState({ ebMod: adminState.currentModule || "dashboard" }, "",
+      location.pathname + location.search + "#" + (adminState.currentModule || "dashboard"));
+    if(typeof logout === "function") logout();
+    return;
+  }
+  NAV_FROM_HISTORY = true;
+  try { navigate(st.ebMod, st.ebTab || undefined); }
+  finally { NAV_FROM_HISTORY = false; }
+});
+
 function navigate(mod, tab, intent){
   /* deactivate all panels and nav items */
-  /* permission guard — bounce to dashboard if this mod isn't granted
-     (matters once permissions can change at runtime via Roles & Permissions) */
+  /* If the module is not allowed, go back to the dashboard. */
   if(MOD_PERM[mod] && !hasPerm(MOD_PERM[mod])){
     toast("You don't have access to that section.", "err");
     if(mod !== "dashboard") return navigate("dashboard");
@@ -1463,17 +1122,23 @@ function navigate(mod, tab, intent){
   const panel = $(`#mod-${mod}`);
   if(panel) panel.classList.add("active");
 
-  /* ONE value drives both the highlight and the render. Passing `tab` to the
-     highlighter and letting the render resolve its own default is what made the
-     two disagree — see TAB_MEMORY above. */
+  /* One value drives both highlight and render (see TAB_MEMORY). */
   const activeTab = tab || TAB_MEMORY[mod]?.() || undefined;
 
   syncNavHighlight(mod, activeTab);
 
-  /* Arriving resets the destination's filters, then applies whatever this
-     particular navigation asked for. Both happen BEFORE the render, because
-     the render is what reads them. */
+  /* On arrival, reset the destination's filters, then apply this navigation's intent, before rendering. */
   const isRefresh = intent === NAV_REFRESH;
+
+  /* Browser history: every move to another module (or tab) is a history entry, so Back and Forward step through the
+     modules visited instead of leaving the portal. Moves made BY Back/Forward are not recorded again. */
+  if(!isRefresh && !NAV_FROM_HISTORY){
+    const cur = history.state && history.state.ebMod ? history.state : null;
+    const next = { ebMod: mod, ebTab: tab || null };
+    const url = location.pathname + location.search + "#" + mod + (tab ? "/" + tab : "");
+    if(!cur) history.replaceState(next, "", url);
+    else if(cur.ebMod !== next.ebMod || (cur.ebTab || null) !== next.ebTab) history.pushState(next, "", url);
+  }
   if(!isRefresh) enterModule(mod, intent);
 
   /* render the module */
@@ -1503,17 +1168,14 @@ function navigate(mod, tab, intent){
     orderhistory:  renderHistory,
     receipts:      renderReceipts,
     returns:       renderReturns,
-    /* loadReviews(), not renderReviews(): this screen holds no seed data and
-       its rows are filtered SERVER-side by the active tab, so arriving at it
-       has to fetch. Rendering first would flash the previous tab's rows. */
+    /* Reviews fetch on arrival because their rows are filtered on the server by tab. */
     reviews:       loadReviews,
     /* Fetches its own data on arrival — assets/js/portal/vat.js. */
     vat:           renderVat,
+    /* assets/js/portal/shipping.js — fetches the rate tables on arrival. */
+    shipping:      renderShipping,
   };
-  /* THE INTENT LIVES FOR ONE RENDER. Set immediately before, cleared in the
-     finally immediately after, so a render that reads navIntent() sees it and
-     nothing later can. The finally matters: a render that throws must not
-     leave the intent standing for the next navigation to pick up. */
+  /* The intent lasts for one render, cleared in finally even if the render throws. */
   NAV_INTENT = isRefresh ? null : (intent || null);
   try {
     if(renders[mod]) renders[mod]();
@@ -1530,41 +1192,15 @@ function navigate(mod, tab, intent){
   $("#main-content").scrollTo(0,0);
 }
 
-/* A SHORTCUT'S FILTER IS A ONE-SHOT INTENT, NOT STATE.
-
-   THE BUG THIS REPLACES. The first version wrote the filter into adminState —
-   `adminState.invOverviewLevel = "crit"` — and nothing ever cleared it. The
-   Critical Stock card worked, and then Stock Overview stayed filtered to
-   critical for the rest of the session: reached from the sidebar, from the tab
-   pills, from anywhere, it showed a short list with no explanation. A value in
-   adminState is durable by definition, and "open this screen showing critical
-   items THIS TIME" is not a durable fact about the screen.
-
-   HOW THE INTENT TRAVELS NOW. As a third argument to navigate(), parked in
-   NAV_INTENT for exactly the duration of one render and cleared in a `finally`
-   the moment that render returns. It cannot outlive the navigation that
-   carried it, so there is no stored value for the next feature to find and
-   reuse — which is how this bug would otherwise come back.
-
-   AND ARRIVING WITHOUT AN INTENT RESETS. Consuming the intent is only half of
-   it: a screen whose filter is still set from last time is the same bug by
-   another route. Every entry below declares a `reset` that returns its screen
-   to its default filters, and enterModule() runs it on every arrival before
-   `apply` gets a look in. Re-renders WITHIN a screen — a filter change, a save
-   — do not go through here and keep what the operator set. */
+/* A shortcut's filter is a one-shot intent passed to navigate() and cleared after one render, and every arrival resets the screen's filters, so a filter never sticks around. */
 let NAV_INTENT = null;
 
-/* Read one field of the current navigation's intent. Returns undefined when
-   the screen was reached by any route that carried none. */
+/* Read one field of the current navigation's intent (undefined if none). */
 function navIntent(key){
   return NAV_INTENT ? NAV_INTENT[key] : undefined;
 }
 
-/* Per-destination: what "default" means, and what an intent may override.
-
-   The knowledge of where each screen keeps its filter lives HERE, once, beside
-   the convention that uses it — not scattered across the click handlers. A
-   screen that grows a new filter control changes one entry. */
+/* Per screen: how to reset to default filters and what an intent can override. */
 const NAV_ENTRY = {
   "inventory-manage": {
     reset(){
@@ -1579,9 +1215,7 @@ const NAV_ENTRY = {
     },
   },
   inventory: {
-    /* The Inventory Report's select is static markup that renderInventory()
-       reads at query time, so the value lives on the element and the reset has
-       to write the element too. */
+    /* The Inventory Report filter lives on its select element, so reset writes the element. */
     reset(){
       const el = $("#filter-inventory");
       if(el && el.value !== "all"){
@@ -1594,11 +1228,7 @@ const NAV_ENTRY = {
       if(!intent.level) return;
       const el = $("#filter-inventory");
       if(el) el.value = intent.level;
-      /* EbSelect draws the trigger label from the native select. A bare
-         `.value =` fires no change event, so without this the box would read
-         "All Levels" over a list filtered to Critical — the filter applied and
-         the control denying it, the exact confusion the shortcut exists to
-         avoid. */
+      /* Sync EbSelect after setting .value directly, so the trigger shows the active filter. */
       if(window.EbSelect) EbSelect.sync(el);
     },
   },
@@ -1606,6 +1236,10 @@ const NAV_ENTRY = {
     /* The report opens on its own default range unless told otherwise. */
     reset(){ adminState.salesRange = "today"; },
     apply(intent){ if(intent.range) adminState.salesRange = intent.range; },
+  },
+  ordersqueue: {
+    reset(){ adminState.queueFilter = "pending"; if(adminState.queuePager) adminState.queuePager.page = 1; },
+    apply(intent){ if(intent.status) adminState.queueFilter = intent.status; },
   },
   users: {
     reset(){
@@ -1633,25 +1267,13 @@ function enterModule(mod, intent){
   if(intent) entry.apply(intent);
 }
 
-/* Cross-links inside a panel — "View All" on the dashboard, "Back" on the POS
-   payment screen, the dashboard's Critical Stock card. These were
-   `onclick="navigate('sales')"` in the markup, which the brief rules out and
-   which only worked because navigate() happened to be a global; the moment
-   engine.js becomes a module they break silently, with no reference for a
-   linter or a grep to find.
-
-   Takes a root and is idempotent, because not every [data-goto] exists at
-   startup: renderDashboard() rebuilds its stat cards on every visit to the
-   dashboard, so it re-wires its own subtree and the flag stops a card that
-   survived a render from collecting a second listener. */
+/* Wire [data-goto] links (no inline onclick), idempotently since the dashboard rebuilds its cards. */
 function wireGoto(root = document){
   $$("[data-goto]", root).forEach(btn=>{
     if(btn.dataset.gotoWired) return;
     btn.dataset.gotoWired = "1";
     btn.addEventListener("click", ()=>{
-      /* The markup declares the intent; navigate() carries it for one render.
-         data-filter-level / -range / -status map onto the keys NAV_ENTRY reads,
-         so adding a filtered shortcut is an attribute, not a code change. */
+      /* data-filter-level/-range/-status become the intent for NAV_ENTRY. */
       const intent = {};
       if(btn.dataset.filterLevel)  intent.level  = btn.dataset.filterLevel;
       if(btn.dataset.filterRange)  intent.range  = btn.dataset.filterRange;
@@ -1665,10 +1287,7 @@ function wireGoto(root = document){
 function initSidebar(){
   $$(".nav-item").forEach(btn=>{
     btn.title = btn.textContent.trim();
-    /* .nav-parent is a .nav-item too and carries BOTH behaviours — navigate and
-       open/close its drawer. Bound once, below, rather than twice here: the two
-       handlers now have to agree about the collapsed state, and two listeners
-       racing in registration order cannot. */
+    /* .nav-parent navigation is bound below with its drawer toggle, in one handler. */
     if(btn.classList.contains("nav-parent")) return;
     btn.addEventListener("click", ()=> navigate(btn.dataset.mod, btn.dataset.tab));
   });
@@ -1676,19 +1295,7 @@ function initSidebar(){
     btn.addEventListener("click", ()=> navigate(btn.dataset.mod, btn.dataset.tab));
   });
 
-  /* Filter inputs that reset paging and re-render their screen.
-
-     These were eight inline handlers in the markup, each a small program:
-         oninput="adminState.ordHistoryPager.page=1;renderHistory()"
-     The brief rules out inline handlers, and they carried two further problems.
-     They depended on `adminState` and every render function being globals, so
-     they break silently the moment engine.js becomes a module — with no
-     reference a grep or a linter can find. And forgetting the `page=1` reset
-     (three of the eight nearly did) leaves you on page 4 of a filtered set that
-     now has one page, looking at an empty table.
-
-     The markup now carries data-refilters="<screen>" and the pairing lives
-     here, in one place, checked once at startup. */
+  /* Filter inputs marked data-refilters="<screen>" reset to page 1 and re-render that screen (replacing inline handlers). */
   const FILTER_SCREENS = {
     onlineTxns:  { pager: "onlineTxnPager",    render: () => renderOnlineTxns() },
     history:     { pager: "ordHistoryPager",   render: () => renderHistory() },
@@ -1701,8 +1308,7 @@ function initSidebar(){
     const key = el.dataset.refilters;
     const screen = FILTER_SCREENS[key];
     if(!screen){
-      /* Loud rather than silent: a typo in the attribute used to mean the
-         filter simply did nothing, which reads as "search is broken". */
+      /* Warn loudly about an unknown data-refilters value. */
       console.error("[filters] unknown data-refilters value:", key, el);
       return;
     }
@@ -1720,15 +1326,12 @@ function initSidebar(){
   const overlay   = $("#sidebar-overlay");
 
   hamburger.addEventListener("click", ()=>{
-    if (window.innerWidth <= 860) {
+    if (window.innerWidth <= 900) {
       const open = sidebar.classList.toggle("open");
       overlay.classList.toggle("show", open);
     } else {
       $("#admin-app").classList.toggle("sidebar-collapsed");
-      /* Collapsing changes the content width, so any chart drawn to fixed
-         pixel geometry has to be redrawn. Done explicitly here rather than
-         relying solely on the ResizeObserver, whose callbacks need a
-         rendering frame the browser may not produce. */
+      /* Redraw charts explicitly after collapsing the sidebar. */
       redrawCharts();
     }
   });
@@ -1737,7 +1340,7 @@ function initSidebar(){
     overlay.classList.remove("show");
   });
 
-  $("#sidebar-logout").addEventListener("click", logout);
+  $("#sidebar-logout")?.addEventListener("click", logout);
 
   $$(".nav-group-label").forEach(label => {
     label.addEventListener("click", () => {
@@ -1745,26 +1348,7 @@ function initSidebar(){
     });
   });
 
-  /* The parent row carried TWO listeners — navigate (as a .nav-item) and a bare
-     `classList.toggle("collapsed")` — which only worked while nothing else
-     touched `collapsed`. Now that syncNavHighlight() expands a drawer holding
-     the newly active item, and navigate() lights this module's remembered
-     sub-item, the toggle ran afterwards and inverted the wrong state: a
-     collapsed parent was expanded by the highlighter and instantly re-collapsed,
-     so its drawer could never be opened from its own row at all.
-
-     Split by WHERE the click lands, in one handler:
-
-       the chevron  → collapse/expand only, no navigation. That is what a
-                      chevron means, and it is the only gesture whose sole
-                      purpose is the drawer.
-       anywhere else → navigate, and leave the drawer OPEN.
-
-     The row no longer toggles closed, deliberately. It navigates to the
-     module's remembered tab, so closing the drawer on that same click would
-     hide the sub-item it had just highlighted — the exact fault Task 4 is
-     about, re-introduced by the row that caused it. Collapsing is still
-     available on the chevron, and on the group label for the whole section. */
+  /* Parent row: clicking the chevron only opens/closes the drawer; clicking elsewhere navigates and keeps the drawer open. */
   $$(".nav-parent").forEach(btn => {
     btn.addEventListener("click", e => {
       if(e.target.closest(".nav-chevron")){
@@ -1780,8 +1364,7 @@ function initUserDropdown() {
   const userWrap = $("#topbar-user");
   const trigger  = $("#topbar-user-btn");
 
-  /* aria-expanded has to move with the class or the menu is open for sighted
-     users and closed for everybody else. One setter so the two cannot part. */
+  /* Keep aria-expanded in step with the open class. */
   const setOpen = open => {
     userWrap.classList.toggle("open", open);
     trigger.setAttribute("aria-expanded", open ? "true" : "false");
@@ -1794,10 +1377,7 @@ function initUserDropdown() {
 
   document.addEventListener("click", () => setOpen(false));
 
-  /* Escape closes and RETURNS FOCUS to the trigger. Neither existed: the menu
-     could only be dismissed by clicking elsewhere, and a keyboard user who
-     opened it had no way back out — focus stayed wherever it was while the
-     panel silently vanished under a click they had no reason to make. */
+  /* Escape closes the menu and returns focus to the trigger. */
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape" || !userWrap.classList.contains("open")) return;
     setOpen(false);
@@ -1820,54 +1400,16 @@ function logout(){
     onConfirm: async ()=>{
       closeModal();
       adminState.currentUser = null;
-      /* Destroy the server session too. Clearing local state alone would
-         leave the session cookie valid — the next visit to any portal URL
-         would silently sign straight back in. */
+      /* Also destroy the server session on logout. */
       try { await EbSession.logout(); } catch(_){}
       window.location.href = PORTAL_BASE_PATH + "public/index.html";
     }
   });
 }
 
-/* ============================================================
-   MODULE: DASHBOARD
-   ============================================================ */
+/* ===== MODULE: DASHBOARD ===== */
 
-/* THE DASHBOARD TILES ARE CONTROLS, NOT READOUTS.
-
-   An administrator who reads "3 critical" wants the three products; one who
-   reads a revenue figure wants the report behind it. Every tile now opens the
-   screen its number came from, and two of them arrive with a filter already
-   applied.
-
-   ONE BUILDER, FOUR TILES. Critical Stock was written first and the other
-   three were about to be copies of it — which is how four rules that agree
-   today stop agreeing later. The routing, the permission rule, the markup and
-   the aria labelling live here once; each tile below supplies only what
-   differs.
-
-   WHERE IT GOES DEPENDS ON WHAT THE ROLE HOLDS. navigate()'s permission guard
-   would bounce a Cashier straight back to the dashboard with an error toast,
-   so a tile whose destination they cannot open is rendered as a PLAIN DIV —
-   visible, still telling them the number, simply not clickable. Offering a
-   control that is guaranteed to fail is worse than offering none.
-
-   `data-perm` is ALSO stamped on the button, even though the conditional
-   render above already handles it. It is not redundant belt-and-braces: it
-   declares the requirement where a reader of the markup will look for it, and
-   it keeps the control correct if applyRBAC() re-runs after a live permission
-   change without a dashboard re-render.
-
-   A FILTERED TILE CARRIES A ONE-SHOT INTENT, never durable state — see
-   NAV_ENTRY. Today's Sales sets the report range for that arrival only, and
-   the retailer sub-line filters Customer Accounts the same way; open either
-   screen by any other route afterwards and it is back to its default.
-
-   TWO BUTTONS, NOT A BUTTON INSIDE A BUTTON. The face and the sub-line are
-   separate targets going to different places, and nesting one interactive
-   element inside another is invalid and unreachable by keyboard. They are
-   siblings inside the card, so both tab-stop and both announce their own
-   destination. */
+/* Dashboard tiles are buttons that open the screen behind their number (some with a one-shot filter); a tile whose destination the role cannot open is a plain div, and the sub-line is a separate button. */
 function statCard(o){
   const style = `style="--accent-color:${o.accent};--accent-bg:${o.accentBg}"`;
   const face  = `<div class="stat-icon">${o.icon}</div>
@@ -1905,48 +1447,104 @@ function statCard(o){
   return `<div class="stat-card${linked}" ${style}>${faceHtml}${subHtml}${delta}</div>`;
 }
 
-/* WHO GETS THE INVENTORY DASHBOARD.
-
-   THE RULE:  (inventory.report OR inventory.manage)  AND NOT sales.report
-
-   By permission, never by role name. Roles are editable from Roles &
-   Permissions — they can be renamed, have permissions taken away, and be
-   created from scratch — so `role === "Inventory Staff"` would be a dashboard
-   that breaks the first time somebody makes a second stock role or renames the
-   one that exists. The same objection applies to a hardcoded list of role
-   names, which is the same thing spelled longer.
-
-   Read it as: this person's job is stock, and revenue is not their screen. The
-   management dashboard leads with Total Revenue, Today's Sales and Recent
-   Transactions, all of which sit behind sales.report — someone without it gets
-   a page whose headline figures are either hidden or un-openable.
-
-   The NOT is what keeps Super Admin, Admin and anyone else who holds both from
-   losing the revenue view: holding sales.report means the money IS their
-   screen, whatever else they also hold. */
+/* Inventory dashboard rule (by permission, never role name): has inventory.report or inventory.manage AND NOT sales.report. */
 function isInventoryDashboard(){
   return (hasPerm("inventory.report") || hasPerm("inventory.manage")) && !hasPerm("sales.report");
 }
 
-/* The notification types that are an inventory matter. Keyed to the type, not
-   to the permission: visibleNotifications() has already dropped anything this
-   user may not see, but "may see" is a wider set than "is their job" —
-   Inventory Staff holds audit.view, and an audit entry is not a stock alert.
-   Same vocabulary as NOTIF_PERM in orders.js. */
+/* Notification types that count as inventory matters. */
 const INVENTORY_NOTIF_TYPES = ["inventory", "expiry", "batch-qa"];
 
+/* Orders Waiting for Approval panel: pending online orders, oldest first with their wait time, fetched fresh on every dashboard visit. */
+/* Short payment note for the approval rows, matching paymentNote() in orders.js: cash pickup, credit terms and walk-ins need no proof. */
+function apprProofText(o){
+  if(o.proof && o.proof.uploaded) return "✓ Proof";
+  if(o.type === "walk-in") return "Paid at counter";
+  if(o.payMethod === "cash" && o.orderType === "pickup") return "Pay on pickup";
+  if(isCreditOrder(o)) return "Not yet paid for this term";
+  return "No proof";
+}
+function apprProofTone(o){
+  const t = apprProofText(o);
+  return t === "✓ Proof" ? "ok" : t === "No proof" ? "no" : "muted";
+}
+
+async function renderApprovalPanel(){
+  const panel = $("#dash-approval-panel");
+  if(!panel) return;
+  const show = hasPerm("orders.accept");
+  panel.classList.toggle("hide", !show);
+  if(!show) return;
+
+  const statsEl = $("#dash-appr-stats"), listEl = $("#dash-appr-list");
+  listEl.innerHTML = EbUI.skeletonBlock(4);
+  let rows, meta;
+  try {
+    ({ data: rows, meta } = await EbApi.get("orders/list.php", {
+      type: "online", status: "pending", sort: "oldest", limit: 100,
+    }));
+  } catch(err){
+    listEl.innerHTML = `<div class="appr-empty">Could not load orders: ${escHtml(err.message)}</div>`;
+    return;
+  }
+  const counts   = (meta && meta.counts) || {};
+  const pending  = (meta && meta.total) || rows.length;
+  const withProof= rows.filter(o => o.proof && o.proof.uploaded).length;
+  const value    = rows.reduce((n, o) => n + orderTotal(o), 0);
+  const ageH     = o => (Date.now() - new Date(String(o.datetime).replace(" ", "T")).getTime()) / 36e5;
+  const late     = rows.filter(o => ageH(o) >= 24).length;
+  const ago = o => {
+    const h = ageH(o);
+    if(!isFinite(h)) return "";
+    if(h < 1)  return `${Math.max(1, Math.round(h * 60))} min`;
+    if(h < 24) return `${Math.floor(h)} hr`;
+    return `${Math.floor(h / 24)} day${h >= 48 ? "s" : ""}`;
+  };
+
+  /* Neutral numbers on white cards; colour only in the icon chip. */
+  const ICO = {
+    clock: `<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>`,
+    proof: `<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="14 3 14 9 20 9"/><polyline points="9 15 11 17 15 13"/>`,
+    alert: `<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>`,
+    pause: `<circle cx="12" cy="12" r="9"/><line x1="10" y1="9" x2="10" y2="15"/><line x1="14" y1="9" x2="14" y2="15"/>`,
+    cash:  `<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/>`,
+  };
+  const stat = (label, val, tone, icon, status = "pending", note = "") => {
+    const tag = status ? "button" : "div";
+    return `<${tag} ${status ? `type="button" data-goto="ordersqueue" data-filter-status="${status}"` : ""} class="appr-stat tone-${tone}${status ? "" : " is-static"}">
+      <span class="appr-stat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICO[icon]}</svg></span>
+      <span class="appr-stat-body"><span class="appr-stat-val">${val}</span><span class="appr-stat-lbl">${label}</span>${note ? `<span class="appr-stat-note">${note}</span>` : ""}</span>
+    </${tag}>`;
+  };
+  statsEl.innerHTML =
+      stat("Waiting for approval", pending, "gold", "clock")
+    + stat("Proof uploaded", withProof, "ok", "proof")
+    + stat("Waiting over 24 hrs", late, "alert", "alert", "pending", late ? "Needs action" : "")
+    + stat("Value waiting", peso(value), "gold", "cash", "");
+
+  listEl.innerHTML = rows.length
+    ? rows.slice(0, 5).map(o => `
+      <button type="button" class="appr-row" data-goto="ordersqueue" data-filter-status="pending">
+        <span class="appr-row-id mono-sm">${escHtml(o.id)}</span>
+        <span class="appr-row-cust">${escHtml(o.customer)}</span>
+        <span class="appr-row-proof ${apprProofTone(o)}">${apprProofText(o)}</span>
+        <span class="appr-row-total">${peso(orderTotal(o))}</span>
+        <span class="appr-row-age ${ageH(o) >= 24 ? "late" : ""}">${ago(o)} ago</span>
+      </button>`).join("")
+      + (pending > 5 ? `<button type="button" class="appr-more" data-goto="ordersqueue" data-filter-status="pending">Showing 5 of ${pending} — view all in Order Queue →</button>` : "")
+    : `<div class="appr-empty">No orders waiting — the queue is clear.</div>`;
+  wireGoto(panel);
+}
+
 function renderDashboard(){
-  /* Which of the two dashboards this is. Decided once, here, and every panel
-     below follows it — so there is one answer on the page rather than four
-     independent ones that can disagree. */
+  renderApprovalPanel();
+  /* Decide once which dashboard this is; every panel follows it. */
   const invView = isInventoryDashboard();
   const showPanel = (sel, on) => { const el = $(sel); if(el) el.classList.toggle("hide", !on); };
   showPanel("#dash-sales-panel",  !invView);
   showPanel("#dash-recent-panel", !invView);
   showPanel("#dash-rank-panel",    invView);
-  /* The grid needs to know too. Hiding the sales panel takes the left column's
-     height with it, and the two list heights in portal.css are tuned to the
-     column heights of the version that HAS it — see .notif-list there. */
+  /* Tell the grid too, since list heights in portal.css depend on whether the sales panel is shown. */
   $(".dash-grid")?.classList.toggle("dash-grid--inventory", invView);
   const stockTitle = $("#dash-stock-title");
   if(stockTitle) stockTitle.textContent = invView ? "Stock Overview" : "Stock Levels";
@@ -1962,11 +1560,7 @@ function renderDashboard(){
   const dateEl = $("#dash-date");
   if(dateEl) dateEl.textContent = now.toLocaleDateString("en-PH",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
 
-  /* ── Payment Schemes shortcut ──
-     The badge says why to go, not that the button exists. Payments waiting to
-     be checked outrank overdue accounts: one is work sitting in a queue, the
-     other is already known and chased. Empty when there is neither, and the
-     CSS hides an empty badge rather than showing a reassuring blank pill. */
+  /* Payment Schemes badge: payments to review take priority over overdue accounts; empty hides it. */
   const payBadge = $("#dash-pay-badge");
   if(payBadge){
     const m       = adminState.payMeta;
@@ -1990,18 +1584,7 @@ function renderDashboard(){
   const yesterdaySales = sumRevenue(ORDERS.filter(tx=>tx.date===dAgo(1))) + receivedBetween(dAgo(1), dAgo(1));
   const thisMonthRev   = sumRevenue(ORDERS.filter(tx=>tx.date>=thisMonthStart&&tx.date<=todayStr)) + receivedBetween(thisMonthStart, todayStr);
   const lastMonthRev   = sumRevenue(ORDERS.filter(tx=>tx.date>=lmStart&&tx.date<=lmEnd)) + receivedBetween(lmStart, lmEnd);
-  /* THE SERVER'S BAND, NOT A PIECE COUNT.
-
-     This card is labelled "Critical Stock" and its button opens the Inventory
-     Report filtered to Critical — but it counted `stock <= 10`, the fixed floor
-     the measured model replaced. The two answers disagreed by design: a fast
-     seller with 400 jars and nine days of cover is Critical on the report and
-     was invisible here, while a product with eight jars and three years of
-     cover was counted here and is Safe there. A card that disagrees with the
-     screen it links to is worse than no card.
-
-     PRODUCTS is loaded on the stored default window (see STOCK_WINDOWS), so
-     this matches the Inventory Report whenever its own toggle is on Default. */
+  /* Critical Stock uses the server's band (not a fixed count) so it matches the Inventory Report it links to. */
   const bandOf         = p => (p.inventory && p.inventory.level) || stockInfo(p).level;
   const liveProducts   = PRODUCTS.filter(p=>!p.archived);
   const lowStock       = liveProducts.filter(p=>bandOf(p)==="crit").length;
@@ -2018,24 +1601,14 @@ function renderDashboard(){
     return `<div class="stat-delta ${cls}">${arrow} ${Math.abs(pct)}% ${label}</div>`;
   }
 
-  /* Critical Stock routes by permission: Stock Overview can actually restock,
-     the Inventory Report can only show. Neither held means no control at all. */
+  /* Critical Stock links to Stock Overview if the user can restock, otherwise the Inventory Report, otherwise nowhere. */
   const stockDest = hasPerm("inventory.manage")
     ? { mod: "inventory-manage", tab: "overview", perm: "inventory.manage" }
     : hasPerm("inventory.report")
       ? { mod: "inventory", tab: null, perm: "inventory.report" }
       : null;
 
-  /* ── the inventory reader's four tiles ──────────────────────────────
-     Critical Stock and Out of Stock are the same shortcuts the management
-     dashboard carries: the same destination, chosen by the same permission,
-     and the same ONE-SHOT intent — NAV_ENTRY resets the destination's filter on
-     every arrival and applies the intent for that render only, so opening the
-     Inventory Report from anywhere else afterwards finds it unfiltered. That is
-     what stops a tile leaving its filter behind.
-
-     Total Products and Total Stock on Hand are not filters, so they go to the
-     same screen unfiltered rather than inventing a band for themselves. */
+  /* Inventory dashboard tiles: Critical and Out of Stock open filtered (one-shot), Total Products and Stock on Hand open unfiltered. */
   if(invView){
     const warnStock  = liveProducts.filter(p=>bandOf(p)==="warn").length;
     const archived   = PRODUCTS.length - liveProducts.length;
@@ -2057,10 +1630,7 @@ function renderDashboard(){
         accent: "var(--info)", accentBg: "rgba(59,130,246,.1)",
         icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`,
         label: "Total Products", value: liveProducts.length,
-        /* The archived line is a fact about the catalogue, not a shortcut: the
-           Archive tab is its own screen with its own permission, and a tile
-           that filtered to it would be offering a filter this screen has no
-           state for. */
+        /* The archived count is information only, not a link. */
         sub: archived ? `${archived} archived` : "none archived",
         link: stockDest && { ...stockDest,
                 aria: `Total Products: ${liveProducts.length}. Open the stock list.` },
@@ -2093,7 +1663,7 @@ function renderDashboard(){
         accent: "var(--gold-ink)", accentBg: "var(--gold-dim)",
         icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01"/><path d="M18 12h.01"/></svg>`,
         label: "Total Revenue", value: peso(totalSales),
-        sub: `${ORDERS.length} total transactions`,
+        sub: `${ORDERS.length} total transactions${refundedBetween(null, null) ? ` · less ${peso(refundedBetween(null, null))} refunds` : ""}`,
         delta: deltaBadge(thisMonthRev, lastMonthRev, "vs last month"),
         link: { mod: "sales", perm: "sales.report",
                 aria: `Total Revenue: ${peso(totalSales)}. Open the Sales Report.` },
@@ -2105,8 +1675,7 @@ function renderDashboard(){
         label: "Today's Sales", value: peso(todaySales),
         sub: `<span class="stat-trend up">\u2191 ${todayTx.length} orders</span>`,
         delta: deltaBadge(todaySales, yesterdaySales, "vs yesterday"),
-        /* The range is a one-shot: the report opens on Today this time and
-           returns to its own default on any later visit. */
+        /* Today's Sales opens the report on Today once. */
         link: { mod: "sales", perm: "sales.report", intent: { range: "today" },
                 aria: `Today's Sales: ${peso(todaySales)}. Open the Sales Report for today.` },
       }),
@@ -2129,8 +1698,7 @@ function renderDashboard(){
         sub: `${retailers} retailer(s)`,
         link: { mod: "users", tab: "customers", perm: "users.manage",
                 aria: `Customers: ${activeCustomers}. Open Customer Accounts.` },
-        /* The sub-line names retailers specifically, so it filters to them —
-           again as a one-shot, so the tab is unfiltered by any other route. */
+        /* The retailer sub-line opens Customers filtered to retailers once. */
         subLink: { mod: "users", tab: "customers", perm: "users.manage",
                 intent: { status: "retailer" },
                 aria: `${retailers} retailer(s). Show retailer accounts.` },
@@ -2141,10 +1709,7 @@ function renderDashboard(){
     wireGoto($("#dash-stats"));
   }
 
-  /* sparkline — daily sales for past 7 days.
-     Skipped entirely on the inventory dashboard: its panel is hidden, the
-     figures are revenue, and drawing into a hidden SVG is work done to be
-     looked at by nobody. */
+  /* 7-day sales sparkline, skipped on the inventory dashboard. */
   if(!invView){
     const days = [];
     const labels = [];
@@ -2194,8 +1759,7 @@ function renderDashboard(){
       crit: "linear-gradient(90deg,#b91c1c,#ef4444)",
       out:  "linear-gradient(90deg,#7f1d1d,#ef4444)"
     };
-    /* Inline styles beat any stylesheet rule, so these have to be accessible
-       at source. Each is the original hue darkened to clear 4.5:1 on cream. */
+    /* Inline colours darkened to reach 4.5:1 on cream. */
     const valColors = { ok:"#16803d", warn:"#8c6b05", crit:"#cb3a3a", out:"#cb3a3a" };
     const badge = si.level==="out"  ? `<span class="stock-badge out">Out</span>`
                 : si.level==="crit" ? `<span class="stock-badge low">Low</span>`
@@ -2213,33 +1777,8 @@ function renderDashboard(){
     </div>`;
   }).join("");
 
-  /* ── System Notifications ──────────────────────────────────────────
-     THIS PANEL USED TO INVENT ITS OWN FEED.
-
-     It rebuilt a list here from PRODUCTS and PAYMENT_ACCOUNTS with its own
-     stock thresholds (`stock <= 10`, hardcoded), its own colour vocabulary
-     (dot: "red" / "crit" / "gold" / "ok"), its own ordering, and two rows
-     that were simply invented — "Monthly sales report ready for review"
-     and "All employee accounts verified" were printed unconditionally and
-     were true of nothing. It shared not one line with the bell above it or
-     the Notifications module, so the same event could appear in three
-     places with three different wordings and three different urgencies, or
-     in one and not the others. REMEDIATION.md is largely a catalogue of
-     this exact failure elsewhere in the codebase.
-
-     It now reads the same rows, through the same permission scope, in the
-     same order, with the same level labels as the bell and the module. */
-  /* ON THE INVENTORY DASHBOARD, INVENTORY MATTERS ONLY.
-
-     visibleNotifications() has already dropped everything this user has no
-     permission to see, and that is not the same filter. Inventory Staff holds
-     audit.view, so the audit feed reached this panel — a list headed "System
-     Notifications" on a stock screen, carrying entries about who changed a
-     price. The bell and the Notifications module keep the whole permitted feed;
-     it is only this panel, on this dashboard, that narrows.
-
-     THE COUNT NARROWS WITH IT. A badge counting rows the list does not show is
-     the same defect as a badge counting rows nobody can act on. */
+  /* System Notifications reads the same rows, permissions, order and levels as the bell and the Notifications module. */
+  /* On the inventory dashboard this panel (and its count) shows inventory notifications only. */
   const dashFeed = (typeof visibleNotifications === "function")
     ? visibleNotifications().filter(n => !invView || INVENTORY_NOTIF_TYPES.includes(n.type))
     : [];
@@ -2250,9 +1789,7 @@ function renderDashboard(){
 
   const dashUnread = dashFeed.filter(n=>!n.read).length;
 
-  /* The unread count, not the total. The badge is red; a red badge reading
-     "17" beside a list that is entirely handled history is an alarm about
-     nothing. */
+  /* The badge shows the unread count, not the total. */
   const countEl = $("#dash-notif-count");
   if(countEl) countEl.textContent = dashUnread;
 
@@ -2269,11 +1806,7 @@ function renderDashboard(){
     }).join("") || `<div class="alert-empty"><strong>Nothing waiting</strong>You're all caught up.</div>`;
   }
 
-  /* The topbar badge is NOT set here any more. initNotifBadge() in orders.js
-     owns it, counts the same rows this panel shows, and knows how many of
-     them are critical. This function used to write it too, from a different
-     list, so the badge said one thing on the dashboard and another on every
-     other screen. */
+  /* The top bar badge is set by initNotifBadge() in orders.js, not here. */
   if(typeof initNotifBadge === "function") initNotifBadge();
 
   /* Product Rankings replace Recent Transactions on the inventory dashboard. */
@@ -2292,27 +1825,13 @@ function renderDashboard(){
       <td>${escHtml(tx.customer)}</td>
       <td style="font-size:.8rem;color:var(--text-muted);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(txItemsSummary(tx.items))}</td>
       <td><strong>${peso(ttl)}</strong></td>
-      <td><span class="badge ${methodBadgeClass(tx.method)}">${escHtml(tx.method)}</span></td>
+      <td><span class="badge ${methodBadgeClass(payMethodLabel(tx.payMethod))}">${escHtml(payMethodLabel(tx.payMethod) || "—")}</span></td>
       <td class="muted">${fmtDate(tx.date)}</td>
     </tr>`;
   }).join("") || `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">No transactions yet.</td></tr>`;
 }
 
-/* PRODUCT RANKINGS — what sold most this week, beside what is left of it.
-
-   ASKED OF THE SERVER, not summed from ORDERS. The browser holds the orders it
-   has been given, which is every order at forty rows and a page of them the
-   moment the list is paged — the same trap the Sales Report was pulled out of.
-   api/reports/top-products.php aggregates in SQL, ranks by units through
-   Revenue::productTotals (the method the Sales Report's Best Sellers uses, so
-   the two cannot disagree about what sold), and resolves "this week" with
-   Dates::range — Monday to today, which is what the Sales Report's week button
-   means too.
-
-   THE STOCK COLUMN IS THE MEASURED BAND, not a raw count. "142 units" answers
-   nothing on its own: a fast seller with 142 and four days of cover is
-   Critical, and the whole point of putting units sold next to stock is to see
-   that. Same bands, same labels, same badges as the Inventory Report. */
+/* Product Rankings come from api/reports/top-products.php (same rules as the Sales Report), with the stock column showing the measured band. */
 function renderDashRankings(){
   const body = $("#dash-rankings");
   const note = $("#dash-rank-note");
@@ -2321,7 +1840,7 @@ function renderDashRankings(){
   const wholeRow = html =>
     `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">${html}</td></tr>`;
 
-  body.innerHTML = wholeRow("Loading…");
+  body.innerHTML = EbUI.loadingRow(5);
 
   EbApi.get("reports/top-products.php", { range: "week", limit: 5 })
     .then(({ data, meta }) => {
@@ -2332,9 +1851,7 @@ function renderDashRankings(){
           : "by units sold this week";
       }
       if(!data || !data.length){
-        /* A period with nothing in it is a fact. An empty table with headers
-           reads as a broken query — the same reason the Sales Report's own
-           empty state says so in words. */
+        /* Say in words when the period has no sales. */
         body.innerHTML = wholeRow("Nothing has sold yet this week.");
         return;
       }
@@ -2358,18 +1875,17 @@ function renderDashRankings(){
     });
 }
 
-/* ============================================================
-   MODULE: USER MANAGEMENT
-   ============================================================ */
+/* ===== MODULE: USER MANAGEMENT ===== */
 function renderUsers(tab){
-  const activeTab = tab || adminState.userTabActive;
+  /* Each tab has its own permission: Customer Accounts (users.manage), Employee Accounts (employees.manage). */
+  const canCust = hasPerm("users.manage"), canEmp = hasPerm("employees.manage");
+  $$("[data-user-tab]").forEach(btn => btn.classList.toggle("hide", btn.dataset.userTab === "customers" ? !canCust : !canEmp));
+  let activeTab = tab || adminState.userTabActive || "customers";
+  if(activeTab === "customers" && !canCust) activeTab = "employees";
+  if(activeTab === "employees" && !canEmp) activeTab = "customers";
   adminState.userTabActive = activeTab;
 
-  /* In the render, not in the tab click handler, so the sidebar follows however
-     this screen was reached — pill, sidebar, or a programmatic re-render after
-     a save. The handler used to carry its own copy of the highlight rule which
-     dropped the parent row, so switching to Employee Accounts from the pills
-     un-highlighted "User Management". */
+  /* Highlight the sidebar in the render, however the screen was reached. */
   syncNavHighlight("users", activeTab);
 
   /* Switch tab */
@@ -2381,12 +1897,7 @@ function renderUsers(tab){
   $$(".tab-panel", $("#mod-users")).forEach(p=>{
     p.classList.toggle("active", p.id === `tab-${activeTab}`);
   });
-  /* The filter set for this tab. It used to live INSIDE the panel, so switching
-     panels switched it for free; it now sits in the merged toolbar row beside
-     the tabs (see .view-toolbar in portal.css) and has to be told. Driven off
-     the same activeTab as the panel above, on purpose — two sources for "which
-     tab is open" is how a screen ends up showing one tab's table under the
-     other tab's filters. */
+  /* Show the filter set for the active tab in the merged toolbar. */
   $$(".tab-filters", $("#mod-users")).forEach(f=>{
     f.classList.toggle("active", f.dataset.tabFilters === activeTab);
   });
@@ -2399,44 +1910,19 @@ function renderUsers(tab){
   if(activeTab === "customers") renderCustomers();
   else renderEmployees();
 
-  /* tab click handlers.
-
-     onclick, not addEventListener: this function re-runs on every tab switch,
-     so addEventListener stacked another handler on the same button each time
-     and one click ended up firing N renders. Assignment replaces. (Same shape
-     inventory.js already uses for its pill row.)
-
-     The highlight is no longer done here — renderUsers() owns it, above. */
+  /* Tab handlers use onclick (assignment) so re-renders do not stack listeners. */
   $$("[data-user-tab]").forEach(btn=>{
     btn.onclick = ()=> renderUsers(btn.dataset.userTab);
   });
   const addCust = $("#add-customer-btn");
   if(addCust) addCust.addEventListener("click", ()=> openAddCustomerModal());
   const addEmp = $("#add-employee-btn");
-  if(addEmp) addEmp.addEventListener("click", ()=> openAddEmployeeModal());
+  /* Only the Super Admin adds or edits employees (api/users/save.php refuses everyone else). */
+  if(addEmp) addEmp.classList.toggle("hide", !adminState.currentUser?.isSystem);
+  if(addEmp && !addEmp.dataset.wired){ addEmp.dataset.wired = "1"; addEmp.addEventListener("click", ()=> openAddEmployeeModal()); }
 }
 
-/* Customers — server-paged. The row actions look their record up from the
-   page that is currently loaded, so the lookup uses the fetched rows rather
-   than a global array that no longer holds everything.
-
-   ARCHIVE IS THE ONLY ACTION, DELIBERATELY.
-
-   There was an Edit button here that opened a form over the customer's name,
-   email and contact number. A customer record belongs to the customer: they
-   maintain those three fields themselves through Profile, and every one of
-   them is identity — an administrator who can change an email address can
-   change where a password reset goes. The administrator's legitimate need is
-   to close an account, which Archive does.
-
-   Removing the button is presentation and would stop nobody on its own
-   (api/core/Rbac.php says so in its header). api/customers/save.php now
-   refuses identity changes on its update path, which is the part that
-   actually enforces this.
-
-   The Employee Accounts tab is untouched. A staff record is the employer's
-   record of an employee, not a person's own account, and an administrator must
-   still be able to correct one. */
+/* Customers are server-paged and only have Archive, since name, email and contact belong to the customer (customers/save.php enforces this); Employee Accounts can still be edited. */
 function renderCustomers(){
   EbPaginate.list(
     "cust",
@@ -2454,7 +1940,7 @@ function renderCustomers(){
       <td class="td-email">
         ${escHtml(c.email)}
         ${c.canSignIn ? "" : `<span class="chip-nosignin"
-          title="No password is set, so this person cannot sign in. They set one by registering at the storefront with this email — that claims this record.">No sign-in</span>`}
+          title="Invited, not signed up yet: no password is set. The invitation email links to the storefront sign-up with this email, which claims this record.">Invited · not signed up</span>`}
       </td>
       <td>${escHtml(c.contact || "—")}</td>
       <td><span class="badge ${c.status==="active"?"badge-ok":c.status==="retailer"?"badge-info":"badge-muted"}">${c.status}</span></td>
@@ -2462,6 +1948,7 @@ function renderCustomers(){
       <td>
         <div class="td-actions">
           ${c.status!=="archived" ? `
+            ${c.canSignIn ? "" : `<button class="btn btn-ghost btn-sm" data-invite-cust="${c.id}" title="Email the 'create your account' link again">Resend invite</button>`}
             <button class="btn btn-ghost-danger btn-sm" data-archive-cust="${c.id}">Archive</button>
           ` : `<span class="muted" style="font-size:.78rem">Archived</span>`}
         </div>
@@ -2471,12 +1958,22 @@ function renderCustomers(){
       colspan: 6,
       empty: { title: "No customers found", hint: "Adjust the search or status filter." },
       after: (rows) => {
-        /* Keep the loaded page available to the modals, which need the full
-           record rather than just what the row shows. */
-        CUSTOMERS.length = 0; rows.forEach(r => CUSTOMERS.push(r));
+        /* Update these rows in the full customer list (used by the dashboard counts and the modals) instead of
+           replacing the list with just this page or filter, which made the dashboard show only the last page viewed. */
+        rows.forEach(r => { const i = CUSTOMERS.findIndex(c => c.id === r.id); if(i > -1) CUSTOMERS[i] = r; else CUSTOMERS.push(r); });
         const tbody = $("#customers-tbody");
         tbody.querySelectorAll("[data-archive-cust]").forEach(btn=>{
           btn.addEventListener("click", ()=> archiveCustomer(btn.dataset.archiveCust));
+        });
+        tbody.querySelectorAll("[data-invite-cust]").forEach(btn=>{
+          btn.addEventListener("click", async ()=>{
+            const restore = EbUI.busy(btn, "Sending…");
+            try {
+              const { data } = await EbApi.post("customers/invite.php", { id: btn.dataset.inviteCust });
+              toast(data.mailLive ? "Invitation emailed again." : "Invitation saved to the mail log (email is not set up on this install).", "ok");
+            } catch(err){ toast(err.message, "err"); }
+            finally { restore(); }
+          });
         });
       },
     }
@@ -2500,7 +1997,9 @@ function renderCustomers(){
 function openAddCustomerModal(){
   openModal({
     title: "Add Customer",
-    body: `<div class="field"><label>Full Name</label><input class="control" id="m-cust-name" placeholder="e.g. Juan dela Cruz"/><span class="field-error" id="m-cust-name-err"></span></div>
+    body: `<p class="field-hint" style="margin:0 0 14px">They get an email inviting them to create their password on the website.
+             Until they do, you can still file their walk-in purchases under them at the POS (Customer on Record).</p>
+           <div class="field"><label>Full Name</label><input class="control" id="m-cust-name" placeholder="e.g. Juan dela Cruz"/><span class="field-error" id="m-cust-name-err"></span></div>
            <div class="field"><label>Email</label><input class="control" type="email" id="m-cust-email" placeholder="email@example.com"/></div>
            <div class="field"><label>Contact Number</label><input class="control" id="m-cust-contact" placeholder="+63 9XX XXX XXXX"/></div>`,
     confirmLabel: "Add Customer",
@@ -2509,21 +2008,19 @@ function openAddCustomerModal(){
       const email   = $("#m-cust-email").value.trim();
       const contact = $("#m-cust-contact").value.trim();
       if(!name){ $("#m-cust-name-err").textContent="Name is required."; return; }
-      /* No optimistic push. This used to add a locally-invented row carrying
-         id "cus-<timestamp>" BEFORE the request, and the catch below returns
-         without removing it — so a rejected save (a duplicate email answers
-         409) left a customer in the list that did not exist and whose id no
-         endpoint recognised. loadAdminData() below refreshes from the server,
-         which is where the real id comes from anyway. */
+      /* No optimistic insert; refresh from the server after saving. */
       try {
-        await EbApi.post("customers/save.php", {
+        var { data: saved } = await EbApi.post("customers/save.php", {
           name, email: $("#m-cust-email").value.trim(),
           contact: $("#m-cust-contact").value.trim(), status: "active",
         });
         await loadAdminData();
       } catch(err){ toast(err.message, "err"); return; }
       closeModal();
-      toast("Customer added.", "ok");
+      toast(saved.invited
+        ? (saved.mailLive ? `Customer added. An invitation to create their account was emailed to ${saved.email}.`
+                          : "Customer added. The invitation went to the mail log (email is not set up on this install).")
+        : "Customer added, but the invitation email could not be sent. Use “Resend invite” in the list.", saved.invited ? "ok" : "warn");
       renderCustomers();
     }
   });
@@ -2538,17 +2035,7 @@ function archiveCustomer(id){
     confirmLabel: "Archive",
     confirmClass: "btn-ghost-danger",
     onConfirm: async ()=>{
-      /* D11: no local change before the server agrees. This set
-         c.status = "archived" first, and the catch below returns without
-         undoing it — so a refused archive left the row displaying a status the
-         database did not hold. loadAdminData() refreshes from the server on
-         success, which is where the new status should come from anyway.
-
-         customers/archive.php, not customers/save.php. This used to post the
-         entire record back — name, email and contact included — to change one
-         field, which is the only reason save.php ever needed to accept those
-         on an update. Sending identity fields to change a status was always
-         the wrong shape; it is now also refused. */
+      /* Archive only after the server agrees, using customers/archive.php (status only). */
       try {
         await EbApi.post("customers/archive.php", { id: c.id, archived: true });
         await loadAdminData();
@@ -2560,11 +2047,7 @@ function archiveCustomer(id){
   });
 }
 
-/* Role hierarchy, top to bottom: Super Admin (warmest/most alarming —
-   highest authority) → Admin → the three staff roles get their own
-   distinct cool colors so they're each identifiable, but sit visually
-   "lighter" than the two admin tiers above them. Was one flat blue for
-   every role, which read as no hierarchy at all. */
+/* Role badge colours by hierarchy: Super Admin, Admin, then distinct cooler colours for staff roles. */
 function roleBadgeClass(role){
   return {
     "Super Admin":        "badge-out",
@@ -2575,8 +2058,7 @@ function roleBadgeClass(role){
   }[role] || "badge-muted";
 }
 
-/* Employees — server-paged. Small today (six accounts), converted for the same
-   reason as the rest: the screen should not behave differently at 6 and 600. */
+/* Employees are server-paged too. */
 function renderEmployees(){
   EbPaginate.list(
     "emp",
@@ -2598,8 +2080,8 @@ function renderEmployees(){
       <td>
         <div class="td-actions">
           ${e.status!=="archived" ? `
-            <button class="btn btn-ghost btn-sm" data-edit-emp="${e.id}">Edit</button>
-            <button class="btn btn-ghost-danger btn-sm" data-archive-emp="${e.id}">Archive</button>
+            ${adminState.currentUser?.isSystem ? `<button class="btn btn-ghost btn-sm" data-edit-emp="${e.id}">Edit</button>` : ""}
+            ${+e.is_system === 1 && !adminState.currentUser?.isSystem ? "" : `<button class="btn btn-ghost-danger btn-sm" data-archive-emp="${e.id}">Archive</button>`}
           ` : `<span class="muted" style="font-size:.78rem">Archived</span>`}
         </div>
       </td>
@@ -2647,8 +2129,7 @@ function openAddEmployeeModal(){
       if(!name){ $("#m-emp-name-err").textContent="Name required."; return; }
       const roleRow = (adminState.roleList || []).find(r => r.name === role);
       try {
-        /* The password is sent once and hashed server-side. It was previously
-           stored in this array in plaintext, in a file served to the browser. */
+        /* The password is sent once and hashed on the server. */
         await EbApi.post("users/save.php", {
           name, email, role_id: roleRow ? roleRow.id : null, password: pw,
         });
@@ -2686,8 +2167,7 @@ function openEditEmployeeModal(e){
         });
         await loadAdminData();
       } catch(err){
-        /* The server refuses a self-role-change and an escalation attempt.
-           Both messages are worth showing verbatim. */
+        /* Show the server's refusals (own role change, escalation) as is. */
         toast(err.message, "err");
         return;
       }
@@ -2709,8 +2189,7 @@ function archiveEmployee(id){
     confirmClass: "btn-ghost-danger",
     onConfirm: async ()=>{
       try {
-        /* The server also refuses archiving yourself and archiving the last
-           account that can manage permissions. */
+        /* The server also refuses archiving yourself or the last rbac.manage account. */
         await EbApi.post("users/archive.php", { id: e.id, archived: true });
         await loadAdminData();
       } catch(err){ toast(err.message, "err"); return; }
@@ -2721,9 +2200,7 @@ function archiveEmployee(id){
   });
 }
 
-/* ============================================================
-   MODULE: B2B RETAIL PARTNER APPLICATIONS
-   ============================================================ */
+/* ===== MODULE: B2B RETAIL PARTNER APPLICATIONS ===== */
 function b2bStatusBadge(status){
   const MAP = {
     pending:  { cls:"badge-warn", label:"Pending Review" },
@@ -2734,14 +2211,38 @@ function b2bStatusBadge(status){
   return `<span class="badge ${m.cls}">${m.label}</span>`;
 }
 
-/* Gold/Silver/Bronze each get their own color instead of sharing the
-   flat badge-muted tan — otherwise "Silver Tier" and "Bronze Tier"
-   were visually identical to each other and to unrelated muted text. */
+/* Different colours for Gold, Silver and Bronze. */
 function tierBadge(tier){
   const cls = { Gold:"badge-tier-gold", Silver:"badge-tier-silver", Bronze:"badge-tier-bronze" }[tier] || "badge-muted";
   return `<span class="badge ${cls}">${escHtml(tier)} Tier</span>`;
 }
 const TIER_RANK = { Gold: 3, Silver: 2, Bronze: 1 };
+const TIERS = ["Bronze", "Silver", "Gold"];
+
+/* Tier budgets (api/payments/tiers.php), fetched once per screen that needs them. */
+async function loadTierLimits(){
+  try {
+    const { data } = await EbApi.get("payments/tiers.php");
+    adminState.creditLimits = data.limits;
+  } catch(_){ /* the picker still works without the amounts */ }
+  return adminState.creditLimits || null;
+}
+
+/* Bronze / Silver / Gold radio cards with a medal, each showing its Net credit budget; `current` marks the partner's present tier. */
+function tierPickerHtml(selected, limits, current = null){
+  const medal = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="6"/><path d="M8.5 14 7 22l5-3 5 3-1.5-8"/></svg>`;
+  return `<div class="tier-pick" role="radiogroup" aria-label="Partner tier">${TIERS.map(t => `
+    <label class="tier-pick-opt tb-${t.toLowerCase()}">
+      <input type="radio" name="m-tier" value="${t}" ${t === selected ? "checked" : ""}/>
+      <span class="tier-pick-card">
+        <span class="tier-pick-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+        <span class="tb-medal tier-pick-medal" aria-hidden="true">${medal}</span>
+        <span class="tier-pick-name">${t}</span>
+        <span class="tier-pick-amt">${limits ? peso(limits[t]) : "—"}</span>
+        <span class="tier-pick-sub">${t === current ? "Current tier" : "Net credit budget"}</span>
+      </span>
+    </label>`).join("")}</div>`;
+}
 
 function getFilteredSortedB2B(){
   const q      = ($("#search-b2b")?.value || "").toLowerCase();
@@ -2759,9 +2260,7 @@ function getFilteredSortedB2B(){
   });
 
   rows = [...rows].sort((a,b)=>{
-    /* Gold/Silver/Bronze aren't alphabetical-meaningful — rank them by
-       standing instead so "sort by tier" actually orders best-to-worst
-       partner rather than B-before-G-before-S. */
+    /* Sort tiers by rank, not alphabetically. */
     let av, bv;
     if(sort.col === "tier"){
       av = TIER_RANK[a.tier] || 0; bv = TIER_RANK[b.tier] || 0;
@@ -2795,19 +2294,16 @@ function renderB2B(){
         <div style="font-size:.82rem">${escHtml(a.email)}</div>
         <div class="muted" style="font-size:.78rem">${escHtml(a.phone)}</div>
       </td>
-      <td>
-        ${a.requestedTerms ? `<span class="badge badge-info">${escHtml(a.requestedTerms)}</span>` : ""}
-        ${a.tier ? `<div style="margin-top:4px">${tierBadge(a.tier)}</div>` : ""}
-      </td>
-      <td>${b2bStatusBadge(a.status)}</td>
+      <td>${b2bStatusBadge(a.status)}${a.status === "approved" && a.tier ? `<div style="margin-top:4px">${tierBadge(a.tier)}</div>` : ""}</td>
       <td><div class="td-actions">
         <button class="btn btn-ghost btn-sm" data-view-app="${a.id}">View</button>
+        ${a.status === "approved" && a.isRetailer ? `<button class="btn btn-gold btn-sm" data-tier-app="${a.id}">Change Tier</button>` : ""}
         ${a.status==="pending" ? `
           <button class="btn btn-ok btn-sm" data-approve-app="${a.id}">Approve</button>
           <button class="btn btn-ghost-danger btn-sm" data-reject-app="${a.id}">Reject</button>
         ` : ""}
       </div></td>
-    </tr>`).join("") || `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:32px">No applications match your search.</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:32px">No applications match your search.</td></tr>`;
 
   const shownFrom = all.length ? start+1 : 0;
   const shownTo   = Math.min(start+pageSize, all.length);
@@ -2848,22 +2344,15 @@ function renderB2B(){
     };
   });
 
-  /* String(...) wraps every id comparison in this file.
-
-     A dataset value is ALWAYS a string, and b2b/list.php casts its id with
-     (int) — so `x.id === btn.dataset.approveApp` compared 2 === "2", which is
-     false. find() returned undefined, openApproveAppModal() hit its
-     `if(!a) return`, and the operator saw an empty modal shell with no error at
-     all. B2B view, approve and reject were all dead.
-
-     Every other list here uses string ids ("cus-01", "bat-201"), so String()
-     changes nothing for them — it removes the trap for the next numeric id
-     somebody adds. */
+  /* Compare ids with String(), since dataset values are strings and b2b ids are numbers. */
   tbody.querySelectorAll("[data-view-app]").forEach(btn=>{
     btn.addEventListener("click", ()=> openViewAppModal(B2B_APPLICATIONS.find(x=>String(x.id) === btn.dataset.viewApp)));
   });
   tbody.querySelectorAll("[data-approve-app]").forEach(btn=>{
     btn.addEventListener("click", ()=> openApproveAppModal(B2B_APPLICATIONS.find(x=>String(x.id) === btn.dataset.approveApp)));
+  });
+  tbody.querySelectorAll("[data-tier-app]").forEach(btn=>{
+    btn.addEventListener("click", ()=> openChangeTierModal(B2B_APPLICATIONS.find(x=>String(x.id) === btn.dataset.tierApp)));
   });
   tbody.querySelectorAll("[data-reject-app]").forEach(btn=>{
     btn.addEventListener("click", ()=> openRejectAppModal(B2B_APPLICATIONS.find(x=>String(x.id) === btn.dataset.rejectApp)));
@@ -2875,6 +2364,8 @@ function renderB2B(){
     $("#b2b-page-size").value = String(adminState.b2bPageSize);
     $("#b2b-page-size").onchange = (e)=>{ adminState.b2bPageSize = +e.target.value; adminState.b2bPage = 1; renderB2B(); };
   }
+  const budgetBtn = $("#tier-budgets-btn");
+  if(budgetBtn) budgetBtn.onclick = openTierBudgets;
   const exportBtn = $("#export-b2b-btn");
   if(exportBtn) exportBtn.onclick = exportB2BCSV;
 }
@@ -2886,9 +2377,16 @@ function openViewAppModal(a){
     large: true,
     body: `
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-        ${b2bStatusBadge(a.status)}
-        ${a.requestedTerms ? `<span class="badge badge-info">${escHtml(a.requestedTerms)} requested</span>` : ""}
-        ${a.tier ? tierBadge(a.tier) : ""}
+        ${b2bStatusBadge(a.status)}${a.status === "approved" && a.tier ? tierBadge(a.tier) : ""}
+      </div>
+      <!-- The TIN is what the reviewer checks against BIR records to confirm
+           the store is real, so it leads, set apart from the other details. -->
+      <div class="b2b-tin-card${a.birTin ? "" : " is-missing"}">
+        <div>
+          <div class="b2b-tin-label">BIR TIN</div>
+          <div class="b2b-tin-val">${a.birTin ? escHtml(a.birTin) : "Not provided"}</div>
+        </div>
+        <span class="b2b-tin-hint">${a.birTin ? "Verify against BIR records before approving." : "Ask the applicant for their TIN before approving."}</span>
       </div>
       <!-- Same card sections as Order Detail (orders.css) so the groups read apart. -->
       <div class="order-detail-section">
@@ -2901,7 +2399,7 @@ function openViewAppModal(a){
         <div class="order-detail-heading">Business</div>
         <div class="detail-row"><span class="detail-row-label">Business Name</span><span class="detail-row-val">${escHtml(a.businessName)}</span></div>
         <div class="detail-row"><span class="detail-row-label">Business Type</span><span class="detail-row-val">${escHtml(a.businessType)}</span></div>
-        ${a.requestedTerms ? `<div class="detail-row"><span class="detail-row-label">Requested Terms</span><span class="detail-row-val">${escHtml(a.requestedTerms)}</span></div>` : ""}
+        ${a.address ? `<div class="detail-row"><span class="detail-row-label">Business Address</span><span class="detail-row-val">${escHtml(a.address)}</span></div>` : ""}
         <div class="detail-row"><span class="detail-row-label">Submitted</span><span class="detail-row-val">${fmtDate(a.submittedDate)}</span></div>
       </div>
       <div class="order-detail-section">
@@ -2918,31 +2416,34 @@ function openViewAppModal(a){
   });
 }
 
-function openApproveAppModal(a){
+async function openApproveAppModal(a){
   if(!a) return;
-  /* No "Credit Terms" select. It was rendered here but never sent to
-     b2b/decide.php, so whatever was chosen was silently discarded. A retailer
-     picks Net 30/60/90 per order at checkout. */
-  const tierOpts = PARTNER_TIERS.map(t=>`<option>${t}</option>`).join("");
+  /* The tier sets how much the retailer may owe on Net terms at once. */
+  const limits = await loadTierLimits();
   openModal({
     title: `Approve ${a.businessName}`,
     body: `
-      <p style="font-size:.9rem;margin-bottom:16px">Approving grants <strong>${escHtml(a.applicantName)}</strong> a retailer account at the tier below. As a retailer they choose Net 30, Net 60 or Net 90 terms at checkout on each order.</p>
-      <div class="field"><label>Partner Account Tier</label><select class="control" id="m-app-tier">${tierOpts}</select></div>
+      <p style="font-size:.9rem;margin-bottom:12px">Approving grants <strong>${escHtml(a.applicantName)}</strong> a retailer account for <strong>${escHtml(a.businessName)}</strong>.</p>
+      <p style="font-size:.86rem;color:var(--text-muted);margin:0 0 12px">They can then use every payment method: Cash, GCash, Bank Transfer and Net 30 / 60 / 90 credit terms, chosen at checkout on each order.</p>
+      <div class="field">
+        <label>Partner tier</label>
+        ${tierPickerHtml("Bronze", limits)}
+        <span class="field-hint">Unpaid Net balances plus a new Net order cannot go above the tier's budget. You can change the tier later.</span>
+      </div>
+      <div class="b2b-tin-card${a.birTin ? "" : " is-missing"}" style="margin:0">
+        <div><div class="b2b-tin-label">BIR TIN</div><div class="b2b-tin-val">${a.birTin ? escHtml(a.birTin) : "Not provided"}</div></div>
+      </div>
     `,
     confirmLabel: "Approve Application",
     confirmClass: "btn-ok",
     onConfirm: async ()=>{
-      const tier = $("#m-app-tier").value;
       try {
-        /* Approval promotes the applicant's customer record to retailer, which
-           is what unlocks wholesale terms elsewhere — so it is one server-side
-           transaction rather than four separate array edits here. The old code
-           also invented a customer row and a credit account locally, neither of
-           which survived a refresh. */
+        /* Approval is one server transaction that promotes the customer to retailer. */
         const { data } = await EbApi.post("b2b/decide.php", {
-          app_id: a.appId, decision: "approved", tier,
+          app_id: a.appId, decision: "approved",
+          tier: $('input[name="m-tier"]:checked')?.value || "Bronze",
         });
+        adminState.lastB2bMail = data;
         await loadOpsData();
         await loadAdminData();
         if(!data.promoted){
@@ -2950,10 +2451,47 @@ function openApproveAppModal(a){
         }
       } catch(err){ toast(err.message, "err"); return; }
       closeModal();
-      toast("Application approved.", "ok");
+      toast(b2bMailNote("Application approved.", adminState.lastB2bMail, a.email), adminState.lastB2bMail?.emailed ? "ok" : "warn");
       renderB2B();
     }
   });
+}
+
+/* Upgrade or downgrade an approved partner's tier, which changes their Net credit budget straight away. */
+async function openChangeTierModal(a){
+  if(!a) return;
+  const limits = await loadTierLimits();
+  openModal({
+    title: `Change Tier — ${a.businessName}`,
+    body: `
+      <p style="font-size:.9rem;margin-bottom:12px"><strong>${escHtml(a.applicantName)}</strong> is currently ${tierBadge(a.tier || "Bronze")}.</p>
+      <div class="field">
+        <label>New tier</label>
+        ${tierPickerHtml(a.tier || "Bronze", limits, a.tier || "Bronze")}
+        <span class="field-hint">The new budget applies to their next Net order. Orders already placed are not affected.</span>
+      </div>`,
+    confirmLabel: "Save Tier",
+    onConfirm: async ()=>{
+      const tier = $('input[name="m-tier"]:checked')?.value;
+      if(!tier || tier === (a.tier || "Bronze")){ closeModal(); return; }
+      try {
+        const { data } = await EbApi.post("b2b/tier.php", { app_id: a.appId, tier });
+        adminState.lastB2bMail = data;
+        await loadOpsData();
+      } catch(err){ toast(err.message, "err"); return; }
+      closeModal();
+      toast(b2bMailNote(`${a.businessName} is now ${tier} tier.`, adminState.lastB2bMail, a.email), adminState.lastB2bMail?.emailed ? "ok" : "warn");
+      renderB2B();
+    }
+  });
+}
+
+/* Toast text saying whether the applicant's email actually went out (the server reports emailed / mailLive). */
+function b2bMailNote(done, res, email){
+  if(!res) return done;
+  if(res.emailed && res.mailLive !== false) return `${done} Email sent to ${email}.`;
+  if(res.emailed) return `${done} Email saved but not delivered (mail is not set up) — let ${email} know directly.`;
+  return `${done} The email to ${email} could not be sent — let them know directly.`;
 }
 
 function openRejectAppModal(a){
@@ -2970,13 +2508,14 @@ function openRejectAppModal(a){
       const reason = $("#m-app-reason").value.trim();
       try {
         /* The server requires a reason — the applicant is told it. */
-        await EbApi.post("b2b/decide.php", {
+        const { data } = await EbApi.post("b2b/decide.php", {
           app_id: a.appId, decision: "rejected", reason,
         });
+        adminState.lastB2bMail = data;
         await loadOpsData();
       } catch(err){ toast(err.message, "err"); return; }
       closeModal();
-      toast("Application rejected.", "warn");
+      toast(b2bMailNote("Application rejected.", adminState.lastB2bMail, a.email), "warn");
       renderB2B();
     }
   });
@@ -2984,10 +2523,10 @@ function openRejectAppModal(a){
 
 function exportB2BCSV(){
   const rows = getFilteredSortedB2B();
-  const header = ["App ID","Business Name","Applicant","Email","Phone","Business Type","Requested Terms","Tier","Status","Submitted Date","Notes","Rejection Reason"];
+  const header = ["App ID","Business Name","Applicant","Email","Phone","Business Type","BIR TIN","Business Address","Status","Tier","Submitted Date","Notes","Rejection Reason"];
   const csvRows = rows.map(a=>[
     a.appId, a.businessName, a.applicantName, a.email, a.phone, a.businessType,
-    a.requestedTerms||"", a.tier||"", a.status, a.submittedDate, a.notes||"", a.reason||""
+    a.birTin||"", a.address||"", a.status, a.status === "approved" ? (a.tier||"") : "", a.submittedDate, a.notes||"", a.reason||""
   ]);
   const esc = v => `"${String(v).replace(/"/g,'""')}"`;
   const csv = [header, ...csvRows].map(r=>r.map(esc).join(",")).join("\r\n");
@@ -3070,6 +2609,33 @@ function renderLanding(){
     </div>
 
     <div class="lp-section">
+      <div class="lp-section-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg> Hero Text
+        <span class="lp-hint">The words over the hero image</span>
+      </div>
+      ${(() => { const h = SITE_CONTENT.heroText || {}; return `
+      <div class="lp-hero-text">
+        <div class="field"><label for="lp-hero-tagline">Header tagline</label>
+          <input class="control" id="lp-hero-tagline" maxlength="120" value="${escHtml(h.tagline || "")}" placeholder="Every Mouthful is Delightful."/>
+          <span class="field-hint">Shown large, in quotation marks (added automatically).</span>
+          <span class="field-error" id="lp-hero-tagline-err"></span></div>
+        <div class="field"><label for="lp-hero-highlight">Highlighted word</label>
+          <input class="control" id="lp-hero-highlight" maxlength="40" value="${escHtml(h.highlight || "")}" placeholder="Delightful"/>
+          <span class="field-hint">A word from the tagline shown in gold italics. Leave blank for none.</span>
+          <span class="field-error" id="lp-hero-highlight-err"></span></div>
+        <div class="field lp-hero-wide"><label for="lp-hero-lead">Text under the tagline</label>
+          <textarea class="control" id="lp-hero-lead" rows="2" maxlength="240" placeholder="Every product starts with fresh, locally-sourced milkfish…">${escHtml(h.lead || "")}</textarea></div>
+        <div class="field"><label>First stat</label>
+          <div class="lp-stat-row"><input class="control" id="lp-stat1-value" maxlength="12" value="${escHtml(h.stat1_value || "")}" placeholder="100%" aria-label="First stat number"/>
+          <input class="control" id="lp-stat1-label" maxlength="30" value="${escHtml(h.stat1_label || "")}" placeholder="Natural" aria-label="First stat label"/></div></div>
+        <div class="field"><label>Second stat</label>
+          <div class="lp-stat-row"><input class="control" id="lp-stat2-value" maxlength="12" value="${escHtml(h.stat2_value || "")}" placeholder="9+" aria-label="Second stat number"/>
+          <input class="control" id="lp-stat2-label" maxlength="30" value="${escHtml(h.stat2_label || "")}" placeholder="years of craft" aria-label="Second stat label"/></div>
+          <span class="field-hint">Leave both boxes empty to hide a stat.</span></div>
+      </div>
+      <div class="lp-hero-preview" aria-hidden="true"><div class="lp-hp-stats" id="lp-hp-stats"></div><p class="lp-hp-tag" id="lp-hp-tag"></p><p class="lp-hp-lead" id="lp-hp-lead"></p></div>`; })()}
+    </div>
+
+    <div class="lp-section">
       <div class="lp-section-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg> Best Sellers
         <span class="lp-hint">Ranked by units sold — tick the products to feature</span>
       </div>
@@ -3106,6 +2672,8 @@ function renderLanding(){
       <div id="faq-list">${renderFAQItems()}</div>
     </div>
   `;
+  paintLandingTabs(el);
+  wireHeroTextPreview();
   wireFAQButtons();
   wireLandingImages();
   wirePayAccounts();
@@ -3118,6 +2686,57 @@ function renderLanding(){
   };
 }
 
+
+/* Landing Page sections grouped into tabs. Every section stays in the page (only hidden), so Save Changes still saves all of them. */
+const LP_TABS = [
+  { id: "hero",    label: "Hero",               sections: [0, 1] },
+  { id: "best",    label: "Best Sellers",       sections: [2] },
+  { id: "about",   label: "About & Vision",     sections: [3, 4] },
+  { id: "contact", label: "Contact & Payments", sections: [5, 6] },
+  { id: "faq",     label: "FAQs",               sections: [7] },
+];
+/* Live preview of the hero text under its fields, matching how the storefront draws it. */
+function readHeroText(){
+  const v = id => ($(id)?.value || "").trim();
+  return { tagline: v("#lp-hero-tagline"), highlight: v("#lp-hero-highlight"), lead: v("#lp-hero-lead"),
+           stat1_value: v("#lp-stat1-value"), stat1_label: v("#lp-stat1-label"),
+           stat2_value: v("#lp-stat2-value"), stat2_label: v("#lp-stat2-label") };
+}
+function wireHeroTextPreview(){
+  const paint = () => {
+    const h = readHeroText();
+    let tag = escHtml(h.tagline || "");
+    const i = h.highlight ? h.tagline.toLowerCase().indexOf(h.highlight.toLowerCase()) : -1;
+    if(i >= 0) tag = escHtml(h.tagline.slice(0, i)) + "<em>" + escHtml(h.tagline.slice(i, i + h.highlight.length)) + "</em>" + escHtml(h.tagline.slice(i + h.highlight.length));
+    $("#lp-hp-tag").innerHTML = h.tagline ? `&ldquo;${tag}&rdquo;` : "";
+    $("#lp-hp-lead").textContent = h.lead;
+    $("#lp-hp-stats").innerHTML = [[h.stat1_value, h.stat1_label], [h.stat2_value, h.stat2_label]]
+      .filter(([a, b]) => a || b).map(([a, b]) => `<div><b>${escHtml(a)}</b><span>${escHtml(b)}</span></div>`).join("");
+    const hlErr = $("#lp-hero-highlight-err");
+    if(hlErr) hlErr.textContent = h.highlight && i < 0 ? "This word is not in the tagline." : "";
+  };
+  ["#lp-hero-tagline","#lp-hero-highlight","#lp-hero-lead","#lp-stat1-value","#lp-stat1-label","#lp-stat2-value","#lp-stat2-label"]
+    .forEach(id => $(id)?.addEventListener("input", paint));
+  paint();
+}
+
+function paintLandingTabs(el){
+  const sections = [...el.querySelectorAll(":scope > .lp-section")];
+  LP_TABS.forEach(t => t.sections.forEach(i => { if(sections[i]) sections[i].dataset.lpTab = t.id; }));
+  const bar = document.createElement("div");
+  bar.className = "tabs lp-tabs";
+  bar.setAttribute("role", "tablist");
+  bar.setAttribute("aria-label", "Landing page sections");
+  bar.innerHTML = LP_TABS.map(t => `<button type="button" class="tab-btn" role="tab" data-lp-tab="${t.id}">${t.label}</button>`).join("");
+  el.prepend(bar);
+  const show = id => {
+    adminState.landingTab = id;
+    bar.querySelectorAll("[data-lp-tab]").forEach(b => { const on = b.dataset.lpTab === id; b.classList.toggle("active", on); b.setAttribute("aria-selected", String(on)); });
+    sections.forEach(sec => { sec.hidden = sec.dataset.lpTab !== id; });
+  };
+  bar.querySelectorAll("[data-lp-tab]").forEach(b => b.addEventListener("click", () => show(b.dataset.lpTab)));
+  show(LP_TABS.some(t => t.id === adminState.landingTab) ? adminState.landingTab : "hero");
+}
 
 /* ---- Payment accounts (GCash, bank) --------------------------------
    The accounts customers pay INTO, shown at checkout and on a retailer's Pay
@@ -3195,6 +2814,19 @@ function wirePayAccounts(){
 }
 
 /* ---- Hero image cards ------------------------------------------------ */
+/* Product names for a hero slide's picker, plus "Custom name…" for wording
+   that is not a product name (the slide's current title if it is one). */
+function heroNameOptions(current){
+  const names = PRODUCTS.filter(p => !p.archived).map(p => p.name);
+  /* A custom name is listed as its own option, so every card shows its real
+     name in the same single dropdown. */
+  const own = current && !names.includes(current)
+    ? `<option value="${escHtml(current)}" selected>${escHtml(current)}</option>` : "";
+  return own
+    + names.map(n => `<option value="${escHtml(n)}"${n === current ? " selected" : ""}>${escHtml(n)}</option>`).join("")
+    + `<option value="__custom">Type a custom name…</option>`;
+}
+
 function renderHeroImageCards(){
   return SITE_CONTENT.hero.map(function(slide, i){
     const has = !!slide.img;
@@ -3205,7 +2837,15 @@ function renderHeroImageCards(){
             ? `<img src="${escHtml(imageUrl(slide.img))}" alt="${escHtml(slide.title)}">`
             : `<span class="lp-img-empty">No image</span>`}
         </div>
-        <div class="lp-img-name">${escHtml(slide.title)}</div>
+        <!-- The product this slide features. Picking one renames the slide;
+             "Custom name…" keeps any other wording. -->
+        <div class="lp-hero-name">
+          <select class="control" data-hero-pick="${i}" aria-label="Product shown on hero slide ${i + 1}">
+            ${heroNameOptions(slide.title)}
+          </select>
+          <input class="control lp-hero-custom hide" data-hero-title="${i}"
+                 maxlength="100" value="${escHtml(slide.title)}" placeholder="Slide name" aria-label="Custom name for hero slide ${i + 1}">
+        </div>
         <div class="lp-img-actions">
           <label class="btn btn-ghost btn-sm">
             ${has ? "Replace" : "Upload"}
@@ -3315,6 +2955,37 @@ function wireLandingImages(){
         wireLandingImages(); updateStorageMeter();
       });
     });
+  });
+  /* Slide name: a product from the list, or typed. Saved with Save Changes. */
+  $$("[data-hero-pick]").forEach(function(sel){
+    sel.addEventListener("change", function(){
+      const i = +sel.dataset.heroPick;
+      const custom = $(`[data-hero-title="${i}"]`);
+      if(sel.value === "__custom"){
+        custom.classList.remove("hide"); custom.focus(); custom.select();
+      } else {
+        custom.classList.add("hide");
+        custom.value = sel.value;
+        SITE_CONTENT.hero[i].title = sel.value;
+        const img = $(`[data-hero="${i}"] .lp-img-thumb img`); if(img) img.alt = sel.value;
+      }
+    });
+  });
+  $$("[data-hero-title]").forEach(function(inp){
+    const i = +inp.dataset.heroTitle;
+    inp.addEventListener("input", function(){
+      SITE_CONTENT.hero[i].title = inp.value;
+    });
+    /* Done typing: fold the name back into the dropdown and hide the box. */
+    const finish = function(){
+      const v = inp.value.trim();
+      if(!v){ inp.focus(); toast("Give the slide a name.", "warn"); return; }
+      SITE_CONTENT.hero[i].title = v;
+      $("#lp-hero-grid").innerHTML = renderHeroImageCards();
+      wireLandingImages();
+    };
+    inp.addEventListener("keydown", function(e){ if(e.key === "Enter"){ e.preventDefault(); finish(); } });
+    inp.addEventListener("blur", function(){ if(!inp.classList.contains("hide")) finish(); });
   });
   $$("[data-hero-clear]").forEach(function(btn){
     btn.addEventListener("click", function(){
@@ -3431,6 +3102,8 @@ function wireFAQButtons(){
 }
 
 function saveLanding(){
+  SITE_CONTENT.heroText     = readHeroText();
+  if(!SITE_CONTENT.heroText.tagline){ toast("The header tagline cannot be empty.", "err"); return; }
   SITE_CONTENT.about        = $("#lp-about").value;
   SITE_CONTENT.vision       = $("#lp-vision").value;
   SITE_CONTENT.mission      = $("#lp-mission").value;
@@ -3473,20 +3146,22 @@ function saveLanding(){
   const restore = btn ? EbUI.busy(btn, "Saving…") : () => {};
 
   EbApi.post("content/save.php", {
+    heroText: SITE_CONTENT.heroText,
     about:   SITE_CONTENT.about,
     vision:  SITE_CONTENT.vision,
     mission: SITE_CONTENT.mission,
     contact: SITE_CONTENT.contact,
     faqs:    (SITE_CONTENT.faqs || []).filter(f => (f.q || "").trim() && (f.a || "").trim()),
     /* Paths, not images. `img` holds whatever api/uploads/image.php returned. */
-    hero:     (SITE_CONTENT.hero || []).map(h => ({ title: h.title, image: h.img || "" })),
+    hero:     (SITE_CONTENT.hero || []).map(h => ({ id: h.id, title: String(h.title || "").trim(), image: h.img || "" })),
     featured: SITE_CONTENT.featured,
     payment:  SITE_CONTENT.payment,
   }).then(({ data }) => {
     toast("Landing page saved: " + (data.updated || []).join(", ") + ".", "ok");
     updateStorageMeter();
   }).catch(err => {
-    toast("Could not save landing content: " + (err.fields.hero || err.fields.featured || err.fields.payment || err.message), "err");
+    const f = err.fields || {};
+    toast("Could not save landing content: " + (f.hero_tagline || f.hero_highlight || f.hero_lead || f.hero || f.featured || f.payment || err.message), "err");
   }).finally(restore);
 }
 
@@ -3561,22 +3236,7 @@ function renderProductAdmin(){
     <div class="product-admin-card ${p.archived?"archived":""}">
       <div class="pac-thumb">
         ${src
-          /* NOT loading="lazy", deliberately.
-
-             It was, because this grid renders the WHOLE catalogue at once and
-             there is no pagination here. The cost was the defect this comment
-             replaces: saving a photo re-renders this grid in place, and the
-             freshly-inserted lazy <img> never fetched — the card kept showing
-             the empty-state camera while Point of Sale, which does not set the
-             attribute, showed the same photo immediately. "It saved everywhere
-             except the screen I saved it on" is the worst possible reading of a
-             successful write, and it sent us looking at the uploader.
-
-             Affordable to drop: every image here has been through
-             api/uploads/image.php, which caps the longest edge at 1600px and
-             re-encodes to WebP q82 — tens of KB each, not hundreds. Restore
-             lazy loading only together with pagination or an IntersectionObserver
-             that is re-armed after each render. */
+          /* Not lazy-loaded, so a newly saved photo shows immediately in this grid (images are small WebP). */
           ? `<img src="${escHtml(src)}" alt="${escHtml(p.name)}">`
           : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`}
       </div>
@@ -3612,12 +3272,29 @@ function renderProductAdmin(){
 function productModalBody(p){
   const allCats = [...new Set(PRODUCTS.map(x=>x.cat))];
   const catOpts = allCats.map(c=>`<option ${p&&p.cat===c?"selected":""}>${escHtml(c)}</option>`).join("");
+  const n = p?.nutrition || {};
+  const nutInput = (key, label, unit) => `
+      <div class="field nut-field"><label for="m-nut-${key}">${label}</label>
+        <div class="unit-input"><input class="control" type="number" min="0" step="any" id="m-nut-${key}" data-nut="${key}" value="${escHtml(n[key] ?? "")}" placeholder="—"/><span>${unit}</span></div>
+      </div>`;
   return `
-    <div class="field"><label>Product Name</label><input class="control" id="m-prod-name" value="${escHtml(p?.name||"")}" placeholder="Product name"/><span class="field-error" id="m-prod-name-err"></span></div>
-    <div class="field"><label>Category</label><select class="control" id="m-prod-cat">${catOpts}</select></div>
-    <div class="field"><label>Price (₱)</label><input class="control" type="number" id="m-prod-price" value="${p?.price||""}" min="0"/></div>
+  <div class="prod-form">
+  <div class="pf-col">
+  <section class="pf-section">
+    <h4 class="pf-title">Basic details</h4>
+    <div class="field"><label for="m-prod-name">Product Name</label><input class="control" id="m-prod-name" value="${escHtml(p?.name||"")}" placeholder="Product name"/><span class="field-error" id="m-prod-name-err"></span></div>
+    <div class="pf-grid pf-grid-3">
+      <div class="field"><label for="m-prod-cat">Category</label><select class="control" id="m-prod-cat">${catOpts}</select></div>
+      <div class="field"><label for="m-prod-price">Price</label>
+        <div class="unit-input unit-pre"><span>₱</span><input class="control" type="number" id="m-prod-price" value="${p?.price||""}" min="0"/></div></div>
+      <div class="field"><label for="m-prod-weight">Net Weight</label>
+        <div class="unit-input"><input class="control" type="number" id="m-prod-weight" value="${p?.weightG ?? ""}" min="1" step="1" placeholder="e.g. 500"/><span>g</span></div>
+        <span class="field-error" id="m-prod-weight-err"></span></div>
+    </div>
+  </section>
+  <section class="pf-section">
+    <h4 class="pf-title">Product image</h4>
     <div class="field">
-      <label>Product Image</label>
       <!-- has-image is the ONE switch for this field: it hides the placeholder,
            shows the preview and the Change/Remove pair, and turns the zone's
            click-to-upload off. The styles it drives are .img-* in portal.css —
@@ -3651,16 +3328,63 @@ function productModalBody(p){
         <input type="file" id="m-prod-image" class="img-file" accept="image/png,image/jpeg,image/webp"/>
       </div>
     </div>
-    <div class="field"><label>Description</label><textarea class="control" id="m-prod-desc" rows="3">${escHtml(p?.desc||"")}</textarea></div>
-  `;
+  </section>
+  </div>
+  <div class="pf-col">
+  <section class="pf-section">
+    <h4 class="pf-title">Nutrition facts <small>per serving · optional</small></h4>
+    <div class="pf-grid pf-grid-2">
+      <div class="field"><label for="m-nut-serving_size">Serving Size</label><input class="control" id="m-nut-serving_size" data-nut="serving_size" maxlength="40" value="${escHtml(n.serving_size ?? "")}" placeholder="e.g. 100 g (1 fillet)"/></div>
+      <div class="field"><label for="m-nut-servings">Servings per Pack</label><input class="control" type="number" min="0" step="any" id="m-nut-servings" data-nut="servings" value="${escHtml(n.servings ?? "")}" placeholder="—"/></div>
+    </div>
+    <div class="pf-grid pf-grid-4 nut-grid">
+      ${nutInput("calories","Calories","kcal")}
+      ${nutInput("protein","Protein","g")}
+      ${nutInput("fat","Total Fat","g")}
+      ${nutInput("sat_fat","Saturated Fat","g")}
+      ${nutInput("carbs","Carbohydrates","g")}
+      ${nutInput("sugar","Sugars","g")}
+      ${nutInput("cholesterol","Cholesterol","mg")}
+      ${nutInput("sodium","Sodium","mg")}
+    </div>
+    <span class="field-error" id="m-nut-err"></span>
+  </section>
+  <section class="pf-section">
+    <h4 class="pf-title">Description</h4>
+    <div class="field"><textarea class="control" id="m-prod-desc" rows="4" aria-label="Description" placeholder="Short description shown on the storefront">${escHtml(p?.desc||"")}</textarea></div>
+  </section>
+  </div>
+  </div>`;
+}
+
+/* Weight + nutrition fields, shared by Add and Edit. Blank inputs are sent as
+   blank; the server drops them, so an all-empty label stores NULL. */
+function productLabelPayload(){
+  const nutrition = {};
+  document.querySelectorAll(".prod-form [data-nut]").forEach(el=>{
+    nutrition[el.dataset.nut] = el.value.trim();
+  });
+  return { net_weight_g: $("#m-prod-weight").value.trim(), nutrition };
+}
+
+function showProductFieldErrors(err){
+  if(!err.isValidation) return false;
+  const f = err.fields || {};
+  if(f.name) $("#m-prod-name-err").textContent = f.name;
+  if(f.net_weight_g) $("#m-prod-weight-err").textContent = f.net_weight_g;
+  if(f.nutrition) $("#m-nut-err").textContent = f.nutrition;
+  if(f.image) toast(f.image, "err");
+  return !!(f.name || f.net_weight_g || f.nutrition || f.image);
 }
 
 function openAddProductModal(){
   openModal({
     title: "Add Product",
+    large: true,
     body: productModalBody(null),
     confirmLabel: "Add Product",
     onConfirm: async ()=>{
+      document.querySelectorAll(".prod-form .field-error").forEach(e=>e.textContent="");
       const name = $("#m-prod-name").value.trim();
       if(!name){ $("#m-prod-name-err").textContent="Name required."; return; }
       /* The id, opening stock, rating and sold count are the server's to set.
@@ -3674,15 +3398,13 @@ function openAddProductModal(){
           category_id: cat ? cat.id : null,
           price: +$("#m-prod-price").value || 0,
           description: $("#m-prod-desc").value.trim(),
-          /* data-path, not src. src is resolved for this page; data-path is the
-             canonical value the database stores. */
+          /* data-path holds the stored path; src is resolved for this page. */
           image: $("#m-prod-preview").dataset.path || null,
+          ...productLabelPayload(),
         });
         await loadCatalog();
       } catch(err){
-        if(err.isValidation && err.fields.name) $("#m-prod-name-err").textContent = err.fields.name;
-        else if(err.isValidation && err.fields.image) toast(err.fields.image, "err");
-        else toast(err.message, "err");
+        if(!showProductFieldErrors(err)) toast(err.message, "err");
         return;   /* modal stays open so the entered values are not lost */
       }
       closeModal();
@@ -3690,6 +3412,7 @@ function openAddProductModal(){
       renderProductAdmin();
     }
   });
+  $("#modal").classList.add("modal-product");   /* reset by the next openModal */
   setTimeout(attachImagePreview, 0);
 }
 
@@ -3697,9 +3420,11 @@ function openEditProductModal(p){
   if(!p) return;
   openModal({
     title: "Edit Product",
+    large: true,
     body: productModalBody(p),
     confirmLabel: "Save Changes",
     onConfirm: async ()=>{
+      document.querySelectorAll(".prod-form .field-error").forEach(e=>e.textContent="");
       const catName = $("#m-prod-cat").value;
       const cat = CATEGORIES_DATA.find(c => c.name === catName);
       try {
@@ -3720,12 +3445,11 @@ function openEditProductModal(p){
              field on every save is what makes the distinction usable; do not
              "optimise" it away to only-when-changed. */
           image: $("#m-prod-preview").dataset.path || null,
+          ...productLabelPayload(),
         });
         await loadCatalog();
       } catch(err){
-        if(err.isValidation && err.fields.name) $("#m-prod-name-err").textContent = err.fields.name;
-        else if(err.isValidation && err.fields.image) toast(err.fields.image, "err");
-        else toast(err.message, "err");
+        if(!showProductFieldErrors(err)) toast(err.message, "err");
         return;
       }
       closeModal();
@@ -3733,6 +3457,7 @@ function openEditProductModal(p){
       renderProductAdmin();
     }
   });
+  $("#modal").classList.add("modal-product");   /* reset by the next openModal */
   setTimeout(attachImagePreview, 0);
 }
 
@@ -3910,9 +3635,7 @@ function renderVarieties(){
       title:"Archive Variety",
       body:`<p>Archive <strong>${escHtml(cat.name)}</strong>?</p>`,
       confirmLabel:"Archive", confirmClass:"btn-ghost-danger",
-      /* The server refuses this while active products still use the variety,
-         and says how many. That check cannot live here — the browser is not
-         what other clients talk to. */
+      /* The server refuses archiving a variety that still has active products. */
       onConfirm: async ()=>{
         try {
           await EbApi.post("categories/archive.php", { id: cat.id, archived: true });
@@ -3953,9 +3676,7 @@ function renderVarieties(){
   });
 }
 
-/* ============================================================
-   MODULE: BATCH TRACKING & QA TRACEABILITY
-   ============================================================ */
+/* ===== MODULE: BATCH TRACKING & QA TRACEABILITY ===== */
 function qaStatusBadge(status){
   const MAP = {
     passed:  { cls:"badge-ok",   label:"Certified" },
@@ -3977,12 +3698,7 @@ function batchQtyStatus(remaining, total){
 function batchRow(b){
   const p = PRODUCTS.find(x=>x.id===b.productId);
   const expiryDate = b.expiryDate;
-  /* From the server, which computes it as DATEDIFF(expiry_date, CURDATE()).
-
-     This line read `- new Date("2026-06-17T00:00:00")` — days-to-expiry
-     measured against a frozen constant, so the Batch Tracking screen's "days
-     left" stopped moving in June 2026. A lot that expired weeks ago still
-     showed a comfortable margin. */
+  /* Days to expiry come from the server (DATEDIFF against CURDATE()). */
   const daysLeft = typeof b.daysToExpiry === "number"
     ? b.daysToExpiry
     : Math.round((parseYmd(expiryDate) - parseYmd(dAgo(0))) / 864e5);
@@ -4053,6 +3769,10 @@ function renderBatches(){
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           Edit
         </button>
+        <button class="btn btn-ghost btn-sm" data-trace-batch="${escHtml(b.lotCode)}" title="Find who bought this batch">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          Trace
+        </button>
       </div></td>
     </tr>`).join("") || `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:32px">No batches match your search.</td></tr>`;
 
@@ -4101,6 +3821,9 @@ function renderBatches(){
   tbody.querySelectorAll("[data-edit-batch]").forEach(btn=>{
     btn.addEventListener("click", ()=> openEditBatchModal(BATCHES.find(x=>String(x.id) === btn.dataset.editBatch)));
   });
+  tbody.querySelectorAll("[data-trace-batch]").forEach(btn=>{
+    btn.addEventListener("click", ()=> openBatchTrace(btn.dataset.traceBatch));
+  });
 
   /* toolbar wiring */
   if($("#search-batches")) $("#search-batches").oninput = ()=>{ adminState.batchPage = 1; renderBatches(); };
@@ -4114,6 +3837,8 @@ function renderBatches(){
   if(addBtn) addBtn.onclick = openAddBatchModal;
   const exportBtn = $("#export-batches-btn");
   if(exportBtn) exportBtn.onclick = exportBatchesCSV;
+  const traceBtn = $("#trace-batch-btn");
+  if(traceBtn) traceBtn.onclick = () => openBatchTrace();
 }
 
 function nextBatchCode(){
@@ -4133,7 +3858,8 @@ function batchModalBody(b){
   const labOpts = Object.entries(LAB_STATUSES).map(([val,label])=>
     `<option value="${val}" ${b?.labStatus===val?"selected":""}>${escHtml(label)}</option>`
   ).join("");
-  const todayStr = "2026-06-17";
+  const todayStr = lotToday();
+  const pid = b ? b.productId : (PRODUCTS.find(p=>!p.archived) || {}).id;
   return `
     <div class="field"><label>Target Product SKU *</label>
       <select class="control" id="m-batch-product">${opts}</select>
@@ -4145,9 +3871,11 @@ function batchModalBody(b){
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;min-width:0">
       <div class="field" style="min-width:0"><label>Harvest Date *</label><input class="control" type="date" id="m-batch-harvest" value="${b?.harvestDate||todayStr}" style="min-width:0;padding-inline:10px"/></div>
-      <div class="field" style="min-width:0"><label>Production Date *</label><input class="control" type="date" id="m-batch-prod" value="${b?.prodDate||todayStr}" style="min-width:0;padding-inline:10px"/></div>
-      <div class="field" style="min-width:0"><label>Expiration Date *</label><input class="control" type="date" id="m-batch-expiry" value="${b?.expiryDate||addDays(todayStr,365)}" style="min-width:0;padding-inline:10px"/></div>
+      <div class="field" style="min-width:0"><label>Production Date *</label><input class="control" type="date" id="m-batch-prod" value="${b?.prodDate||todayStr}" style="min-width:0;padding-inline:10px"/>
+        <span class="field-error" id="m-batch-prod-err"></span></div>
+      <div class="field" style="min-width:0"><label>Expiration Date <span class="muted" style="font-weight:400">(automatic)</span></label><input class="control lot-auto-date" type="date" id="m-batch-expiry" value="${b?.expiryDate||autoExpiry(pid, todayStr)}" disabled style="min-width:0;padding-inline:10px"/></div>
     </div>
+    <span class="field-hint" id="m-batch-expiry-hint" style="display:block;margin:-6px 0 12px"></span>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div class="field"><label>Quantity Produced (Units) *</label><input class="control" type="number" id="m-batch-total" value="${b?.totalQty||""}" min="0" placeholder="e.g. 300"/></div>
       <div class="field"><label>Quality Grade / Certificate *</label><select class="control" id="m-batch-grade">${gradeOpts}</select></div>
@@ -4160,25 +3888,35 @@ function batchModalBody(b){
   `;
 }
 
+/* The modal's production date is limited to a month back; the expiry follows it (an existing batch keeps its dates
+   until its product or production date is changed). */
+function wireBatchDates(b){
+  const prod = $("#m-batch-prod"), exp = $("#m-batch-expiry"), hint = $("#m-batch-expiry-hint"), sel = $("#m-batch-product");
+  const keep = ()=> b && sel.value === b.productId && prod.value === b.prodDate;
+  const sync = wireLotDates(prod, exp, hint, ()=> sel.value);
+  /* An older batch's own production date may sit outside the window; keep it selectable while unchanged. */
+  if(b && b.prodDate && b.prodDate < prod.min) prod.min = b.prodDate;
+  const syncAll = ()=>{ sync(); if(keep()){ exp.value = b.expiryDate; window.EbDate?.sync(exp); hint.textContent = "Unchanged dates are kept as recorded."; } };
+  sel.addEventListener("change", syncAll);
+  prod.addEventListener("change", syncAll);
+  syncAll();
+}
+
 function openAddBatchModal(){
   openModal({
     title:"Register Production Batch Code",
     body: batchModalBody(null),
     large: true,
+    onOpen: () => wireBatchDates(null),
     confirmLabel:"Register Batch Code",
     onConfirm: async ()=>{
       const lot = $("#m-batch-lot").value.trim();
       if(!lot){ $("#m-batch-lot-err").textContent = "Batch code required."; return; }
       if(BATCHES.some(x=>x.lotCode.toLowerCase()===lot.toLowerCase())){ $("#m-batch-lot-err").textContent = "Batch code already exists."; return; }
-      /* The locally-built batch object that used to live here is gone with the
-         optimistic insert it existed for. It also carried two hardcoded
-         "2026-06-17" harvest and production dates — bare string literals, so
-         the date sweep that caught `new Date("2026-06-17")` never saw them. */
-      /* D11: not added locally first. A duplicate lot code answers 409 and
-         the catch returns — which used to leave an invented batch sitting in
-         BATCHES, with an id the server had never issued, until the next reload.
-         The same defect as the add-customer row. loadInventoryData() below
-         brings back the real record, including the id the server assigned. */
+      const prodBad = prodDateProblem($("#m-batch-prod").value);
+      if(prodBad){ $("#m-batch-prod-err").textContent = prodBad; return; }
+      /* No locally built batch object; the server creates the record. */
+      /* Not added locally first; reload to get the real record and id. */
       try {
         await EbApi.post("batches/save.php", {
           lot_code: lot,
@@ -4186,17 +3924,10 @@ function openAddBatchModal(){
           harvest_date: $("#m-batch-harvest")?.value || null,
           production_date: $("#m-batch-prod").value,
           expiry_date: $("#m-batch-expiry").value,
-          /* #m-batch-total, not #m-batch-qty. The input is declared as
-             id="m-batch-total"; "m-batch-qty" matched nothing, so this line
-             threw "Cannot read properties of null" inside an async handler —
-             swallowed as an unhandled rejection. Registering a batch through
-             the UI did nothing at all, silently, while batches/save.php passed
-             every test aimed at it. */
+          /* The quantity input's id is m-batch-total. */
           total_qty: +$("#m-batch-total").value || 0,
           quality_grade: $("#m-batch-grade")?.value || null,
-          /* #m-batch-qa, not #m-batch-lab. The optional chaining hid this one:
-             the select never matched, so whatever QA status the inspector
-             chose was discarded and every batch saved as "pending". */
+          /* The QA status select's id is m-batch-qa. */
           lab_status: $("#m-batch-qa")?.value || "pending",
           qa_inspector: $("#m-batch-inspector")?.value || null,
           notes: $("#m-batch-notes")?.value || null,
@@ -4217,15 +3948,16 @@ function openEditBatchModal(b){
     title:`Edit Production Batch (${b.lotCode})`,
     body: batchModalBody(b),
     large: true,
+    onOpen: () => wireBatchDates(b),
     confirmLabel:"Save Changes",
     onConfirm: async ()=>{
       const lot = $("#m-batch-lot").value.trim();
       if(!lot){ $("#m-batch-lot-err").textContent = "Batch code required."; return; }
       if(BATCHES.some(x=>x.id!==b.id && x.lotCode.toLowerCase()===lot.toLowerCase())){ $("#m-batch-lot-err").textContent = "Batch code already exists."; return; }
-      /* D11: the batch object is not touched until the server has accepted
-         the change. Assigning these ten fields first meant a rejected save
-         still showed the new lot code, dates and QA status on screen — the row
-         claimed an edit the database had refused. */
+      const changed = $("#m-batch-product").value !== b.productId || $("#m-batch-prod").value !== b.prodDate;
+      const prodBad = changed ? prodDateProblem($("#m-batch-prod").value) : "";
+      if(prodBad){ $("#m-batch-prod-err").textContent = prodBad; return; }
+      /* Update the batch on screen only after the server accepts the change. */
       try {
         await EbApi.post("batches/save.php", {
           id: b.id,
@@ -4269,9 +4001,155 @@ function exportBatchesCSV(){
   toast("CSV exported.", "ok");
 }
 
+/* ===== BATCH TRACE (recall) =====
+   Pick a product, then one of its batches: api/batches/trace.php lists every order that took units from that batch —
+   who bought them, how many, where they went and how to reach them — so a spoiled or recalled batch can be followed up. */
+function openBatchTrace(lotCode){
+  const pre = lotCode ? BATCHES.find(b => b.lotCode === lotCode) : null;
+  /* Only products that have at least one batch on record. */
+  const withBatches = PRODUCTS.filter(p => BATCHES.some(b => b.productId === p.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const productOpts = withBatches.map(p =>
+    `<option value="${escHtml(p.id)}" ${pre && pre.productId === p.id ? "selected" : ""}>${escHtml(p.name)}</option>`).join("");
+
+  openModal({
+    title: "Trace a Batch",
+    large: true,
+    confirmLabel: "Trace",
+    cancelLabel: "Close",
+    body: `
+      <p class="field-hint" style="margin:0 0 12px">Find every customer who received units from a batch — for a
+        complaint, a spoiled product or a recall. Choose the product, then its batch code.</p>
+      <div class="bt-pick">
+        <div class="field"><label for="bt-product">Product</label>
+          <select class="control" id="bt-product">${pre ? "" : `<option value="">Choose a product</option>`}${productOpts}</select></div>
+        <div class="field"><label for="bt-lot">Batch code</label>
+          <select class="control" id="bt-lot"></select></div>
+      </div>
+      <span class="field-error" id="bt-err" role="alert"></span>
+      <div id="bt-results" class="bt-results"></div>`,
+    onConfirm: runTrace,
+    onOpen(){
+      $("#bt-product").addEventListener("change", () => { fillLots(); $("#bt-results").innerHTML = ""; });
+      $("#bt-lot").addEventListener("change", () => { $("#bt-results").innerHTML = ""; });
+      fillLots(pre ? pre.lotCode : null);
+      if(pre) runTrace();
+    },
+  });
+
+  /* The chosen product's batches, newest first, with stock left and expiry so the right one is easy to spot. */
+  function fillLots(selected){
+    const pid = $("#bt-product").value;
+    const lots = BATCHES.filter(b => b.productId === pid)
+      .sort((a, b) => String(b.prodDate || "").localeCompare(String(a.prodDate || "")) || b.lotCode.localeCompare(a.lotCode));
+    const sel = $("#bt-lot");
+    sel.innerHTML = pid
+      ? (lots.map(b => `<option value="${escHtml(b.lotCode)}" ${selected === b.lotCode ? "selected" : ""}>${escHtml(b.lotCode)} — ${b.remainingQty}/${b.totalQty} left · expires ${escHtml(fmtDate(b.expiryDate))}</option>`).join("")
+         || `<option value="">No batches for this product</option>`)
+      : `<option value="">Choose a product first</option>`;
+    sel.disabled = !pid || !lots.length;
+    if(window.EbSelect && EbSelect.sync) EbSelect.sync(sel);
+  }
+
+  async function runTrace(){
+    const lot = $("#bt-lot").value;
+    const err = $("#bt-err");
+    err.textContent = "";
+    if(!lot){ err.textContent = "Choose the product and its batch code."; return; }
+    const box = $("#bt-results");
+    box.innerHTML = `<p class="field-hint">Looking up who bought ${escHtml(lot)}…</p>`;
+    const btn = $("#modal-footer .btn-gold");
+    const restore = EbUI.busy(btn, "Tracing…");
+    try {
+      const { data } = await EbApi.get("batches/trace.php", { lot });
+      box.innerHTML = traceResultsHtml(data);
+      $("#bt-export")?.addEventListener("click", () => exportTraceCsv(data));
+    } catch(e){
+      box.innerHTML = "";
+      err.textContent = e.message;
+    } finally { restore(); }
+  }
+}
+
+function traceResultsHtml(d){
+  const b = d.batch, s = d.summary;
+  const stat = (label, val, warn) => `<div class="mini-stat"><span class="mini-stat-label">${label}</span><span class="mini-stat-val${warn ? " bt-warn" : ""}">${val}</span></div>`;
+  const status = st => `<span class="badge ${st === "completed" ? "badge-ok" : st === "cancelled" ? "badge-crit" : "badge-info"}">${escHtml(STATUS_LABEL[st] || st)}</span>`;
+  const rows = d.buyers.map(x => `
+    <tr>
+      <td><div class="mono">${escHtml(x.orderId)}</div><div class="bt-contact">${escHtml(fmtDateTime(x.date))}</div></td>
+      <td><div class="td-name">${escHtml(x.customer || "—")}${x.retailer ? ` <span class="badge badge-warn">Retailer</span>` : ""}</div>
+        <div class="bt-contact">${[x.contact, x.email].filter(Boolean).map(escHtml).join(" · ") || "No contact on record"}</div></td>
+      <td class="bt-channel">${escHtml(x.channel)}<div class="bt-contact">${escHtml(x.fulfil)}</div></td>
+      <td class="bt-where" title="${escHtml(x.shipTo || "")}">
+        <div class="bt-place">${escHtml(x.fulfil === "Delivery" ? (x.area || x.shipTo || "—") : "Picked up at the store")}</div>
+        ${x.tracking ? `<div class="bt-contact">Tracking ${escHtml(x.tracking)}</div>` : ""}</td>
+      <td class="num"><strong>${x.qty}</strong></td>
+      <td class="num">${x.returned ? `<span class="bt-warn">${x.returned}</span>` : "0"}</td>
+      <td>${status(x.status)}</td>
+    </tr>`).join("");
+
+  return `
+    <div class="bt-head">
+      <div><div class="bt-lot">${escHtml(b.lotCode)}</div>
+        <div class="bt-meta">${escHtml(b.productName)} · produced ${escHtml(fmtDate(b.productionDate))} · expires ${escHtml(fmtDate(b.expiryDate))}
+          · ${b.totalQty} made, ${b.remainingQty} still in stock · QA ${escHtml(LAB_STATUSES[b.labStatus] || b.labStatus)}</div></div>
+      ${d.buyers.length ? `<button type="button" class="btn btn-ghost btn-sm" id="bt-export">Export recall list (CSV)</button>` : ""}
+    </div>
+    <div class="mini-stat-group bt-stats">
+      ${stat("Orders", s.orders)}
+      ${stat("Customers", s.customers)}
+      ${stat("Units sold", s.unitsSold)}
+      ${stat("Returned", s.unitsReturned)}
+      ${stat("Still with buyers", s.unitsOut, s.unitsOut > 0)}
+    </div>
+    ${d.buyers.length ? `
+      <div class="table-wrap"><table class="data-table bt-table">
+        <thead><tr><th>Order &amp; date</th><th>Customer &amp; contact</th><th>Channel</th><th>Went to</th><th class="num">Qty</th><th class="num">Returned</th><th>Status</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`
+    : `<div class="alert-empty"><strong>No sales recorded from this batch yet.</strong>
+        <span>Orders placed before batch tracking started have no batch on record, so they cannot be traced here.</span></div>`}`;
+}
+
+/* The recall list as a CSV: one row per order, with the contact details needed to reach each buyer. */
+function exportTraceCsv(d){
+  const b = d.batch;
+  const header = ["Batch", "Product", "Order", "Date", "Customer", "Contact", "Email", "Channel", "Fulfilment", "Went to", "Tracking", "Qty", "Returned", "Status"];
+  const rows = d.buyers.map(x => [b.lotCode, b.productName, x.orderId, x.date, x.customer || "", x.contact || "", x.email || "",
+    x.channel, x.fulfil, x.shipTo || "", x.tracking || "", x.qty, x.returned, STATUS_LABEL[x.status] || x.status]);
+  const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const csv = "﻿" + [header, ...rows].map(r => r.map(esc).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `batch-recall-${b.lotCode}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast("Recall list exported.", "ok");
+}
+
 /* ============================================================
    MODULE: INVENTORY REPORT
    ============================================================ */
+const fmtNum = n => Number(n).toLocaleString("en-PH", { maximumFractionDigits: 2 });
+
+/* Legend lines for the automatic rules (meta.inventoryModel from products/list.php, api/core/Inventory.php):
+   stock level by days of stock left at the product's sales rate, movement against the store's average product. */
+function paintInvLegend(m){
+  const item = (cls, text) => `<span class="inv-legend-item"><span class="inv-dot ${cls}"></span> ${text}</span>`;
+  const lv = $("#inv-legend");
+  const avg = m.averageUnits > 0 ? `${fmtNum(Math.ceil(m.averageUnits))}+ sold, the store average` : "at or above the store average";
+  if(lv) lv.innerHTML =
+    item("inv-ok",   "Safe") +
+    item("inv-warn", "Low") +
+    item("inv-crit", "Critical") +
+    item("inv-out",  "Out of Stock") +
+    `<span class="inv-legend-sep" aria-hidden="true"></span>` +
+    item("inv-ok",   `Fast Moving (${avg})`) +
+    item("inv-warn", "Slow Moving (sold, below average)") +
+    item("inv-muted","Non-Moving (none sold)");
+}
+
 /* Inventory Report — server-paged.
 
    Stock-level and movement filtering moved into the query. Filtering a page
@@ -4300,22 +4178,12 @@ function renderInventory(){
       const inv = p.inventory || {};
       const risk = inv.expiryRisk;
 
-      /* Cover is the answer to "how long does this last", so a product with no
-         sales in the window has no answer — not "forever". Shown as a dash
-         with the reason on hover rather than a number that would sort as the
-         safest thing in the catalogue. */
-      const cover = inv.daysCover == null
-        ? `<span class="muted" title="No sales in ${escHtml(inv.windowLabel || "the window")} — no rate to measure cover against.">—</span>`
-        : `<span title="${escHtml(inv.levelReason || "")}">${inv.daysCover}d</span>`;
-
       return `<tr>
       <td class="td-name">${escHtml(p.name)}${p.archived?` <span class="badge badge-muted" style="font-size:.62rem">archived</span>`:""}</td>
       <td class="muted">${escHtml(p.cat)}</td>
       <td><strong>${p.stock}</strong></td>
       <td><span class="badge ${si.cls}"${si.reason?` title="${escHtml(si.reason)}"`:""}>${si.label}</span></td>
-      <td>${cover}</td>
-      <td><span class="badge ${mt.cls}">${mt.label}</span></td>
-      <td class="muted">${(inv.perMonth ?? 0).toFixed(1)}/mo</td>
+      <td><span class="badge ${mt.cls}"${inv.perMonth != null ? ` title="${(inv.perMonth).toFixed(1)} sold per month"` : ""}>${mt.label}</span></td>
       <td>${risk
         ? `<span class="badge badge-warn" title="${escHtml(risk.note || "")}">${risk.daysToExpiry < 0 ? "Expired" : "Will expire"}</span>`
         : `<span class="muted">—</span>`}</td>
@@ -4324,11 +4192,21 @@ function renderInventory(){
     </tr>`;
     },
     {
-      colspan: 10,
+      colspan: 8,
       empty: { title: "No products match filters", hint: "Adjust the search or filters." },
-      after: (rows, meta) => paintStockWindowNote("#inv-window-note", meta),
+      after: (rows, meta) => {
+        paintStockWindowNote("#inv-window-note", meta);
+        if(meta.inventoryModel){ adminState.invModel = meta.inventoryModel; paintInvLegend(meta.inventoryModel); }
+      },
     }
   );
+
+  /* Export buttons load the exporter on first use. */
+  const exportInv = kind => import("./inventory-export.js")
+    .then(m => m.openInventoryExport(kind))
+    .catch(err => toast("Could not open the export: " + err.message, "err"));
+  if($("#inv-export-pdf")) $("#inv-export-pdf").onclick = () => exportInv("pdf");
+  if($("#inv-export-csv")) $("#inv-export-csv").onclick = () => exportInv("csv");
 
   const reset = ()=>{ adminState.invReportPager.page = 1; renderInventory(); };
   [["#search-inventory","input",true],["#filter-inventory","change",false],["#filter-movement","change",false],["#filter-expiring","change",false]]
@@ -4468,7 +4346,30 @@ function wireProfileForms(){
   if(pw && !pw.dataset.wired){
     pw.dataset.wired = "1";
     pw.addEventListener("submit", onPasswordSave);
+    adminState.pwMissing = mountPwChecklist($("#pf-new"));
   }
+}
+
+/* New-password rules, mirroring Auth::passwordProblem() in api/core/Auth.php (and PW_RULES in the storefront's site.js). */
+const PW_RULES = [
+  { id: "len",   label: "At least 8 characters",       test: v => v.length >= 8 },
+  { id: "upper", label: "One uppercase letter (A–Z)",  test: v => /[A-Z]/.test(v) },
+  { id: "lower", label: "One lowercase letter (a–z)",  test: v => /[a-z]/.test(v) },
+  { id: "num",   label: "One number (0–9)",            test: v => /[0-9]/.test(v) },
+  { id: "sym",   label: "One symbol (e.g. ! @ # $ %)", test: v => /[^A-Za-z0-9]/.test(v) },
+];
+/* Checklist under a new-password input, ticking each rule as it is met; returns a function giving the first unmet rule (or null). */
+function mountPwChecklist(input){
+  if(!input) return () => null;
+  const ul = document.createElement("ul");
+  ul.className = "pw-rules";
+  ul.setAttribute("aria-live", "polite");
+  ul.innerHTML = PW_RULES.map(r => `<li data-rule="${r.id}"><span class="pw-rule-ic" aria-hidden="true"></span>${r.label}</li>`).join("");
+  (input.closest(".pw-wrap") || input).insertAdjacentElement("afterend", ul);
+  const paint = () => PW_RULES.forEach(r => ul.querySelector(`[data-rule="${r.id}"]`).classList.toggle("is-met", r.test(input.value)));
+  input.addEventListener("input", paint);
+  paint();
+  return () => PW_RULES.find(r => !r.test(input.value)) || null;
 }
 
 /* Clear every field error on a form before a fresh submit, so a message from
@@ -4522,6 +4423,8 @@ async function onProfileSave(e){
 async function onPasswordSave(e){
   e.preventDefault();
   clearFieldErrors(["pf-current-err", "pf-new-err", "pf-confirm-err"]);
+  const miss = adminState.pwMissing && adminState.pwMissing();
+  if(miss){ $("#pf-new-err").textContent = `Your password needs: ${miss.label.toLowerCase()}.`; return; }
   const btn = $("#pf-pw-save");
   const restore = EbUI.busy(btn, "Updating…");
   try {
@@ -4533,6 +4436,9 @@ async function onPasswordSave(e){
     /* Cleared on success only. A failed attempt keeps what was typed, so a
        mistyped confirmation does not cost the other two fields as well. */
     ["#pf-current", "#pf-new", "#pf-confirm"].forEach(sel => { $(sel).value = ""; });
+    $("#pf-new").dispatchEvent(new Event("input"));
+    /* Hide the fields again after saving, so a new password is never left on screen. */
+    $$("#password-form .pw-toggle").forEach(b => { if(b.getAttribute("aria-pressed") === "true") b.click(); });
     toast("Password updated. Other devices signed in as you have been signed out.", "ok");
   } catch(err){
     showFieldErrors(err.fields, {
@@ -4595,11 +4501,14 @@ function renderTopProducts(rows, from, to){
 /* Where the Net figures in the Sales Report came from, stated rather than
    asked to be trusted: what was received on Net accounts in the period, and
    what was sold on terms but has not come in yet. */
-function renderCreditNote(c){
+function renderCreditNote(c, refunds){
   const el = $("#sales-credit-note");
   if(!el) return;
-  if(!c || (!c.received && !c.bookedCount)){ el.innerHTML = ""; return; }
-  el.innerHTML =
+  const refundText = refunds && refunds.amount
+    ? `Less <strong>${peso(refunds.amount)}</strong> refunded (${refunds.count} refund${refunds.count === 1 ? "" : "s"} paid out in this period). `
+    : "";
+  if(!c || (!c.received && !c.bookedCount)){ el.innerHTML = refundText; return; }
+  el.innerHTML = refundText +
     `Includes <strong>${peso(c.received)}</strong> received on Net accounts ` +
     `(${c.receivedCount} payment${c.receivedCount === 1 ? "" : "s"}). ` +
     (c.bookedCount
@@ -4609,6 +4518,12 @@ function renderCreditNote(c){
 
 function renderSales(range){
   adminState.salesRange = range;
+  /* Export buttons load the exporter on first use. */
+  const exportWith = kind => import("./sales-export.js")
+    .then(m => m.openSalesExport(kind))
+    .catch(err => toast("Could not open the export: " + err.message, "err"));
+  if($("#sales-export-pdf")) $("#sales-export-pdf").onclick = () => exportWith("pdf");
+  if($("#sales-export-csv")) $("#sales-export-csv").onclick = () => exportWith("csv");
   $$("[data-range]").forEach(btn=> btn.classList.toggle("active", btn.dataset.range===range));
   if(!$$("[data-range]").length) return;
 
@@ -4650,7 +4565,7 @@ function renderSales(range){
            was never read. Rendered here, in the same pass, so it cannot fall
            out of step with the totals above it. */
         renderTopProducts(data.topProducts, start, end);
-        renderCreditNote(data.credit);
+        renderCreditNote(data.credit, data.refunds);
       })
       .catch(err => console.warn("[sales]", err.message))
       .finally(() => { adminState._salesFetching = false; });
@@ -4696,6 +4611,8 @@ function renderSales(range){
   txs.filter(isRevenue).forEach(tx=>{ dateMap[tx.date]=(dateMap[tx.date]||0)+orderTotal(tx); });
   CREDIT_RECEIPTS.filter(r => r.paidDate >= start && r.paidDate <= end)
     .forEach(r => { dateMap[r.paidDate] = (dateMap[r.paidDate] || 0) + r.amount; });
+  REFUNDS_PAID.filter(r => r.date >= start && r.date <= end)
+    .forEach(r => { dateMap[r.date] = (dateMap[r.date] || 0) - r.amount; });
   const sortedDates = Object.keys(dateMap).sort();
   const chartData   = sortedDates.map(d=>dateMap[d]);
   const chartLabels = sortedDates.map(d=> new Date(d+"T00:00:00").toLocaleDateString("en-PH",{month:"short",day:"numeric"}));
@@ -4838,6 +4755,16 @@ function renderPayments(){
   const penaltyEl = $("#penalty-rate");
   if(penaltyEl) penaltyEl.value = adminState.penaltyRate;
 
+  /* Interest per Net term; editable only with credit.limits (Super Admin), shown read-only to everyone else. */
+  const INT_TERMS = ["net30","net60","net90"];
+  const canEditInt = EbRbac.can("credit.limits");
+  const paintInterest = ()=> INT_TERMS.forEach(t=>{
+    const el = $("#interest-rate-" + t); if(!el) return;
+    if(adminState.interestRates && document.activeElement !== el) el.value = adminState.interestRates[t];
+    el.readOnly = !canEditInt;
+  });
+  paintInterest();
+
   const filterEl = $("#pay-filter");
   if(filterEl && !filterEl.dataset.wired){
     filterEl.dataset.wired = "1";
@@ -4853,7 +4780,7 @@ function renderPayments(){
     a => {
       const [cls, label] = PAY_STATE_BADGE[a.state] || ["badge-warn", a.state];
       return `<tr class="${a.overdue ? "overdue-flag" : ""}">
-      <td class="td-name">${escHtml(a.name)}<div class="muted" style="font-size:.72rem">${escHtml(a.orderId || a.id)}</div></td>
+      <td class="td-name">${escHtml(a.name)}${a.tier ? ` <span class="pay-tier">${tierBadge(a.tier)}</span>` : ""}<div class="muted" style="font-size:.72rem">${escHtml(a.orderId || a.id)}</div></td>
       <td><span class="badge badge-info">${escHtml(a.scheme)}</span></td>
       <td>${peso(a.billed)}${a.penalty ? `<div class="muted" style="font-size:.72rem">+${peso(a.penalty)} penalty</div>` : ""}</td>
       <td>${peso(a.paidAmount)}${a.pendingCount ? `<div style="font-size:.72rem;color:var(--warn)">${a.pendingCount} waiting · ${peso(a.pendingAmount)}</div>` : ""}</td>
@@ -4872,14 +4799,18 @@ function renderPayments(){
       after: (rows, meta) => {
         PAYMENT_ACCOUNTS.length = 0; rows.forEach(r => PAYMENT_ACCOUNTS.push(r));
         if(meta.penaltyRate != null) adminState.penaltyRate = meta.penaltyRate;
+        if(meta.interestRates){ adminState.interestRates = meta.interestRates; paintInterest(); }
+        if(meta.creditLimits) adminState.creditLimits = meta.creditLimits;
         const sum = $("#pay-summary");
         if(sum){
-          sum.innerHTML = `
-            <span><strong>${peso(meta.outstanding || 0)}</strong> outstanding</span>
-            <span>${meta.overdueCount || 0} overdue</span>
-            <span>${meta.reviewCount
-              ? `<strong style="color:var(--warn)">${meta.reviewCount} payment${meta.reviewCount === 1 ? "" : "s"} waiting for review</strong> (${peso(meta.reviewAmount)})`
-              : "No payments waiting for review"}</span>`;
+          /* Four tiles: what is owed, what is late, what needs checking, and the tier budgets. */
+          const od = meta.overdueCount || 0, rv = meta.reviewCount || 0;
+          const tile = (cls, label, value, sub) => `<div class="pay-tile ${cls}"><span class="pay-tile-label">${label}</span><b class="pay-tile-val">${value}</b><small>${sub}</small></div>`;
+          sum.innerHTML =
+            tile("", "Outstanding", peso(meta.outstanding || 0), "Owed on open Net accounts")
+            + tile(od ? "is-bad" : "is-ok", "Overdue", od, od ? `account${od === 1 ? "" : "s"} past due` : "Nothing past due")
+            + tile(rv ? "is-warn" : "is-ok", "Waiting for review", rv, rv ? `${peso(meta.reviewAmount)} to verify` : "No payments to check")
+            + (meta.creditLimits ? `<div class="pay-tile pay-tile-budgets"><span class="pay-tile-label">Net budgets per tier</span><div class="pay-budgets">${TIERS.map(t => `<span class="pay-budget">${tierBadge(t)}<b>${peso(meta.creditLimits[t])}</b></span>`).join("")}</div></div>` : "");
         }
         wirePaymentRowActions();
       },
@@ -4901,6 +4832,78 @@ function renderPayments(){
       })
       .catch(err => toast(err.message, "err"));
   };
+
+  const saveInt = $("#save-interest-btn");
+  if(saveInt) saveInt.onclick = ()=>{
+    const body = {};
+    for(const t of INT_TERMS){
+      const v = $("#interest-rate-" + t).value.trim();
+      if(v === "" || isNaN(+v) || +v < 0 || +v > 100){ toast(`Enter a ${t.replace("net","Net ")} interest from 0 to 100%.`, "err"); return; }
+      body["interest_rate_" + t] = +v;
+    }
+    EbApi.post("settings/save.php", body)
+      .then(() => {
+        adminState.interestRates = { net30: body.interest_rate_net30, net60: body.interest_rate_net60, net90: body.interest_rate_net90 };
+        toast(`Interest saved: Net 30 ${body.interest_rate_net30}%, Net 60 ${body.interest_rate_net60}%, Net 90 ${body.interest_rate_net90}%. It applies to new Net orders.`, "ok");
+        renderPayments();
+      })
+      .catch(err => toast(err.message, "err"));
+  };
+}
+
+/* Super Admin only (credit.limits): the most a retailer of each tier may owe on Net terms at once. */
+async function openTierBudgets(){
+  const limits = await loadTierLimits();
+  if(!limits){ toast("Could not load the tier budgets. Try again.", "err"); return; }
+  const hints = {
+    Bronze: "New partners start here.",
+    Silver: "For partners who pay on time.",
+    Gold:   "For the most trusted partners.",
+  };
+  openModal({
+    title: "Tier Credit Budgets",
+    body: `
+      <p class="tb-intro">The most a retailer may owe on <strong>Net 30 / 60 / 90</strong> at once. A new Net order is refused when their unpaid Net balances plus that order would go above their tier's budget.</p>
+      <div class="tb-list">
+        ${TIERS.map(t => `
+          <div class="tb-card tb-${t.toLowerCase()}">
+            <div class="tb-who">
+              <span class="tb-medal" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="6"/><path d="M8.5 14 7 22l5-3 5 3-1.5-8"/></svg></span>
+              <div><label class="tb-name" for="tb-${t}">${t} Tier</label><div class="tb-hint">${hints[t]}</div></div>
+            </div>
+            <div class="tb-amt">
+              <span class="tb-peso" aria-hidden="true">₱</span>
+              <input class="control" type="number" id="tb-${t}" value="${Math.round(limits[t])}" min="0" step="100" inputmode="numeric"/>
+            </div>
+            <span class="field-error tb-err" data-tb-err="${t}"></span>
+          </div>`).join("")}
+      </div>
+      <p class="tb-foot">Budgets must go up by tier (Bronze ≤ Silver ≤ Gold). Changes apply to each retailer's next Net order; orders already placed are not affected.</p>`,
+    confirmLabel: "Save Budgets",
+    async onConfirm(){
+      $$("[data-tb-err]").forEach(e => e.textContent = "");
+      const payload = {};
+      TIERS.forEach(t => { payload[t] = $("#tb-" + t).value.trim(); });
+      if(!(+payload.Bronze <= +payload.Silver && +payload.Silver <= +payload.Gold)){
+        $('[data-tb-err="Silver"]').textContent = "Budgets must go up by tier: Bronze ≤ Silver ≤ Gold.";
+        return;
+      }
+      const btn = $("#modal-footer .btn-gold");
+      const restore = EbUI.busy(btn, "Saving…");
+      try {
+        const { data } = await EbApi.post("payments/tiers.php", { limits: payload });
+        adminState.creditLimits = data.limits;
+        closeModal();
+        toast(data.changed.length ? "Tier budgets saved." : "Nothing changed.", "ok");
+        /* Refresh the tier cards' amounts on B2B, which shows the budgets. */
+        renderB2B();
+      } catch(err){
+        if(err.isValidation && err.fields){
+          Object.entries(err.fields).forEach(([k, msg]) => { const el = $(`[data-tb-err="${k}"]`); if(el) el.textContent = msg; });
+        } else toast(err.message, "err");
+      } finally { restore(); }
+    },
+  });
 }
 
 /* Row actions, wired after each page is drawn — the rows are rendered by
@@ -5016,15 +5019,38 @@ function openRecordPayment(id){
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="field"><label>Amount received</label><input class="control" type="number" step="0.01" min="0.01" max="${a.payable}" id="m-rp-amount" value="${a.payable.toFixed(2)}"><span class="field-error" id="m-rp-amount-err"></span></div>
         <div class="field"><label>Method</label><select class="control" id="m-rp-method"><option value="cash">Cash</option><option value="gcash">GCash</option><option value="bank">Bank Transfer</option></select></div>
-        <div class="field"><label>Reference number</label><input class="control" id="m-rp-ref" maxlength="100" placeholder="Required for GCash / bank"><span class="field-error" id="m-rp-ref-err"></span></div>
+        <div class="field" id="m-rp-ref-field"><label><span data-ref-label>Reference number</span></label><input class="control" id="m-rp-ref" maxlength="100"><span class="field-error" id="m-rp-ref-err"></span></div>
         <div class="field"><label>Date received</label><input class="control" type="date" id="m-rp-date" value="${today}" max="${today}"></div>
       </div>
       <div class="field"><label>Note (optional)</label><input class="control" id="m-rp-note" maxlength="500"></div>`,
     confirmLabel: "Record payment",
     confirmClass: "btn-ok",
+    /* GCash and bank each get their own reference field and rules; cash needs none. */
+    onOpen(){
+      const sel = $("#m-rp-method"), field = $("#m-rp-ref-field");
+      const ref = EbUI.splitRefField($("#m-rp-ref"), () => sel.value, field.querySelector("label"));
+      const sync = () => { field.hidden = sel.value === "cash"; ref.refresh(); $("#m-rp-ref-err").textContent = ""; };
+      sel.addEventListener("change", sync);
+      sync();
+    },
     onConfirm: async ()=>{
       $("#m-rp-amount-err").textContent = "";
       $("#m-rp-ref-err").textContent = "";
+      $("#m-rp-ref").classList.remove("is-invalid");
+      /* Mark the reference box and put the cursor there. */
+      const refFail = msg => {
+        $("#m-rp-ref-err").textContent = msg;
+        const box = $("#m-rp-ref")._ebRef ? $("#m-rp-ref")._ebRef.input() : $("#m-rp-ref");
+        box?.classList.add("is-invalid");
+        box?.focus();
+      };
+      /* Same format rule as Payments::checkRef; the server also refuses a reference already used. */
+      const method = $("#m-rp-method").value;
+      const refRaw = $("#m-rp-ref").value.trim();
+      const refClean = refRaw.replace(/[\s-]/g, "").toUpperCase();
+      if((method === "gcash" || method === "bank") && !refRaw){ refFail(`Enter the ${method === "gcash" ? "GCash" : "bank"} reference number.`); return; }
+      if(method === "gcash" && refRaw && !/^\d{13}$/.test(refClean)){ refFail("GCash reference numbers are 13 digits."); return; }
+      if(method === "bank" && refRaw && !/^[A-Z0-9]{6,20}$/.test(refClean)){ refFail("Enter the 6–20 character reference from your bank's confirmation."); return; }
       try {
         const { data } = await EbApi.post("payments/record.php", {
           account_id: a.id,
@@ -5041,8 +5067,8 @@ function openRecordPayment(id){
       } catch(err){
         const f = err.fields || {};
         if(f.amount)  $("#m-rp-amount-err").textContent = f.amount;
-        if(f.ref_num) $("#m-rp-ref-err").textContent = f.ref_num;
-        if(!f.amount && !f.ref_num) toast(err.message, "err");
+        if(f.ref_num) refFail(f.ref_num);
+        toast(f.ref_num || f.amount || err.message, "err");
       }
     }
   });
@@ -5075,7 +5101,7 @@ function renderTransactions(){
       <td class="td-name">${escHtml(tx.customer)}</td>
       <td style="font-size:.8rem;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(summary)}">${escHtml(summary)}</td>
       <td style="font-size:.75rem;color:var(--text-muted)">${escHtml(tx.batch || "—")}</td>
-      <td><strong>${peso(tx.total)}</strong></td>
+      <td><strong>${orderDueHtml(tx)}</strong></td>
       <td><span class="badge ${methodBadgeClass(method)}">${escHtml(method)}</span></td>
       <td><span class="badge ${tx.type==="online"?"badge-ok":"badge-warn"}">${escHtml(tx.type)}</span></td>
       <td class="muted" style="font-size:.8rem">${escHtml(tx.contact || "—")}</td>
@@ -5114,7 +5140,7 @@ function renderTransactions(){
    downloading the entire history to show ten lines of it, and the search box
    only ever searched the rows that happened to be loaded. */
 function renderAudit(){
-  const typeColors = { restock:"badge-ok", user:"badge-info", product:"badge-warn", order:"badge-purple", system:"badge-crit" };
+  const typeColors = { restock:"badge-ok", user:"badge-info", product:"badge-warn", order:"badge-purple", system:"badge-crit", report:"badge-ok" };
 
   EbPaginate.list(
     "audit",
@@ -5188,10 +5214,10 @@ function permAreas(){
 
 function roleCard(role, index, isSuperAdmin){
   const areas = permAreas();
-  const granted = isSuperAdmin ? null : (ROLE_PERMISSIONS[role] || (ROLE_PERMISSIONS[role]=[]));
-  const totalPerms = isSuperAdmin ? Object.keys(PERMISSIONS).length : granted.length;
+  const granted = isSuperAdmin ? SUPER_PERMS : (ROLE_PERMISSIONS[role] || (ROLE_PERMISSIONS[role]=[]));
+  const totalPerms = granted.length;
   const meta = isSuperAdmin
-    ? { slug:"super-admin", desc:"Full unrestricted system access, RBAC control, and account management." }
+    ? { slug:"super-admin", desc:"Controls roles, staff accounts and system settings (locked on). Day-to-day work such as POS can be switched off." }
     : (ROLE_META[role] || { slug:slugify(role), desc:"Custom role — no description set." });
 
   const modules = Object.entries(areas).map(([area, perms])=>{
@@ -5200,11 +5226,16 @@ function roleCard(role, index, isSuperAdmin){
          that it exists and who holds it — but locked off. The server refuses it
          anyway (Rbac::SYSTEM_ONLY); a switch that looks usable and then fails
          on save would only teach people to distrust the screen. */
-      const reserved = !isSuperAdmin && !!p.systemOnly;
-      const checked = isSuperAdmin || (!reserved && granted.includes(p.key));
-      const locked  = isSuperAdmin || reserved;
-      return `<label class="role-toggle-row ${locked?"locked":""}"${reserved?` title="Super Admin only — this cannot be granted to another role."`:""}>
-        <span>${escHtml(p.label)}${p.systemOnly?` <span class="badge badge-muted" style="font-size:.6rem">Super Admin only</span>`:""}</span>
+      /* Admin-only permissions are open on the Admin role's card and locked on every other role. */
+      const reserved = !isSuperAdmin && (!!p.systemOnly || (!!p.adminOnly && meta.slug !== "admin"));
+      /* On the Super Admin's card only the locked keys are fixed on; the rest it may switch off for itself. */
+      const required = isSuperAdmin && !!p.superLocked;
+      const checked = required || (!reserved && granted.includes(p.key));
+      const locked  = required || reserved;
+      return `<label class="role-toggle-row ${locked?"locked":""}"${reserved?` title="${p.adminOnly ? "Super Admin and Admin only — it can be granted to the Admin role only." : "Super Admin only — this cannot be granted to another role."}"`
+          : required?` title="Always on for the Super Admin, so it can never lose control of the system."`:""}>
+        <span>${escHtml(p.label)}${required?` <span class="badge badge-muted" style="font-size:.6rem">Required</span>`:""}${p.systemOnly?` <span class="badge badge-muted" style="font-size:.6rem">Super Admin only</span>`
+          : p.adminOnly?` <span class="badge badge-muted" style="font-size:.6rem">Super Admin &amp; Admin only</span>`:""}</span>
         <span class="switch">
           <input type="checkbox" data-role="${escHtml(role)}" data-perm-key="${p.key}" ${checked?"checked":""} ${locked?"disabled":""}/>
           <span class="switch-track"><span class="switch-thumb"></span></span>
@@ -5225,6 +5256,10 @@ function roleCard(role, index, isSuperAdmin){
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
         Default
       </button>` : ""}
+      ${!isSuperAdmin && !ROLE_DEFAULTS[role] ? `<button class="btn btn-ghost btn-sm role-delete-btn" data-delete-role="${escHtml(role)}" title="Delete this custom role">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+        Delete
+      </button>` : ""}
       <button class="btn btn-ghost btn-sm" data-save-role="${escHtml(role)}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
         Save Matrix
@@ -5234,10 +5269,10 @@ function roleCard(role, index, isSuperAdmin){
     <p class="role-desc">${escHtml(meta.desc)}</p>
     <!-- Master switch: every permission this role can be given, on or off in
          one go. Super-Admin-only permissions stay locked either way. -->
-    <label class="role-toggle-row role-all ${isSuperAdmin?"locked":""}">
-      <span><strong>All permissions</strong><small>Turn every permission on or off</small></span>
+    <label class="role-toggle-row role-all">
+      <span><strong>All permissions</strong><small>${isSuperAdmin ? "Turn every switchable permission on or off" : "Turn every permission on or off"}</small></span>
       <span class="switch">
-        <input type="checkbox" data-role-all="${escHtml(role)}" ${isSuperAdmin?"checked disabled":""}/>
+        <input type="checkbox" data-role-all="${escHtml(role)}"/>
         <span class="switch-track"><span class="switch-thumb"></span></span>
       </span>
     </label>
@@ -5297,7 +5332,7 @@ function renderRoles(){
       syncAll(cb.closest("[data-role-card]"));
       const role = cb.dataset.role;
       const key  = cb.dataset.permKey;
-      const list = ROLE_PERMISSIONS[role] || (ROLE_PERMISSIONS[role]=[]);
+      const list = role === "Super Admin" ? SUPER_PERMS : (ROLE_PERMISSIONS[role] || (ROLE_PERMISSIONS[role]=[]));
       if(cb.checked){
         if(!list.includes(key)) list.push(key);
       } else {
@@ -5314,22 +5349,22 @@ function renderRoles(){
   $$("#roles-matrix [data-save-role]").forEach(btn=>{
     btn.addEventListener("click", async ()=>{
       const role = btn.dataset.saveRole;
-      if(role === "Super Admin"){ toast("Super Admin always has full access.", "warn"); return; }
+      const isSuper = role === "Super Admin";
 
       /* This used to toast "saved" and write a local audit line — the checkbox
          changes lived in ROLE_PERMISSIONS in memory and were gone on reload.
          The screen that decides everyone's access was the one screen that
          silently discarded its edits. */
-      const roleRow = (adminState.roleList || []).find(r => r.name === role);
+      const roleRow = (adminState.roleList || []).find(r => isSuper ? r.isSystem : r.name === role);
       if(!roleRow){ toast(`Could not identify role "${role}". Reload and try again.`, "err"); return; }
 
       const restore = EbUI.busy(btn, "Saving…");
       try {
         await EbApi.post("roles/save.php", {
           id: roleRow.id,
-          name: role,
+          name: isSuper ? roleRow.name : role,
           description: (ROLE_META[role] && ROLE_META[role].desc) || null,
-          permissions: ROLE_PERMISSIONS[role] || [],
+          permissions: isSuper ? SUPER_PERMS : (ROLE_PERMISSIONS[role] || []),
         });
         await loadAdminData();
         /* Re-read the signed-in user's own permissions: if they just changed
@@ -5346,6 +5381,36 @@ function renderRoles(){
         await loadAdminData();
         renderRoles();
       } finally { restore(); }
+    });
+  });
+
+  /* Delete — custom roles only (built-ins have no button, and
+     roles/delete.php refuses them anyway). Refused while staff still hold it. */
+  $$("#roles-matrix [data-delete-role]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const role = btn.dataset.deleteRole;
+      const roleRow = (adminState.roleList || []).find(r => r.name === role);
+      if(!roleRow){ toast(`Could not identify role "${role}". Reload and try again.`, "err"); return; }
+      const inUse = roleRow.totalUsers || 0;
+      openModal({
+        title: "Delete Role",
+        body: `<p>Delete the <strong>${escHtml(role)}</strong> role and all its permissions?</p>
+               ${inUse
+                 ? `<p class="field-error" style="display:block;margin-top:10px">${inUse} staff account${inUse === 1 ? " is" : "s are"} still assigned to this role. Move them to another role in Employee Accounts first.</p>`
+                 : `<p class="muted" style="margin-top:8px">This cannot be undone.</p>`}`,
+        confirmLabel: "Delete Role", confirmClass: "btn-red",
+        onConfirm: async ()=>{
+          try {
+            await EbApi.post("roles/delete.php", { id: roleRow.id });
+          } catch(e){ toast(e.message, "err"); return; }
+          closeModal();
+          await loadAdminData();
+          const i = ROLES.indexOf(role); if(i > -1) ROLES.splice(i, 1);
+          delete ROLE_META[role];
+          toast(`Role "${role}" deleted.`, "ok");
+          renderRoles();
+        }
+      });
     });
   });
 
@@ -5393,11 +5458,36 @@ function renderRoles(){
 /* ============================================================
    MODAL CLOSE WIRING
    ============================================================ */
+/* Popups close only from their X, Close/Cancel buttons or Escape; a click on the backdrop just shakes the popup as a hint, so nothing typed is ever lost. */
+function wireBackdropClose(backdrop, box){
+  if(!backdrop) return;
+  backdrop.addEventListener("click", e => {
+    if(e.target !== backdrop) return;
+    const el = box();
+    if(!el) return;
+    el.classList.remove("modal-nudge"); void el.offsetWidth; el.classList.add("modal-nudge");
+  });
+}
+
+/* Show/hide password: any .pw-toggle beside a password input (one delegated listener for every screen and popup). */
+const EYE_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_SHUT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+document.addEventListener("click", e => {
+  const btn = e.target.closest?.(".pw-toggle");
+  if(!btn) return;
+  const input = btn.parentElement.querySelector("input");
+  if(!input) return;
+  const show = input.type === "password";
+  input.type = show ? "text" : "password";
+  btn.innerHTML = show ? EYE_SHUT : EYE_OPEN;
+  btn.setAttribute("aria-label", show ? "Hide password" : "Show password");
+  btn.setAttribute("aria-pressed", String(show));
+  input.focus();
+});
+
 function initModal(){
   $("#modal-close").addEventListener("click", closeModal);
-  $("#modal-overlay").addEventListener("click", e=>{
-    if(e.target === $("#modal-overlay")) closeModal();
-  });
+  wireBackdropClose($("#modal-overlay"), () => $("#modal-overlay .modal"));
   document.addEventListener("keydown", e=>{
     if(e.key==="Escape" && $("#modal-overlay").classList.contains("open")) closeModal();
   });
@@ -5414,14 +5504,14 @@ const MOD_DESC = {
   "pos-payment":     "Take payment for the current walk-in cart and issue the customer's receipt.",
   notifications:  "Every system alert in one place — new orders, payments, stock levels, returns and audit events.",
   "online-txns":     "Browse all online orders with their current status, customer details and totals.",
-  ordersqueue:    "Incoming orders awaiting review — accept, place on hold, or cancel each one.",
+  ordersqueue:    "Incoming orders awaiting review — accept or cancel each one.",
   paymentverify:  "Check uploaded payment proofs against order totals before approving them.",
   orderstatus:    "Move accepted orders forward through shipping, delivery and completion.",
-  orderhistory:   "Full record of completed online transactions for reference and reporting.",
-  receipts:       "Generate and print official receipts for any online order.",
+  orderhistory:   "Full record of online and walk-in transactions for reference and reporting.",
+  receipts:       "Generate and print official receipts for completed online and walk-in orders.",
   returns:        "Handle return requests end to end — validate, approve, then process the refund.",
   users:          "Create and maintain customer and employee accounts, including roles and archiving.",
-  b2b:            "Review business partner applications and assign Net 30/60/90 credit tiers.",
+  b2b:            "Review business partner applications and set each partner's Bronze, Silver or Gold tier.",
   landing:        "Edit the public website's About, Vision, Mission, contact details and FAQs.",
   products:       "Manage the product catalog and the varieties customers can order from.",
   inventory:      "Read-only stock report — levels, movement speed and pricing across every product.",
@@ -5619,3 +5709,62 @@ document.addEventListener("click", async e => {
     setTimeout(() => { btn.classList.remove("is-spinning"); btn.disabled = false; }, 500);
   }
 });
+
+/* Tab strips that scroll sideways (phones) fade at the edge that has more tabs, so it is clear they can be swiped,
+   and a tapped tab scrolls fully into view. The fade itself is CSS (.strip-more-left / .strip-more-right). */
+(function tabStripHints(){
+  const SEL = ".tabs, .return-tabs, .inv-action-tabs, .vat-tabs, .rev-tabs, .date-range-tabs";
+  const mark = el => {
+    const more = el.scrollWidth - el.clientWidth;
+    el.classList.toggle("strip-more-right", more > 2 && el.scrollLeft < more - 2);
+    el.classList.toggle("strip-more-left", more > 2 && el.scrollLeft > 2);
+  };
+  let queued = false;
+  const markAll = () => {
+    if(queued) return;
+    queued = true;
+    /* A short timer rather than requestAnimationFrame, which pauses in background tabs. */
+    setTimeout(() => { queued = false; document.querySelectorAll(SEL).forEach(mark); }, 60);
+  };
+  document.addEventListener("scroll", e => { if(e.target instanceof Element && e.target.matches(SEL)) mark(e.target); }, true);
+  document.addEventListener("click", e => {
+    const tab = e.target instanceof Element ? e.target.closest("button, a") : null;
+    if(tab && tab.parentElement && tab.parentElement.matches(SEL)) tab.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" });
+  });
+  window.addEventListener("resize", markAll);
+  /* Re-check when modules render or panels show/hide; class changes on the strips themselves (ours) are ignored. */
+  new MutationObserver(muts => {
+    if(muts.some(m => m.type === "childList" || !(m.target instanceof Element && m.target.matches(SEL)))) markAll();
+  }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+  markAll();
+})();
+
+/* Phone card tables: each cell carries its column heading as data-label, so on narrow screens (portal.css) a row can
+   show as a small card of "LABEL  value" lines instead of a table you have to scroll sideways. */
+(function labelTableCells(){
+  const label = table => {
+    const heads = [...table.querySelectorAll("thead th")].map(th => th.textContent.replace(/\s+/g, " ").trim());
+    if(!heads.length) return;
+    table.querySelectorAll("tbody tr").forEach(tr => {
+      let col = 0;
+      [...tr.children].forEach(td => {
+        if(!td.hasAttribute("data-label")) td.setAttribute("data-label", heads[col] || "");
+        /* Long text (descriptions, addresses, product lists) takes the full card width instead of a squeezed half. */
+        const text = td.textContent.replace(/\s+/g, " ").trim();
+        td.classList.toggle("td-wide", text.length > 30);
+        /* Nothing to show (no value, no image or control): hidden on phone cards instead of a bare label. */
+        td.classList.toggle("td-empty", (text === "" || text === "—") && !td.querySelector("img, svg, input, button, select"));
+        col += td.colSpan || 1;
+      });
+    });
+  };
+  let queued = false;
+  const run = () => {
+    if(queued) return;
+    queued = true;
+    setTimeout(() => { queued = false; document.querySelectorAll(".content table.data-table, .modal table.data-table").forEach(label); }, 60);
+  };
+  new MutationObserver(muts => { if(muts.some(m => m.type === "childList")) run(); })
+    .observe(document.body, { childList: true, subtree: true });
+  run();
+})();

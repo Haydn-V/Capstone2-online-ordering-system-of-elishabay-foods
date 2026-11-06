@@ -1,12 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * The single PDO connection for the whole API.
- *
- * Nothing outside api/ ever talks to MySQL, and nothing inside api/ builds its
- * own connection — everything goes through Database::pdo().
- */
+/** The single shared PDO connection; all database access in the API goes through Database::pdo(). */
 final class Database
 {
     private static ?PDO $pdo = null;
@@ -45,21 +40,16 @@ final class Database
 
         try {
             self::$pdo = new PDO($dsn, $db['user'], $db['pass'], [
-                /* Exceptions, not silent false returns. A query that fails
-                   must not be mistaken for a query that found nothing. */
+                /* Throw exceptions so a failed query is never mistaken for an empty result. */
                 PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
 
-                /* Real prepared statements, not client-side interpolation.
-                   With emulation on, PDO builds the SQL string itself and the
-                   protection depends on the charset being handled correctly. */
+                /* Use real prepared statements instead of PDO's emulation, for safer parameter handling. */
                 PDO::ATTR_EMULATE_PREPARES   => false,
 
-                /* XAMPP ships MySQL without STRICT_TRANS_TABLES, which turns
-                   constraint violations into warnings — that is how the first
-                   seed import silently wrote '' into a NOT NULL column. Pin it
-                   per connection so the app never inherits a loose server. */
-                PDO::MYSQL_ATTR_INIT_COMMAND => "SET SESSION sql_mode='{$db['sql_mode']}'",
+                /* Force strict SQL mode per connection so constraint violations raise errors instead of warnings. */
+                /* Set the MySQL clock to Manila time (+08:00) so CURDATE()/NOW() match PHP's dates. */
+                PDO::MYSQL_ATTR_INIT_COMMAND => "SET SESSION sql_mode='{$db['sql_mode']}', time_zone='+08:00'",
             ]);
         } catch (PDOException $e) {
             /* The DSN and credentials must never reach the client. */
@@ -103,13 +93,24 @@ final class Database
         return $st->rowCount();
     }
 
-    /** Does a table exist? Used for features that depend on optional tables. */
+    /** Check whether a table exists, for features that depend on optional tables. */
     public static function hasTable(string $table): bool
     {
         return (bool) self::scalar(
             'SELECT COUNT(*) FROM information_schema.TABLES
               WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
             [self::config()['db']['name'], $table]
+        );
+    }
+
+    /** Check whether a column exists, so code can ship before its migration runs. */
+    public static function hasColumn(string $table, string $column): bool
+    {
+        static $seen = [];
+        return $seen["$table.$column"] ??= (bool) self::scalar(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+            [self::config()['db']['name'], $table, $column]
         );
     }
 }

@@ -1,18 +1,11 @@
-/* =================================================================
-   ELISHA BAY — Admin Dashboard Stylesheet
-   Design tokens identical to the public landing page.
-   Admin-specific layout and components added below.
-   ================================================================= */
+/* ===== Staff portal stylesheet (same design tokens as the public site, plus portal layout and components) ===== */
 
 /* Enforce hidden attribute against display overrides */
 [hidden] { display: none !important; }
 
-/* Scrollbars: one style for the whole system, defined in assets/js/theme.js
-   (shared with the storefront). None here, so the two never fight. */
+/* Scrollbar style is defined once in assets/js/theme.js for the whole system. */
 
-/* =================================================================
-   0. KEYFRAMES
-   ================================================================= */
+/* ===== 0. KEYFRAMES ===== */
 @keyframes pageIn      { from{opacity:0;transform:translateY(14px);} to{opacity:1;transform:none;} }
 @keyframes toastIn     { from{opacity:0;transform:translateY(20px);} to{opacity:1;transform:none;} }
 @keyframes toastOut    { from{opacity:1;transform:none;} to{opacity:0;transform:translateY(20px);} }
@@ -23,20 +16,12 @@
 @keyframes slideDown   { from{opacity:0;transform:translateY(-10px);} to{opacity:1;transform:none;} }
 @keyframes countUp     { from{opacity:0;transform:translateY(8px);} to{opacity:1;transform:none;} }
 
-/* =================================================================
-   1. DESIGN TOKENS (exact match to the public site)
-   ================================================================= */
+/* ===== 1. DESIGN TOKENS (match the public site) ===== */
 :root {
   --red:        #d62828;
   --red-deep:   #b01e1e;
   --gold:       #e8a317;
-  /* --- text-safe ink steps (light theme) ---------------------------------
-     Brand gold is 1.98:1 on the cream surface and --warn is the same hex, so
-     neither may carry text; --ok is 2.80:1. These *-ink steps are the same
-     hues darkened to clear 4.5:1 on both light surfaces. --gold / --ok /
-     --warn keep their original values for fills, borders and focus rings,
-     where only 3:1 applies. The dark block below re-points each one, because
-     on the dark surface the originals already pass and the reds do not. */
+  /* Text-safe *-ink colours (darkened gold/ok/warn) reach 4.5:1 on light surfaces; the originals stay for fills, borders and focus rings. */
   --gold-ink:   #92670e;
   --ok-ink:     #128042;
   --warn-ink:   #92670e;
@@ -78,18 +63,7 @@
   --r-xl:   28px;
   --r-pill: 999px;
 
-  /* TYPE SCALE — the same eleven steps as public/styles.css.
-
-     The radii above have been tokens from the start and the radii in this
-     system are consistent. Type was not, and an audit counted 45 different
-     font sizes across the portal and 78 across the public site, twelve of them
-     packed between .66rem and .88rem in steps of a third of a pixel. Nothing
-     was enforcing a scale, so every new rule picked its own number and the
-     result reads as sloppy even where the spacing is right.
-
-     The steps are roughly a 1.09 ratio, which is close enough that snapping the
-     old values moved nothing more than 0.8px — except two headings that came
-     down from 1.3rem. Use a token; do not add a literal back. */
+  /* Type scale: the same eleven size steps as public/styles.css; always use a token instead of a literal size. */
   --fs-4xs: .55rem;   /* micro caps in placeholders   */
   --fs-3xs: .62rem;
   --fs-2xs: .68rem;   /* uppercase field/table labels */
@@ -107,11 +81,7 @@
   --t-slow: 400ms;
   --ease:   cubic-bezier(.22,.61,.36,1);
 
-  /* --font-display drives every h1-h5 plus the dashboard greeting,
-     modal headers, and brand name — that serif (Cormorant Garamond)
-     read thin/hard-to-read at these weights per feedback. Swapped to
-     Roboto for just this token; body copy (--font-body/--font-ui)
-     was already sans-serif and untouched. */
+  /* --font-display (headings, greeting, modal titles) uses Roboto for readability; body fonts are unchanged. */
   --font-display: "Sentient", Georgia, serif;
   --font-body:    "Karla", "Montserrat", system-ui, sans-serif;
   --font-ui:      "Montserrat", "Karla", sans-serif;
@@ -143,8 +113,7 @@
   --gold-dim:   rgba(242,180,65,.12);
   --gold-line:  rgba(242,180,65,.2);
 
-  /* Neutral black/white surfaces — the gold/red brand gradient
-     lives only in borders, accent bars and active states now. */
+  /* Neutral surfaces; the brand gold/red only appears in borders, accents and active states. */
   --bg:         #0A0A0A;
   --bg-soft:    #121212;
   --bg-tint:    #1C1C1C;
@@ -162,9 +131,7 @@
   color-scheme: dark;
 }
 
-/* =================================================================
-   2. BASE RESET
-   ================================================================= */
+/* ===== 2. BASE RESET ===== */
 *, *::before, *::after { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 
@@ -190,13 +157,7 @@ img { max-width: 100%; display: block; }
 button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
 ul,ol  { margin: 0; padding: 0; list-style: none; }
 :focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; border-radius: var(--r-sm); }
-/* Pill-shaped controls: matching border-radius on the outline wasn't
-   enough — native `outline` doesn't reliably clip to an element's own
-   border-radius across engines (it's a comparatively recent, spotty
-   feature), so the ring drew as a near-rectangle poking out past the
-   pill's rounded corners regardless of what radius was set. box-shadow
-   has no such gap — it always follows the element's actual shape — so
-   these get a shadow-based ring instead of the native outline. */
+/* Pill controls use a box-shadow focus ring, because outline does not follow rounded corners reliably. */
 .tab-btn:focus-visible,
 .return-tab-btn:focus-visible,
 .alert-tab:focus-visible,
@@ -212,9 +173,7 @@ ul,ol  { margin: 0; padding: 0; list-style: none; }
 .sr-only { position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0; }
 .hide { display: none !important; }
 
-/* =================================================================
-   3. SHARED COMPONENTS
-   ================================================================= */
+/* ===== 3. SHARED COMPONENTS ===== */
 
 /* Buttons */
 .btn {
@@ -244,8 +203,7 @@ ul,ol  { margin: 0; padding: 0; list-style: none; }
 .btn-ghost-danger { background: transparent; color: var(--out-ink); border: 1.5px solid rgba(220,38,38,.3); }
 .btn-ghost-danger:hover { background: rgba(220,38,38,.08); border-color: var(--out); }
 
-/* White on --ok is 3.06:1. The fix is a darker fill, not grey label text —
-   --ok-ink puts white at 5.01:1 and keeps the button reading as "success". */
+/* Use the darker --ok-ink fill so white text reaches 5:1. */
 .btn-ok    { background: var(--ok-ink); color: #fff; }
 .btn-ok:hover { filter: brightness(1.1); transform: translateY(-2px); }
 
@@ -269,18 +227,13 @@ ul,ol  { margin: 0; padding: 0; list-style: none; }
 .badge-out  { background: rgba(220,38,38,.12);  color: var(--out-ink); }
 .badge-info { background: rgba(59,130,246,.12); color: var(--info); }
 .badge-muted{ background: var(--bg-tint); color: var(--text-muted); }
-/* badge-muted was doing double duty for several unrelated things
-   (order-type, walk-in-type, partner tier) that all sit next to other
-   colored badges in the same row/table — same tan-on-tan made them
-   hard to tell apart. Each gets its own hue below instead of sharing
-   the "neutral/disabled" muted look. */
+/* Separate badge colours for order type, walk-in type and partner tier so they are distinguishable side by side. */
 .badge-purple { background: rgba(139,92,246,.14); color: #7C3AED; }
 [data-theme="dark"] .badge-purple { color: #B794F6; }
 .badge-teal { background: rgba(20,184,166,.14); color: #0D9488; }
 [data-theme="dark"] .badge-teal { color: #5EEAD4; }
 
-/* Partner account tiers — distinct per tier, not just "Gold" implying
-   color while Silver/Bronze stayed the same washed-out tan as Gold. */
+/* Distinct colours for each partner tier. */
 .badge-tier-gold   { background: rgba(232,163,23,.16); color: #9A6B0C; }
 .badge-tier-silver { background: rgba(120,135,155,.16); color: #55606E; }
 .badge-tier-bronze { background: rgba(180,95,45,.16);  color: #8A4A22; }
@@ -290,13 +243,7 @@ ul,ol  { margin: 0; padding: 0; list-style: none; }
 
 [data-theme="dark"] .badge-warn { color: var(--gold-ink); }
 
-/* ── Order status chip (dot + tinted pill) ──────────────────────
-   Lived only in orders.css + admin-orders.css (byte-identical
-   duplicates), so Cashier had no access to it and fell back to flat
-   badges — that's why order status looked different per portal.
-   Moved here (the file all 5 portals load) so it's the one status
-   language system-wide. The dot carries the state at a glance even
-   before you read the label. */
+/* Order status chip (dot + tinted pill), defined here so every portal shows status the same way. */
 .status-chip {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 4px 10px; border-radius: var(--r-pill);
@@ -374,8 +321,7 @@ textarea.control { resize: vertical; min-height: 90px; }
 .divider { height: 1px; background: var(--border); margin: 20px 0; }
 
 /* Section heading */
-/* Every module heading sits in its own banner card, matching the
-   dashboard's welcome panel. */
+/* Module headings sit in a banner card like the dashboard welcome panel. */
 .mod-header {
   display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
   background: linear-gradient(135deg, var(--surface) 0%, var(--gold-dim) 100%);
@@ -393,9 +339,7 @@ textarea.control { resize: vertical; min-height: 90px; }
   font-size: var(--fs-base); line-height: 1.5; color: var(--text-muted);
 }
 
-/* =================================================================
-   4. LOGIN PAGE
-   ================================================================= */
+/* ===== 4. LOGIN PAGE ===== */
 .login-view {
   min-height: 100svh; display: flex; align-items: center; justify-content: center;
   background: var(--ink);
@@ -448,14 +392,8 @@ textarea.control { resize: vertical; min-height: 90px; }
   margin-bottom: 16px; display: none; }
 .login-error.show { display: block; }
 
-/* =================================================================
-   5. ADMIN APP SHELL
-   ================================================================= */
-/* Floating shell: the sidebar and top bar are detached, rounded panels
-   inset from the viewport edge by --shell-gap, with the page background
-   showing through around them. Collapsed widths are applied via class
-   overrides rather than a shared custom property — transitions stall
-   when the animated value itself comes from a changing var(). */
+/* ===== 5. ADMIN APP SHELL ===== */
+/* Floating shell: sidebar and top bar are rounded panels inset by --shell-gap, with collapsed widths set by class (transitions stall on changing var()s). */
 .admin-app {
   display: flex; height: 100svh; overflow: hidden;
 }
@@ -490,9 +428,7 @@ textarea.control { resize: vertical; min-height: 90px; }
   text-transform: uppercase; margin-top: 2px;
 }
 
-/* Brand block, now living at the top of the sidebar instead of the
-   topbar — same mark/name styling, just its own spacing + a divider
-   so it doesn't run straight into the nav list below it. */
+/* Brand block at the top of the sidebar with its own spacing and divider. */
 .sidebar-brand {
   display: flex; align-items: center; gap: 10px;
   padding: 16px 16px 14px;
@@ -500,16 +436,12 @@ textarea.control { resize: vertical; min-height: 90px; }
   margin-bottom: 10px;
 }
 .sidebar-brand .mark { width: 30px; height: 30px; flex-shrink: 0; }
-/* One line now. The "ADMIN PANEL" caption that sat under it is gone (see
-   shell.html), and its rule with it. The block keeps its height because the
-   30px mark sets it and align-items centres the name against the mark — the
-   caption was never what held the block open. */
+/* Brand is one line now (the ADMIN PANEL caption was removed); the 30px mark sets the height. */
 .sidebar-brand .name {
   font-family: var(--font-display); font-size: var(--fs-lg); font-weight: 700;
   color: var(--text); line-height: 1.1;
 }
-/* Collapsed rail: no room for the name, mark stays centered like the
-   collapsed nav-item icons do. */
+/* Collapsed rail: hide the name and centre the mark. */
 .admin-app.sidebar-collapsed .sidebar-brand { justify-content: center; padding: 16px 8px 14px; }
 .admin-app.sidebar-collapsed .sidebar-brand .name { display: none; }
 /* ── Sidebar (light — matches the public site's white-surface-on-cream theme) ── */
@@ -524,14 +456,11 @@ textarea.control { resize: vertical; min-height: 90px; }
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-sm);
-  /* Only transform is animated — width/left/margin here resolve from
-     custom properties, and Chrome stalls those transitions mid-flight,
-     leaving the rail stuck at its expanded size. */
+  /* Animate only transform, because Chrome stalls transitions on var()-based width/left/margin. */
   transition: transform var(--t-slow) var(--ease);
   overflow-y: auto; overflow-x: hidden;
 }
-/* The sidebar scrolls (wheel, trackpad, touch, keyboard) with no visible
-   bar: any bar on this rounded card ran over its border or looked tacked on. */
+/* The sidebar scrolls without a visible scrollbar. */
 .sidebar { scrollbar-width: none; }
 .sidebar::-webkit-scrollbar { display: none; width: 0; height: 0; }
 
@@ -552,10 +481,7 @@ textarea.control { resize: vertical; min-height: 90px; }
 .nav-group.collapsed .nav-chevron { transform: rotate(-90deg); }
 .nav-group.collapsed .nav-item { display: none; }
 .nav-parent { justify-content: flex-start !important; }
-/* On a parent row the chevron is a CONTROL, not decoration: it collapses and
-   expands the drawer, while the rest of the row navigates. An 11px glyph is not
-   a target anyone can hit, so padding grows the hit area and the matching
-   negative margins keep the row's geometry exactly as it was. */
+/* The chevron toggles the group, so padding enlarges its hit area while negative margins keep the layout. */
 .nav-parent .nav-chevron {
   margin: -7px -7px -7px auto;
   padding: 7px;
@@ -640,15 +566,8 @@ textarea.control { resize: vertical; min-height: 90px; }
   background: currentColor; opacity: .7;
 }
 
-/* Standalone RBAC shortcut — sits above every nav-group, on its own,
-   not inside a section. Solid gold fill (not just an active-state
-   tint like regular items) so it reads as a distinct, permanent
-   action rather than one more item in a list. */
-/* Double-classed selectors (.nav-item.nav-item-rbac) deliberately —
-   glass.css (loaded after this file on the glass skin) sets a
-   plain `.nav-item { background: transparent }` at the same 1-class
-   specificity, which would otherwise win on load order and erase the
-   gold fill. Bumping to 2 classes beats that regardless of skin. */
+/* Standalone RBAC shortcut above the nav groups, with a solid gold fill so it stands out. */
+/* Two classes so this beats glass.css's transparent .nav-item background. */
 .nav-item.nav-item-rbac {
   background: linear-gradient(135deg, var(--gold) 0%, #D99A0E 100%);
   color: #1E1A0E;
@@ -663,10 +582,7 @@ textarea.control { resize: vertical; min-height: 90px; }
   transform: translateY(-1px);
   box-shadow: 0 5px 14px rgba(232,163,23,.45);
 }
-/* navigate() adds .active while RBAC is the open module — that pulls
-   in .nav-item.active from both this file and glass.css (same
-   0,2,0 specificity as the rule above), which would flatten the gold
-   fill back to a faint active-tint. One more class beats both. */
+/* One more class so the active state does not flatten the gold fill. */
 .nav-item.nav-item-rbac.active {
   background: linear-gradient(135deg, var(--gold) 0%, #D99A0E 100%);
   color: #1E1A0E;
@@ -734,27 +650,16 @@ textarea.control { resize: vertical; min-height: 90px; }
   display: flex; align-items: center; justify-content: center;
   font-size: var(--fs-3xs); font-weight: 800; color: #fff;
   font-variant-numeric: tabular-nums;
-  /* Unread but nothing critical: the count still shows, in the muted
-     neutral, so a badge that is merely a tally does not read as an alarm.
-     The count NEVER goes away while anything is unread — it is the "how
-     many" half, and the state below is the "how bad" half. */
-  background: var(--text-muted);
+  /* Any unread notification shows a red count; critical adds a ring, a pulse and a red bell. */
+  background: var(--out);
 }
-/* Something critical is unread. Brand red plus a ring, and the bell behind
-   it picks up the same colour — so the difference is a shape and a size
-   change as well as a hue, legible to someone who cannot separate red from
-   grey. The exact split is spelled out in the bell's title and aria-label
-   by initNotifBadge(), because no badge should be the only place a fact
-   lives. */
+/* Critical unread: red badge with a ring and a red bell, with the exact counts also in the bell's title/aria-label. */
 .notif-badge-count.has-critical {
   background: var(--out);
   box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px rgba(220,38,38,.28);
 }
 .notif-btn.has-critical { color: var(--out-ink); }
-/* A slow, single pulse rather than a loop: it draws the eye once on
-   arrival and then stops, which is the difference between a signal and a
-   distraction. Suppressed entirely under reduced-motion — the colour, the
-   ring and the label all still carry the state. */
+/* A single pulse on arrival (none with reduced motion). */
 @keyframes notifCriticalIn {
   from { transform: scale(.72); }
   60%  { transform: scale(1.12); }
@@ -765,8 +670,7 @@ textarea.control { resize: vertical; min-height: 90px; }
   .notif-badge-count.has-critical { animation: none; }
 }
 
-/* Sidebar nav-item badge — sits inline after the label, not floated
-   off the edge of the (full-width, borderless) nav button. */
+/* Sidebar badge sits inline after the label. */
 .nav-item .notif-badge {
   position: static; margin-left: auto; flex-shrink: 0;
   width: auto; min-width: 18px; height: 18px;
@@ -777,9 +681,7 @@ textarea.control { resize: vertical; min-height: 90px; }
 }
 .nav-item .notif-badge:empty { display: none; }
 
-/* Collapsed (icon-only) sidebar: there's no label row for a count to sit
-   beside, so the badge degrades to a plain dot pinned to the bell's
-   top-right corner. Number returns when the sidebar expands. */
+/* Collapsed sidebar: the badge becomes a dot on the bell's corner. */
 .admin-app.sidebar-collapsed .nav-item .notif-badge {
   position: absolute;
   top: 7px; left: calc(50% + 5px); margin: 0;
@@ -791,12 +693,7 @@ textarea.control { resize: vertical; min-height: 90px; }
 
 /* Topbar notifications dropdown (mirrors .user-dropdown) */
 .topbar-notif { position: relative; }
-/* Anchored to the bell it belongs to.
-
-   transform-origin at the top RIGHT, under the trigger, so the panel appears
-   to grow out of the control rather than fading in from the middle of
-   nowhere — the same anchoring EbSelect gives every filter dropdown, so the
-   two read as one family. */
+/* Dropdown anchored to the bell, growing from the top-right like EbSelect dropdowns. */
 .notif-dropdown {
   position: absolute; top: calc(100% + 12px); right: -8px;
   width: 380px; max-width: calc(100vw - 32px);
@@ -809,9 +706,7 @@ textarea.control { resize: vertical; min-height: 90px; }
   transition: opacity .14s var(--ease), transform .14s var(--ease);
 }
 .topbar-notif.open .notif-dropdown { opacity: 1; pointer-events: auto; transform: none; }
-/* The pointer that ties the panel to the bell. Drawn as a rotated square
-   behind the panel's own top edge, so it inherits the border and the surface
-   and cannot disagree with them. */
+/* The pointer is a rotated square behind the panel's top edge. */
 .notif-dropdown::before,
 .user-dropdown::before {
   content: ""; position: absolute; top: -6px; width: 11px; height: 11px;
@@ -821,8 +716,7 @@ textarea.control { resize: vertical; min-height: 90px; }
 }
 .notif-dropdown::before { right: 22px; }
 .user-dropdown::before  { right: 18px; }
-/* overflow:hidden would clip the pointer off, so the corners are rounded on
-   the scrolling list instead of on the panel. */
+/* Round the list's corners instead of using overflow:hidden, which would clip the pointer. */
 .nd-list { border-radius: 0; }
 .nd-header { border-radius: var(--r-lg) var(--r-lg) 0 0; }
 .nd-footer { border-radius: 0 0 var(--r-lg) var(--r-lg); }
@@ -851,8 +745,7 @@ textarea.control { resize: vertical; min-height: 90px; }
 }
 .nd-item:last-child { border-bottom: none; }
 .nd-item:hover { background: var(--bg-soft); }
-/* Every row is clickable, so every row needs a focus state as well as a
-   hover one — the panel was reachable by mouse only. */
+/* Every row gets a focus state for keyboard users. */
 .nd-item:focus-visible,
 .nd-mark-all:focus-visible,
 .nd-footer:focus-visible,
@@ -873,8 +766,7 @@ textarea.control { resize: vertical; min-height: 90px; }
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .nd-item.unread .nd-item-msg { font-weight: 700; }
-/* Derived-alert dropdowns (Cashier / Inventory): keep one even weight so
-   long alert sentences stay legible; the dot still marks unread. */
+/* Derived-alert dropdowns keep one even font weight; the dot marks unread. */
 .nd-item.nd-alert .nd-item-msg { font-weight: 500; color: var(--text); }
 .nd-item-dot {
   width: 7px; height: 7px; border-radius: 50%; background: var(--gold);
@@ -884,9 +776,7 @@ textarea.control { resize: vertical; min-height: 90px; }
   font-size: var(--fs-2xs); color: var(--text-muted); margin-top: 5px;
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
 }
-/* A real empty state rather than one grey sentence: an icon, a heading and
-   the reassurance underneath, matching .alert-empty on the dashboard panel so
-   the same condition looks the same in both places. */
+/* Empty state with icon, heading and message, matching the dashboard panel. */
 .nd-empty {
   padding: 40px 18px; text-align: center; color: var(--text-muted);
   font-size: var(--fs-sm); background: var(--surface);
@@ -900,12 +790,7 @@ textarea.control { resize: vertical; min-height: 90px; }
 }
 .nd-footer:hover { background: var(--bg-soft); }
 
-/* =================================================================
-   ALERT CENTER — Notifications page for the Cashier / Inventory
-   portals. Alerts there are derived live from stock, payment and
-   expiry data (no read/unread state), so they get their own row
-   treatment: title + detail + severity, filterable by category.
-   ================================================================= */
+/* ===== ALERT CENTER: Notifications page for Cashier/Inventory, with live derived alerts filterable by category ===== */
 .alert-panel { padding: 18px 22px 6px; }
 
 .alert-toolbar {
@@ -915,56 +800,18 @@ textarea.control { resize: vertical; min-height: 90px; }
 .alert-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
 /* Shape, hover and active now come from THE ONE TAB PILL block above. */
 
-/* =================================================================
-   THE WORK BADGE
-   -----------------------------------------------------------------
-   A number on a tab means ONE thing across the portal: this many items
-   are waiting for you. It is never a row count — All, Completed and
-   Cancelled carry no badge at all, because "how many records exist" is
-   not something a staff member can act on, and a figure that sometimes
-   means work and sometimes means history means nothing.
-
-   Zero renders no badge rather than a grey 0. An empty queue should
-   look empty; a 0 still draws the eye to a tab with nothing behind it.
-
-   TABULAR NUMERALS, and a min-width, so the badge keeps its box as the
-   count changes. Without both, "Pending 9" dropping to "Pending 8"
-   re-measures the pill and nudges every tab to its right — the row
-   twitches each time somebody clears an order. Same reasoning as
-   .alert-tab-count, which already did this.
-
-   Subordinate to the label: smaller, lighter weight than the tab text,
-   and tinted rather than filled. It reports; the label names. */
+/* Work badge: a tab number means items waiting for you (never a row count), hidden at zero, with tabular numerals and a min-width so tabs do not shift. */
 .tab-count,
 .alert-tab-count {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 19px; height: 18px; padding: 0 6px;
   border-radius: var(--r-pill);
-  /* A FILLED GOLD CHIP, NOT A TINT.
-
-     This was --gold-dim — brand gold at .14 alpha — which over the idle pill's
-     frosted body composited to a barely-there wash: the digit was legible but
-     the badge itself was not, so a queue with work in it looked much like one
-     without. The number is the thing on this row a staff member is scanning
-     for, and it was the quietest mark on it.
-
-     Solid --gold with --ink-card on top instead. Same pairing the .active pill
-     already uses, so the badge reads as part of the same family rather than a
-     new colour, and it clears contrast comfortably in both themes because the
-     fill is opaque — nothing underneath can wash it out the way the .14 tint
-     was being washed out.
-
-     --gold is a FILL here, never text. The token block's warning that brand
-     gold cannot carry type still holds; it is the background, and the dark ink
-     sits on it. */
+  /* A solid gold chip with dark text so the waiting count is clearly visible. */
   background: var(--gold); color: var(--ink-card);
   font-size: var(--fs-2xs); font-weight: 800; letter-spacing: 0;
   font-variant-numeric: tabular-nums;
 }
-/* On the SELECTED pill the body is already gold, so a gold badge would vanish
-   into it. The chip inverts outright — solid dark fill, gold digit — which
-   keeps it just as visible as on an idle pill and makes the two states legible
-   as a pair: gold-on-dark inside a gold pill, dark-on-gold outside one. */
+/* On the selected (gold) pill the badge inverts to dark with a gold digit. */
 .active > .tab-count,
 .active > .alert-tab-count {
   background: var(--ink-card);
@@ -979,8 +826,7 @@ textarea.control { resize: vertical; min-height: 90px; }
 }
 .alert-row:last-child { border-bottom: none; }
 .alert-row:hover { background: var(--bg-soft); }
-/* Urgent (critical) alerts get the same tinted treatment unread
-   notifications use in the Online Orders portal. */
+/* Critical alerts get the same tint as unread notifications in Online Orders. */
 .alert-row.urgent { background: var(--gold-dim); }
 .alert-row.urgent:hover { background: var(--gold-line); }
 
@@ -997,8 +843,7 @@ textarea.control { resize: vertical; min-height: 90px; }
 .alert-top {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
 }
-/* Even, normal weight across all rows — the dot and tint carry the
-   unread signal, so bold text isn't needed and reads lighter. */
+/* Normal weight on every row; the dot and tint mark unread. */
 .alert-msg { font-size: var(--fs-base); color: var(--text); line-height: 1.45; font-weight: 500; }
 .alert-dot {
   width: 7px; height: 7px; border-radius: 50%; background: var(--gold);
@@ -1027,39 +872,12 @@ textarea.control { resize: vertical; min-height: 90px; }
   border: none;
 }
 
-/* THE OUTLINED IDENTITY CHIP.
-
-   Name, role and avatar inside one bordered container so they read as a single
-   unit rather than three things that happen to sit near each other — and the
-   container IS the button, so clicking anywhere in it opens the user menu.
-
-   QUIET, NOT A CALL TO ACTION. --surface-2 and --border, the same pair the
-   panels and inputs use; no gold fill and no shadow. It sits two controls away
-   from the gold primary buttons and must not read as one of them — its job is
-   to state a fact, and it opens a menu only incidentally.
-
-   The border HUGS the group: 3px of padding with a 999px radius, so the arc of
-   the enclosure runs parallel to the avatar circle instead of cutting across
-   it. Left padding is larger than right because the text needs breathing room
-   from the border while the circle already carries its own edge. */
+/* Outlined identity chip: name, role and avatar in one bordered button that opens the user menu, styled quietly so it is not mistaken for a primary button. */
 .topbar-user-chip {
   display: flex; align-items: center; gap: 8px;
   padding: 3px 3px 3px 12px;
   background: var(--surface-2);
-  /* NOT var(--border). glass.css re-points --border and --border-lift to a
-     translucent WHITE in BOTH themes — they are the highlight edge of a frosted
-     pane, not an outline, and this chip drawn with one measured 1.05:1 against
-     its own fill. An invisible outline is the one result this task cannot have.
-
-     Mixed down from --text-muted instead: an ink that is already defined
-     opposite the surface in each theme, so the edge is dark on cream and light
-     on charcoal without a second rule or a new colour.
-
-     70%, measured, not guessed: at 38% the edge came out 1.82:1 on cream and
-     2.27:1 on charcoal — under the 3:1 a UI boundary needs, and on the light
-     theme genuinely hard to see, which defeats the point of the task. 70%
-     gives 3.39:1 and 4.62:1 while still reading as a hairline rather than a
-     drawn box. */
+  /* Border mixed from --text-muted (70%) instead of glass.css's white --border, so it reaches 3:1 in both themes. */
   border: 1px solid color-mix(in srgb, var(--text-muted) 70%, transparent);
   border-radius: var(--r-pill);
   cursor: pointer; font: inherit; color: inherit;
@@ -1069,8 +887,7 @@ textarea.control { resize: vertical; min-height: 90px; }
   background: var(--bg-tint);
   border-color: var(--text-muted);
 }
-/* The ring goes round the whole chip, not the avatar — the chip is the control.
-   Offset outward so it clears the border rather than sitting on top of it. */
+/* Focus ring around the whole chip, offset outside the border. */
 .topbar-user-chip:focus-visible {
   outline: 3px solid var(--gold); outline-offset: 2px;
 }
@@ -1078,17 +895,7 @@ textarea.control { resize: vertical; min-height: 90px; }
   background: var(--bg-tint); border-color: var(--gold-line);
 }
 
-/* Signed-in identity, sitting to the left of the avatar.
-
-   Deliberately quieter than any page heading: .78rem/700 for the name against
-   a 1.5rem+ h1, and the role smaller and muted below it. It answers "who is
-   using the system", which is a caption, not a title — if it competed with the
-   heading it would be telling the operator something they already know at the
-   expense of something they don't.
-
-   min-width:0 + ellipsis because a long name must shorten rather than push the
-   avatar and the theme toggle off the bar; the topbar is a fixed-height strip
-   with no room to wrap. */
+/* Signed-in name and role, smaller than page headings and truncated with an ellipsis instead of wrapping. */
 .topbar-identity {
   display: flex; flex-direction: column; align-items: flex-end;
   line-height: 1.2; min-width: 0; max-width: 190px;
@@ -1131,12 +938,10 @@ textarea.control { resize: vertical; min-height: 90px; }
 
 /* ── Content area ── */
 .content {
-  /* No horizontal padding — the shell gap already insets this column, and
-     zero here keeps content edges flush with the floating top bar above. */
+  /* No horizontal padding so content lines up with the floating top bar. */
   flex: 1; padding: clamp(14px,2vw,22px) 0 28px;
   min-height: 0; overflow-y: auto;
-  /* Reserve the scrollbar gutter so the right edge doesn't shift between
-     short and long pages. */
+  /* Reserve scrollbar space so the right edge does not shift between pages. */
   scrollbar-gutter: stable;
   animation: pageIn .35s var(--ease) both;
 }
@@ -1144,9 +949,7 @@ textarea.control { resize: vertical; min-height: 90px; }
 .mod-panel { display: none; }
 .mod-panel.active { display: block; animation: pageIn .3s var(--ease) both; }
 
-/* =================================================================
-   6. DASHBOARD MODULE
-   ================================================================= */
+/* ===== 6. DASHBOARD MODULE ===== */
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -1188,30 +991,8 @@ textarea.control { resize: vertical; min-height: 90px; }
 .stat-value { font-family: var(--font-number); font-size: 1.9rem; font-weight: 800; color: var(--text); line-height: 1; animation: countUp .4s var(--ease) both; font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.01em; }
 .stat-sub   { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 4px; }
 
-/* Critical Stock is a shortcut into a filtered inventory list, so it is built
-   from real buttons rather than a div with a click handler — see
-   criticalStockCard() in engine.js for why there are two of them.
-
-   The card keeps every .stat-card rule; these only strip the button chrome and
-   restore the block layout the divs had, then add the affordances a control
-   owes the operator: a pointer, a hover state, and a focus ring that is visible
-   without a mouse. z-index because .stat-card::after paints a decorative blob
-   over the card corner and a focus ring underneath it is a focus ring nobody
-   can see. */
-/* A linked card zeroes its own padding so the face BUTTON can span the full
-   width — a control that stops 24px short of the card edge is a control with a
-   dead margin around it.
-
-   THE CONSEQUENCE, WHICH BIT ONCE: every child then has to carry the inset
-   itself. That held while a linked card only ever contained the two padded
-   buttons. It stopped holding the moment Total Revenue and Today's Sales
-   became shortcuts, because those two have an UNLINKED `.stat-sub` div and a
-   `.stat-delta` badge as siblings — neither of which pads itself, so both ran
-   flush to the card's left edge and the cards lost their bottom inset too.
-
-   So the rule is stated for the children that are not full-bleed buttons,
-   rather than assumed. The last-child exclusion keeps a `.stat-sub-link` from
-   getting a second bottom inset on top of the one its own padding provides. */
+/* Stat cards that link somewhere use real buttons with pointer, hover and a visible focus ring (z-index keeps it above the decorative corner). */
+/* Linked cards remove their own padding so the button spans the full width, so non-button children add the inset themselves. */
 .stat-card-linked { padding: 0; }
 .stat-card-linked > .stat-sub:not(.stat-sub-link),
 .stat-card-linked > .stat-delta { margin-inline: 24px; }
@@ -1230,8 +1011,7 @@ textarea.control { resize: vertical; min-height: 90px; }
 }
 .stat-card-face:hover .stat-value,
 .stat-sub-link:hover { color: var(--accent-color, var(--gold-ink)); }
-/* Underline as well as colour: the sub-line is small muted text and a hue shift
-   alone is not a state change everyone can perceive. */
+/* Underline the sub-link on hover, not only change colour. */
 .stat-sub-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 .stat-card-face:focus-visible,
 .stat-sub-link:focus-visible {
@@ -1249,29 +1029,10 @@ textarea.control { resize: vertical; min-height: 90px; }
 .dash-grid {
   display: grid; grid-template-columns: 1fr 340px; gap: 20px;
 }
-@media (max-width: 900px) { .dash-grid { grid-template-columns: 1fr; } }
+/* minmax(0, 1fr) so a chart or table inside cannot push the column wider than the screen. */
+@media (max-width: 900px) { .dash-grid { grid-template-columns: minmax(0, 1fr); } }
 
-/* THE INVENTORY DASHBOARD IS A DIFFERENT COLUMN, NOT THE SAME ONE SHORTER.
-
-   Both readers get this grid, but the inventory reader has no Sales This Week
-   panel above the stock panel — renderDashboard() hides it. That removes about
-   275px from the left column while the notifications panel on the right keeps
-   its full length, and grid items stretch: the stock panel was drawn as tall
-   as the notifications beside it while .stock-bars stayed capped at the 266px
-   it is given for the manager's layout. The difference came out as a block of
-   empty card below the last bar.
-
-   The fix is to let the list have the height rather than to stop the panel
-   taking it — the reader with fifteen products and no sales chart is exactly
-   the one who benefits from seeing more of them at once.
-
-   flex-basis: 0 on the bars with a min-height floor, flex-basis: auto on the
-   notifications: the bars must not report their full content length as the
-   column's natural height (fifteen of them would then drive the row and push
-   the notification list past its own cap, moving the empty block to the other
-   side), while the notifications must, because their length is what should
-   set the row. The floor keeps a quiet day from shrinking the bars below what
-   they show today. */
+/* Inventory dashboard: no sales chart, so the stock bars stretch to fill the column next to the notifications. */
 .dash-grid--inventory > div,
 .dash-grid--inventory > div > .panel,
 .dash-grid--inventory > .panel { display: flex; flex-direction: column; }
@@ -1318,10 +1079,7 @@ textarea.control { resize: vertical; min-height: 90px; }
 .dash-quick-stat-val { font-family: var(--font-number); font-size: var(--fs-xl); font-weight: 800; color: var(--gold-ink); font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.01em; }
 .dash-quick-stat-lbl { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
 
-/* Solid gold fill (not just a tinted outline like the first pass) —
-   matches the sidebar's .nav-item-rbac treatment so the two shortcuts
-   to the same destination read as one consistent "this is RBAC"
-   language instead of two different button styles. */
+/* Solid gold RBAC shortcut, matching the sidebar button. */
 .dash-shortcut-btn {
   display: inline-flex; align-items: center; gap: 9px;
   padding: 11px 18px; border-radius: var(--r-pill);
@@ -1344,10 +1102,7 @@ textarea.control { resize: vertical; min-height: 90px; }
   padding: 2px 7px; border-radius: var(--r-pill);
 }
 
-/* The second shortcut onward. Gold is the dashboard's loudest colour and the
-   banner can hold more than one of these now; spending it twice would make
-   neither button first. This one carries the same shape and size — so the row
-   still reads as one set of shortcuts — in outline rather than fill. */
+/* Second and later shortcuts are outlined, not filled, so only one is gold. */
 .dash-shortcut-btn.is-quiet {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1364,33 +1119,19 @@ textarea.control { resize: vertical; min-height: 90px; }
 .dash-shortcut-btn.is-quiet .dash-shortcut-badge {
   background: var(--chip, rgba(0,0,0,.06)); color: var(--text-muted);
 }
-/* Something is waiting: the count is the reason to click, so it stops being
-   quiet. Colour is not the only carrier — the text itself says "3 to review". */
+/* When something is waiting the badge is highlighted, and its text says what ("3 to review"). */
 .dash-shortcut-btn.is-quiet .dash-shortcut-badge.is-alert {
   background: var(--gold); color: #1E1A0E;
 }
 /* Nothing outstanding — the badge is a fact, not a call to act. */
 .dash-shortcut-btn.is-quiet .dash-shortcut-badge:empty { display: none; }
 
-/* ============================================================
-   RESTOCK: THE FORM AND THE EVIDENCE BESIDE IT
-   ============================================================
-   The form is capped at 560px and sat alone in a full-width panel, leaving
-   the right-hand half of the screen empty. The recent-sales panel fills it
-   with the thing the quantity field is a guess at.
-
-   The form keeps its cap and the panel takes what is left, down to a floor
-   of 300px; below ~980px total they stack, form first, because the form is
-   the task and the chart is the reference. */
+/* Restock form beside a recent-sales panel; they stack below about 980px. */
 .restock-layout {
   display: grid;
   grid-template-columns: minmax(0, 560px) minmax(300px, 1fr);
   gap: 18px;
-  /* stretch, not start: the two panels are one row of the same screen and a
-     short form beside a tall chart left the form's card ending mid-air, with
-     the page background showing beside the chart's lower half. Both cards now
-     end on the same line. Their contents still sit at the top — the extra
-     height falls after the last control, it is not spread through the form. */
+  /* Both panels stretch to the same height. */
   align-items: stretch;
 }
 @media (max-width: 980px) {
@@ -1399,16 +1140,7 @@ textarea.control { resize: vertical; min-height: 90px; }
 
 .rs-insight .panel-header { gap: 10px; flex-wrap: wrap; }
 
-/* Two states, one control. Segmented rather than a <select> because there are
-   exactly two and both should be readable without opening anything.
-
-   IT IS A TAB PILL, drawn by THE ONE TAB PILL block further down this file —
-   see the doctrine there. It used to be a sixth, private treatment: a cream
-   --surface-2 track with the selected item filled --surface. That is invisible
-   under the glass skin, which re-points --surface to a translucent white, so
-   the selected pill became near-white ON cream and the control read as one
-   flat blob. Only the row's own spacing is set here; the pills themselves are
-   the shared ones, so "selected" looks the same here as on every other row. */
+/* Two-option segmented control using the shared tab pill styles. */
 .rs-basis { display: inline-flex; gap: 6px; margin-left: auto; }
 
 .rs-headline { font-size: var(--fs-base); margin-bottom: 12px; }
@@ -1420,9 +1152,7 @@ textarea.control { resize: vertical; min-height: 90px; }
 .rs-chart-peak span { font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
 .rs-chart-axis { display: flex; justify-content: space-between; font-size: var(--fs-2xs); color: var(--text-muted); margin-top: 4px; }
 
-/* Bars outside the selected basis stay visible but recede: they are context
-   for the trend, not what the suggestion counted. The distinction is carried
-   by fill AND by the figures above, never by colour alone. */
+/* Bars outside the selected range are faded, with figures also saying which ones count. */
 .rs-axis { stroke: var(--border); stroke-width: 1; }
 .rs-bar { fill: var(--border); transition: fill var(--t-fast); }
 .rs-bar.is-on { fill: var(--gold); }
@@ -1441,146 +1171,70 @@ textarea.control { resize: vertical; min-height: 90px; }
 .rs-advice.is-ok .rs-advice-lead { color: var(--ok); }
 .rs-advice strong { color: var(--text); }
 
-/* A payment toward a Net account, in the Sales Report's ledger. Tinted so the
-   eye can separate money arriving from goods going out at a glance; the row
-   also says "Net 60 payment" and "received" in words, because a tint is not
-   information a colourblind reader can act on. */
+/* Net account payments in the Sales Report ledger get a tint plus text labels. */
 .data-table tr.row-payment { background: color-mix(in srgb, var(--gold) 5%, transparent); }
 .data-table tr.row-payment td:first-child { box-shadow: inset 3px 0 0 var(--gold); }
 
-/* Facts about a sale that the client's paper Sales Invoice has no field for —
-   cash tendered, change, a transfer reference, a due date, the order status.
-   Shown above the invoice in its modal and never printed. */
+/* Sale details not on the paper invoice (cash, change, reference, due date, status), shown above the invoice but never printed. */
 .invoice-till-note {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
   font-size: var(--fs-sm); color: var(--text-muted); margin-bottom: 12px;
 }
 .invoice-till-note b { color: var(--text); font-variant-numeric: tabular-nums; }
 
-/* ============================================================
-   VAT MAINTENANCE (assets/js/portal/vat.js)
-   ============================================================ */
+/* ===== VAT MAINTENANCE (assets/js/portal/vat.js) ===== */
 .vat-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
 .vat-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 18px; align-items: start; margin-bottom: 14px;
 }
 .vat-grid .panel { margin: 0; }
+.vat-grid.vat-grid-single { grid-template-columns: 1fr; }
 .vat-check { display: flex; align-items: center; gap: 9px; font-size: var(--fs-base); margin: 6px 0 10px; cursor: pointer; }
-/* Direct child only. The POS variant of this label holds a .switch, whose own
-   input is a full-size transparent overlay — sizing THAT to 16px would break
-   the toggle's hit area. The VAT screen's plain checkboxes are direct
-   children, so the combinator says which is which without a second class. */
+/* Direct child only, so the POS label's .switch input is not resized. */
 .vat-check > input { width: 16px; height: 16px; accent-color: var(--gold); flex-shrink: 0; }
 .vat-check-inline { margin: 0; font-size: var(--fs-sm); white-space: nowrap; }
 .vat-check-hint { display: block; margin: -4px 0 12px 25px; }
 
-/* POS PAYMENT — the senior citizen / PWD switch.
-
-   The discount arithmetic behind it is untouched: api/core/Tax.php works it
-   out and pos/quote.php returns it. This is the control only.
-
-   On a till a cashier hits this with a fingertip, at speed, and it changes
-   what the customer pays. As a bare 16px checkbox on a line of text the only
-   things clickable were the box and the six words beside it, so the whole
-   strip is the <label> — the target is the width of the panel and ~42px tall.
-
-   ON IS READABLE THREE WAYS, never by colour alone: the switch's thumb moves
-   to the far end, the track fills gold, and the strip takes a gold edge and a
-   tint. The focus ring is the app's own, drawn on the strip rather than on the
-   switch, because the strip is what a keyboard user is actually activating. */
-/* NO FILL AT REST. The strip used to be var(--surface-2), which measured
-   1.11:1 against the panel behind it — a beige box you can only just tell is
-   there, adding a shade to the screen without telling anyone anything. Its job
-   is to say "all of this is one control, and all of it is clickable", and an
-   outline does that on its own.
-
-   The border is mixed from --text rather than --border, which glass.css
-   re-points to rgba(255,255,255,.45) — the same trap that made the switch
-   invisible two changes ago.
-
-   The fill now means something: nothing at rest, a gold wash on hover, and the
-   checked tint reserved for when the discount is actually being applied. */
+/* POS Senior/PWD switch: the whole strip is the clickable label, and ON shows three ways (thumb, gold track, gold edge and tint). */
+/* No fill at rest; an outline mixed from --text marks the strip, gold on hover, tint only when ON. */
 .vat-check.pos-check {
   margin: 0 0 8px;
   padding: 11px 12px;
   gap: 11px;
-  /* 50%, measured: 22% came out 1.58:1 against the panel, which is the same
-     "can only just tell it is there" the fill had. 50% is 3.26:1 in light and
-     4.72:1 in dark. */
+  /* 50% border mix gives 3:1 or better in both themes. */
   border: 1px solid color-mix(in srgb, var(--text) 50%, transparent);
   border-radius: var(--r-sm);
   background: transparent;
   transition: background var(--t) var(--ease), border-color var(--t) var(--ease);
 }
 
-/* A SWITCH, NOT A CHECKBOX. It is the portal's .switch component — the same
-   one the Roles matrix and the Sales Report use — so this control looks and
-   behaves like every other on/off in the app, and a glance across the payment
-   screen says whether the discount is applied without reading anything.
-
-   The hand-drawn checkbox that used to be here is gone with it. It had to be
-   mixed from --text and --bg because glass.css re-points --surface and
-   --border-lift to white translucents, which had made it invisible; .switch
-   carries its own colours and does not have that problem.
-
-   The switch brings its own focus ring on the track. Suppressed here, because
-   the whole 340px strip is the hit area and the ring below outlines that —
-   two rings for one control reads as two controls. */
+/* Uses the shared .switch component; its own focus ring is hidden because the strip draws one. */
 .vat-check.pos-check .switch input:focus-visible ~ .switch-track { outline: none; }
-/* THE LABEL CARRIES THE SAME WEIGHT AS THE CONTROL beside it. At the row's
-   default 13.76px it read as a caption hung off the switch rather than half of
-   one control; 14px at 600 balances the 40x24 track.
-
-   line-height 1.2 keeps the text's box close to its glyphs, so `align-items:
-   center` centres what is read rather than the leading around it. */
+/* Label at 14px/600 to balance the switch, with line-height 1.2 for true centring. */
 .vat-check.pos-check > span {
   font-size: var(--fs-base); font-weight: 600; line-height: 1.2;
   color: var(--text);
 }
 .vat-check.pos-check:hover { border-color: var(--gold); background: var(--gold-dim); }
-/* ON changes the row two ways that are not the fill: the border goes gold and
-   the switch's thumb is at the far end. The wash is deliberately light —
-   a gold tint on a cream panel can only ever be about 1.1:1, so it is the
-   supporting signal here, not the one doing the work. */
+/* ON is shown by a gold border and the thumb position, with a light tint as support. */
 .vat-check.pos-check:has(input:checked) {
   border-color: var(--gold);
   background: color-mix(in srgb, var(--gold) 18%, transparent);
 }
-/* The switch's own input is a transparent overlay; a ring on that would trace
-   a 40px box in the corner of a 340px target. The strip is what gets outlined. */
+/* Focus ring goes on the strip, not the hidden input. */
 .vat-check.pos-check input:focus-visible { outline: none; }
 .vat-check.pos-check:has(input:focus-visible) {
   outline: 3px solid var(--gold); outline-offset: 3px;
 }
-/* .vat-note is gone: it styled the explanatory paragraph under each tab, and
-   those paragraphs were removed — the screen is for people who already know
-   the rules. What they said for developers lives in vat.js's header and in
-   api/vat/summary.php. */
+/* .vat-note was removed along with the explanatory paragraphs. */
 
-/* The active tab's live count, at the right end of the tab row. A figure, so
-   tabular; muted, because it describes the tab rather than competing with it. */
+/* The active tab's live count at the right end of the tab row. */
 .vat-tab-meta { font-size: var(--fs-sm); font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .vat-tab-meta:empty { display: none; }
 
-/* THE DATE RANGE — one row, identical tracks, one height.
-   It was a flex row of two .field boxes with a 170px min-width each and a
-   .btn beside them. Nothing tied the two date fields to each other, so their
-   widths followed whatever the trigger's content asked for, and the button was
-   a 40px pill beside 38px date boxes — tops a pair of pixels apart, bottoms
-   aligned by align-items. Now: a grid whose two date tracks are the same size
-   by construction, labels on one baseline because the tracks share a row, and
-   the button pinned to the date trigger's own 38px. */
-/* IT WRAPS ON ITS OWN WIDTH.
-
-   This was a three-track grid that fell to one column on a `max-width: 560px`
-   media query — the browser's width, not this bar's. The bar sits in the
-   portal's content column, which is the window minus a 252px sidebar, so
-   between about 560px and 750px of window the query had not fired yet and the
-   column was already too narrow to hold 190 + 190 + 93 and its gaps: the bar
-   overflowed its panel. flex-wrap has no such gap — the Show button drops to
-   its own line when the row runs out, then the second date, each exactly when
-   it stops fitting. */
+/* Date range bar: one row, equal date fields, button matching their 38px height. */
+/* Wraps based on its own width (flex-wrap), not a viewport media query. */
 .vat-summary-bar {
   display: flex; flex-wrap: wrap; align-items: center;
   gap: 12px; margin-bottom: 16px;
@@ -1588,17 +1242,7 @@ textarea.control { resize: vertical; min-height: 90px; }
 .vat-summary-bar > .field { flex: 1 1 200px; max-width: 260px; }
 .vat-summary-bar > .btn { flex: none; }
 
-/* "From" AND ITS DATE ON ONE LINE.
-
-   `.field label` is display:block with a 6px bottom margin — the right shape
-   for a form where a label introduces the control underneath it, and the wrong
-   one for a two-date range bar, where it made a two-storey row: the words From
-   and To on top, the calendars beneath them, and the Show button floating
-   beside the taller stack. Read as a sentence — "From [date] To [date]" — the
-   label belongs beside the control, not above it.
-
-   Only inside this bar. Every other .field on the screen keeps the stacked
-   label it was designed with. */
+/* Inside this bar, labels sit beside their date ("From [date] To [date]"). */
 .vat-summary-bar .field {
   margin: 0; min-width: 0;
   display: flex; align-items: center; gap: 8px;
@@ -1606,47 +1250,23 @@ textarea.control { resize: vertical; min-height: 90px; }
 .vat-summary-bar .field label {
   display: inline; margin: 0; flex: none; white-space: nowrap;
 }
-/* The control takes what the label leaves. min-width: 0 so a long date can
-   shorten it rather than push it out of the track. */
+/* The date control takes the remaining width and can shrink. */
 .vat-summary-bar .ebd,
 .vat-summary-bar input[type="date"] { flex: 1 1 auto; min-width: 0; }
 .vat-summary-bar .ebd-trigger { width: 100%; min-width: 0; }
 .vat-summary-bar .btn { min-height: 38px; height: 38px; padding-block: 0; }
 
-/* Phone: the wrapping above already puts each on its own row; all this adds is
-   a full-width tap target for the action once it is alone on its line. */
+/* Phone: the action button becomes full width when on its own line. */
 @media (max-width: 560px) {
   .vat-summary-bar > .field { max-width: none; }
   .vat-summary-bar > .btn { flex: 1 1 100%; width: 100%; }
 }
-/* Two classes, not one: .sales-summary is defined further down this file and
-   would otherwise win on source order, squeezing six-figure pesos out of their
-   cards. Wider minimum than the Sales Report's because these carry centavos. */
+/* Two classes to beat .sales-summary below; wider minimum for figures with centavos. */
 .sales-summary.vat-summary-cards { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); margin-bottom: 14px; }
 .sales-summary.vat-summary-cards .sales-sum-val { font-size: var(--fs-xl); white-space: nowrap; }
 
 /* Notification list */
-/* BOUNDED, LIKE .stock-bars BELOW IT.
-
-   This panel is the only thing on the dashboard whose length is decided by
-   the data: it used to render a fixed five invented rows and now renders as
-   many real notifications as there are. At eight it measured 818px against a
-   645px left column, so it hung 173px below the Stock Levels panel beside it
-   and pushed Recent Transactions down with it.
-
-   Capped rather than made to stretch. `max-height` means a quiet day still
-   shrink-wraps — the panel ends where its content ends — while a busy one
-   scrolls inside instead of stretching the page. Same treatment .stock-bars
-   gets for the same reason, and the auto-hiding scrollbar at the top of this
-   file gives it the same affordance.
-
-   542px is the left column's height (645) less this panel's own chrome (103:
-   22 padding top and bottom, a 38.5 header, its 18 margin, 2 of border), so a
-   full list finishes level with Stock Levels. If the panel padding or the
-   header spacing changes, this changes with it.
-
-   overflow-x is hidden because .notif-item shifts 2px right on hover, which
-   is enough to earn a horizontal scrollbar it has no use for. */
+/* The notification list is capped at 542px (the left column height minus this panel's chrome) and scrolls, with no horizontal scrollbar. */
 .notif-list {
   display: flex; flex-direction: column; gap: 8px;
   max-height: 542px;
@@ -1660,10 +1280,7 @@ textarea.control { resize: vertical; min-height: 90px; }
   transition: background var(--t), transform var(--t);
 }
 .notif-item:hover { background: var(--bg-tint); transform: translateX(2px); }
-/* Keyed by urgency level now. The old classes (red / gold / ok / crit) were
-   this panel's private vocabulary, invented alongside the feed it used to
-   build for itself; it reads the shared rows in the shared order, so it
-   uses the shared three levels. */
+/* Keyed by the shared three urgency levels. */
 .notif-item.level-critical { --notif-accent: var(--out);  }
 .notif-item.level-warning  { --notif-accent: var(--warn); }
 .notif-item.level-info     { --notif-accent: var(--border-lift); }
@@ -1711,9 +1328,7 @@ textarea.control { resize: vertical; min-height: 90px; }
 .stock-badge.low  { background: rgba(239,68,68,.15);  color: #b63434; }
 .stock-badge.warn { background: rgba(234,179,8,.15);  color: #a16207; }
 
-/* =================================================================
-   7. DATA TABLE
-   ================================================================= */
+/* ===== 7. DATA TABLE ===== */
 .table-wrap { overflow-x: auto; border-radius: var(--r-lg); border: 1px solid var(--border); }
 .table-wrap.scrollable { max-height: 280px; overflow-y: auto; }
 
@@ -1767,29 +1382,7 @@ td.mono { white-space: nowrap; }
   margin-bottom: 16px;
 }
 
-/* =================================================================
-   THE MERGED VIEW TOOLBAR — tabs left, filters right, one band
-   -----------------------------------------------------------------
-   Every table screen used to stack two bands of chrome above it: the tab
-   strip, then a separate .table-toolbar holding search, per-page and status.
-   Two rows of controls, two different heights, nothing aligned to anything.
-
-   ONE ROW. The tab group and the filter group are the two children;
-   space-between puts them at the ends and margin-left:auto on the filters
-   holds them right even when the tab group is absent.
-
-   THE THREE CASES, and why none of them needs its own rule:
-     tabs + filters  space-between separates them.
-     filters only    the filter group is the only child; margin-left:auto has
-                     nothing to push against, so it sits left — where a lone
-                     search box belongs. NOT right-aligned with a hole where
-                     tabs would have been.
-     tabs only       likewise left, and the row is just the tab strip.
-
-   HEIGHT IS WHAT ACTUALLY READS AS ALIGNED. A 34px pill beside a 38px search
-   box beside a 32px select is what "not aligned properly" looks like even when
-   every one of them is centred. --toolbar-h is applied to every control that
-   can appear in this row, so the band has one silhouette. */
+/* Merged view toolbar: tabs on the left and filters on the right in one row, with every control at --toolbar-h height. */
 :root { --toolbar-h: 38px; }
 
 .view-toolbar {
@@ -1798,129 +1391,41 @@ td.mono { white-space: nowrap; }
   margin-bottom: 18px;
 }
 
-/* WRAPPING IS RIGHT FOR ONE SHAPE AND WRONG FOR THE OTHER.
-
-   On a filters-only screen the row's children ARE the individual controls, and
-   five of them on a medium window must be free to wrap.
-
-   On a tabs + filters screen the children are two GROUPS, and wrapping puts
-   them on separate lines — which is the two-band layout this change removes.
-   Making the tab strip shrinkable is not enough on its own: flex breaks lines
-   BEFORE it applies flex-shrink, so a 930px tab strip beside a 211px filter
-   group in a 1120px row wrapped first and then grew to fill its new line.
-
-   :has() distinguishes the two by structure rather than by adding a class to
-   every view: a row containing a .view-toolbar-filters GROUP is the two-group
-   case, and only that case stops wrapping. Below the breakpoint the column
-   rule takes over and both stack regardless. */
+/* With two groups (tabs + filters) the row does not wrap, detected with :has(); filters-only rows can wrap. */
 .view-toolbar:has(> .view-toolbar-filters) { flex-wrap: nowrap; }
 
-/* EXCEPT WHERE ONE BAND WAS NEVER GOING TO FIT.
-
-   The rule above is right when the filter group is one or two controls: the
-   tab strip gives up a little width, scrolls the overflow, and the row stays
-   one band. Inventory Management's Stock Overview mounts FOUR — a search box
-   and three selects, 710px of them — against a six-pill strip that wants 948.
-   That needs a 1674px row, so on a 1920px screen (1612px of content) the strip
-   was still 62px short and the Archive pill was sliced through the middle of
-   its own word. Not scrolled to, not hidden: cut, with the search box starting
-   where the rest of it should have been, which reads as two controls drawn on
-   top of each other.
-
-   Scrolling is only an honest answer when there is a reason to believe the
-   reader knows to scroll. A strip clipped mid-glyph with its scrollbar hidden
-   — which this row does deliberately, to keep the baseline — is not that.
-
-   So this row wraps WHEN IT HAS TO and not before: one band on a window wide
-   enough to hold both groups, filters on their own right-aligned line below
-   when there isn't, and nothing ever cut. The strip keeps overflow-x for the
-   case where it alone is wider than the row. Matched on structure, like the
-   rule above, and ordered after it because the two have equal specificity. */
+/* Exception: when the filter group is too large to fit beside the tabs, the row wraps so nothing gets cut off. */
 .view-toolbar:has(> .inv-action-tabs) { flex-wrap: wrap; }
-/* On the wrapped line the filter group is the line's only item, and the auto
-   left margin the group carries for the one-band case then pushed it to the
-   far right — a row of controls floating under the last two pills with the
-   width of the screen empty to their left. Starting them at the left edge
-   puts them under the strip they filter. Nothing is lost when the row is one
-   band: the tab strip is flex: 1 1 auto and grows to fill, so it still pushes
-   the group to the right-hand end without the margin. */
+/* On the wrapped line, filters start at the left under the tabs. */
 .view-toolbar:has(> .inv-action-tabs) > .view-toolbar-filters { margin-left: 0; }
 
 .view-toolbar-filters {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   margin-left: auto;
-  /* flex-shrink: 0 below keeps the group off the tab strip's bill, but it also
-     meant the group kept its full content width in a row narrower than itself
-     and simply hung over the edge — four controls needing 710px in a 672px row
-     at around a 990px window, which is above the 700px breakpoint where the
-     two groups stack. The group already wraps internally; this lets it. */
+  /* The filter group may wrap internally so it never overflows the row. */
   max-width: 100%;
 }
 
-/* A ROW THAT IS ITSELF THE FILTER GROUP MUST NOT SPACE-BETWEEN.
-
-   On a screen with no tabs both classes land on one element, so the row's
-   children are the individual controls rather than two groups — and
-   space-between then pushed every control to a different part of the width.
-   The Inventory Report read as a search box on the far left and three
-   dropdowns scattered across the rest of the bar with a hand's width between
-   them, which is the "inconsistent gaps" this is fixing.
-
-   flex-start puts them back on a single 10px rhythm; the search box keeps its
-   own flex:1 so it still takes the slack and the controls still finish at the
-   right-hand edge. Same visual result, one consistent gap. */
+/* A filters-only row uses flex-start so controls keep an even gap. */
 .view-toolbar.view-toolbar-filters { justify-content: flex-start; }
 
-/* THE SPLIT POINT IS DECLARED, NOT INFERRED FROM AUTO MARGINS.
-
-   The first attempt pushed with `margin-right: auto` on the search box and
-   `margin-left: auto` on the filter group. Two auto margins in one flex line
-   SHARE the free space rather than one of them winning, so Order Status ended
-   up with its status filter stranded in the middle of the bar with 247px of
-   nothing on either side, and Batch Tracking put its search there instead.
-
-   A zero-width flexible spacer says where the row divides and cannot be
-   ambiguous: everything before it sits left, everything after it sits right,
-   however many controls are on each side and whatever gets mounted into the
-   row later. */
+/* A zero-width flexible spacer marks where left-aligned controls end and right-aligned ones begin. */
 .view-toolbar .vt-spacer { flex: 1 1 auto; min-width: 0; align-self: stretch; }
 
-/* A filter set belonging to one tab.
-
-   Users is the only screen where the two tabs need DIFFERENT filters —
-   Customers filter by status, Employees carry an Add button instead — so both
-   sets live in the row and only the open tab's is shown. Same .active flag
-   renderUsers() already toggles on .tab-panel, so there is one mechanism to
-   keep in sync rather than two. */
+/* Per-tab filter sets (used on Users), shown with the same .active flag as .tab-panel. */
 .tab-filters { display: none; align-items: center; gap: 10px; flex-wrap: wrap; }
 .tab-filters.active { display: flex; }
 
-/* The tab strip inside the row loses the full-width underline it had as a
-   block: a rule that ran the width of the screen made the row read as two
-   bands again, one above the line and one on it. The active tab keeps its own
-   underline, which is the part that was doing the work.
-
-   IT SCROLLS RATHER THAN WRAPS, and that is what keeps the row one row.
-   Online Transactions has eight status tabs measuring 999px and Returns has
-   seven measuring 930px; beside a 211px filter group in a 1120px panel, a
-   wrapping strip pushed the filters onto a second line — the exact two-band
-   layout this whole change exists to remove, reappearing on the two screens
-   with the most tabs. `flex: 1 1 auto` with `min-width: 0` lets the strip give
-   up width instead of taking it, and overflow-x turns the overflow into a
-   scroll. `flex-shrink: 0` on the filter group means the search box and the
-   selects never get squeezed to pay for the tabs. */
+/* The tab strip in the toolbar has no full-width underline and scrolls sideways instead of wrapping, so the toolbar stays one row. */
 .view-toolbar > .tabs,
 .view-toolbar > .return-tabs,
-/* Inventory Management's pill row is a tab strip under another name, and has
-   to give up width to the filters the same way the others do — left as a
-   block it took the full line and pushed them underneath. */
+/* Inventory Management's pill row shrinks like the other tab strips. */
 .view-toolbar > .inv-action-tabs,
 .view-toolbar .tabs {
   border-bottom: none; margin-bottom: 0;
   flex: 1 1 auto; min-width: 0;
   flex-wrap: nowrap; overflow-x: auto;
-  /* The auto-hiding scrollbar at the top of this file would still reserve a
-     couple of pixels under the pills and knock the row's baseline out. */
+  /* Hide the scrollbar under the pills so it does not shift the baseline. */
   scrollbar-width: none;
 }
 .view-toolbar > .tabs::-webkit-scrollbar,
@@ -1941,18 +1446,12 @@ td.mono { white-space: nowrap; }
 .view-toolbar .btn {
   height: var(--toolbar-h);
 }
-/* .ebs-trigger is named explicitly above rather than left to its own
-   min-height. EbSelect replaces every .filter-select in this row with a
-   trigger button, so without this line the band's alignment would depend on
-   the component's default happening to equal --toolbar-h — true today, and a
-   silent one-pixel drift the first time either number is touched. */
+/* Set .ebs-trigger to --toolbar-h explicitly so EbSelect dropdowns line up with the other controls. */
 .view-toolbar .search-box { padding-block: 0; }
 .view-toolbar .filter-select { padding-block: 0; }
 .view-toolbar .tab-btn { display: inline-flex; align-items: center; }
 
-/* Below this the two groups stack, tabs first, each full width and still
-   aligned within itself. The tab strip scrolls sideways rather than squashing
-   its pills — a wrapped tab row reads as two tab rows. */
+/* Below this width the groups stack and the tab strip scrolls sideways. */
 @media (max-width: 700px) {
   .view-toolbar { flex-direction: column; align-items: stretch; }
   .view-toolbar-filters { margin-left: 0; }
@@ -1984,38 +1483,10 @@ select.filter-select {
 }
 select.filter-select:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-dim); }
 
-/* =================================================================
-   8. TABS
-   ================================================================= */
+/* ===== 8. TABS ===== */
 .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 22px; }
 
-/* =================================================================
-   THE ONE TAB PILL
-   -----------------------------------------------------------------
-   Five classes draw a tab pill in this portal and they had drifted into
-   three different hover treatments and four different sizes:
-
-     .inv-action-btn   Inventory Management   gold edge on hover
-     .range-btn        Sales date ranges      gold edge, gold-ink text
-     .return-tab-btn   Returns, Notifications glass wash + 1px lift
-     .alert-tab        Dashboard alerts       glass wash + 1px lift
-     .rs-basis-btn     Restock "recent sales" a track-and-slider of its own
-     .tab-btn          Orders, Users, Products  an UNDERLINE tab, not a
-                       pill at all in this file — glass.css was quietly
-                       rounding it into one further down the cascade.
-
-   Four of those rule sets said nearly the same thing in four files, which
-   is precisely how they came to disagree. They are one block now, and the
-   only thing a variant may still change is its SIZE — through the three
-   custom properties below, so a smaller pill cannot accidentally bring a
-   different hover with it.
-
-   HOVER IS AN EDGE, ACTIVE IS A FILL. They have to be told apart while the
-   pointer is moving across the row: a hovered inactive tab shows a gold
-   border on a transparent body, the selected one is filled gold with dark
-   text and a heavier weight. Two different mechanisms, not two shades of
-   the same one — so the selected tab is still obvious to someone who
-   cannot separate the hues. */
+/* The one tab pill: all tab classes share one look (hover = gold edge, active = gold fill with dark bold text), and variants may only change size via the three custom properties. */
 .tab-btn,
 .return-tab-btn,
 .alert-tab,
@@ -2035,9 +1506,7 @@ select.filter-select:focus { outline: none; border-color: var(--gold); box-shado
   border: 1.5px solid var(--border-lift);
   background: transparent; color: var(--text-muted);
   cursor: pointer;
-  /* Named properties rather than `all`: `transition: all` also animates the
-     box-shadow, which makes the focus ring fade in rather than appear — a
-     keyboard user should see where they are immediately. */
+  /* List transition properties explicitly so the focus ring appears instantly. */
   transition: background var(--t) var(--ease),
               border-color var(--t) var(--ease),
               color var(--t) var(--ease);
@@ -2065,9 +1534,7 @@ select.filter-select:focus { outline: none; border-color: var(--gold); box-shado
   font-weight: 800;
 }
 
-/* Size is the one permitted variation. These rows are denser than the module
-   tabs and would look overbearing at the default. The basis pair is smaller
-   again: it sits on a panel header beside the title, not on a tab strip. */
+/* Smaller sizes for denser rows; the basis pair is smaller still. */
 .return-tab-btn,
 .alert-tab { --pill-py: 7px; --pill-px: 16px; --pill-fs: var(--fs-xs); }
 .rs-basis-btn { --pill-py: 6px; --pill-px: 13px; --pill-fs: var(--fs-2xs); }
@@ -2075,9 +1542,7 @@ select.filter-select:focus { outline: none; border-color: var(--gold); box-shado
 .tab-panel { display: none; }
 .tab-panel.active { display: block; animation: fadeIn .25s ease both; }
 
-/* =================================================================
-   9. MODAL
-   ================================================================= */
+/* ===== 9. MODAL ===== */
 .modal-overlay {
   position: fixed; inset: 0; z-index: var(--z-modal);
   background: rgba(13,11,8,.72); backdrop-filter: blur(4px);
@@ -2098,21 +1563,7 @@ select.filter-select:focus { outline: none; border-color: var(--gold); box-shado
 .modal-lg { max-width: 720px; }
 .modal-xl { max-width: 1120px; }   /* e.g. Return detail: 7 steps on one row */
 
-/* THE TITLE IS CENTRED ON THE DIALOG, NOT ON WHAT IS LEFT OVER.
-
-   `justify-content: space-between` put the title hard left and the close button
-   hard right, which is a fine header — except everything under it in this app
-   is centred, so the dialog read as lopsided. Simply adding text-align would
-   not have fixed it either: the title would then centre in the space the close
-   button leaves, which is still 18px off the dialog's axis.
-
-   Three columns, with an empty one on the left the same width as the close
-   button, so the middle column is exactly centred and the title with it. The
-   columns are assigned explicitly because the markup is title-then-button and
-   auto-placement would drop the button into the middle.
-
-   PADDING IS SYMMETRIC NOW, 20 top and 20 bottom. It was 22 and 16, which
-   tipped the header's contents upward inside their own band. */
+/* Modal header uses three columns so the title is centred on the dialog, with equal 20px padding. */
 .modal-header {
   display: grid; grid-template-columns: 36px 1fr 36px; align-items: center;
   gap: 10px;
@@ -2125,13 +1576,7 @@ select.filter-select:focus { outline: none; border-color: var(--gold); box-shado
 .modal-close:hover { color: var(--text); }
 .modal-close svg { width: 20px; height: 20px; }
 
-/* ── Image lightbox (zoom view) ──
-   Sits ABOVE .modal-overlay, because the only thing that opens it so far is an
-   image inside a modal — same stack as the modal plus a step, still under the
-   toast layer so a failure message is never hidden behind it.
-
-   Motion is transition-only, so the global prefers-reduced-motion reset further
-   down this file flattens it without a second rule here. */
+/* Image lightbox sits above modals but below toasts. */
 .eb-lightbox {
   position: fixed; inset: 0; z-index: calc(var(--z-modal) + 10);
   background: rgba(13,11,8,.88); backdrop-filter: blur(6px);
@@ -2190,20 +1635,9 @@ select.filter-select:focus { outline: none; border-color: var(--gold); box-shado
 .preview-iframe { flex: 1; width: 100%; border: none; background: #fff; }
 
 .modal-body { padding: 22px 26px; overflow-y: auto; flex: 1; }
-/* The body's own padding is 22 top and 22 bottom, but the last thing in it is
-   usually a .field, which carries margin-bottom: 14px — so the gap under the
-   content measured 36px against 22px above it. The dialog looked bottom-heavy
-   for a reason that had nothing to do with the dialog. */
+/* Remove the last field's bottom margin so the body's spacing is even. */
 .modal-body > *:last-child { margin-bottom: 0; }
-/* ACTIONS STAY AT THE TRAILING EDGE, which is where they were and where the
-   rest of the portal puts them. They were briefly centred, and then centred on
-   the seam between them; both were tidier in a single dialog and worse across
-   a screenful of them, because a confirm button that moves depending on how
-   long its label is gives the eye nothing to return to. The title above is
-   centred — that is a heading, and it is the same in every dialog.
-
-   The padding is 20 and 20, matching the header. It was 16 top and 22 bottom,
-   which tipped the row upward inside its own band. */
+/* Actions stay right-aligned, with 20px padding top and bottom. */
 .modal-footer {
   display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap;
   padding: 20px 26px; border-top: 1px solid var(--border);
@@ -2211,9 +1645,7 @@ select.filter-select:focus { outline: none; border-color: var(--gold); box-shado
 }
 .modal-footer:empty { display: none; }   /* no buttons → no empty band */
 
-/* =================================================================
-   10. TOAST
-   ================================================================= */
+/* ===== 10. TOAST ===== */
 .toast-container {
   position: fixed; bottom: 24px; right: 24px;
   z-index: var(--z-toast); display: flex; flex-direction: column; gap: 8px;
@@ -2238,9 +1670,7 @@ select.filter-select:focus { outline: none; border-color: var(--gold); box-shado
 .toast.t-warn { border-color: rgba(232,163,23,.3); }
 .toast.t-warn svg { color: var(--gold-ink); }
 
-/* =================================================================
-   11. INVENTORY MODULE
-   ================================================================= */
+/* ===== 11. INVENTORY MODULE ===== */
 .inv-legend {
   display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
 }
@@ -2254,47 +1684,38 @@ select.filter-select:focus { outline: none; border-color: var(--gold); box-shado
 .inv-warn { background: var(--warn); }
 .inv-crit { background: var(--crit); }
 .inv-out  { background: var(--out); }
+.inv-muted { background: var(--text-muted); }
+.inv-legend { align-items: center; }
+.inv-legend-sep { width: 1px; height: 16px; background: var(--border); }
 
-/* =================================================================
-   12. SALES MODULE
-   ================================================================= */
+/* Edit Baselines popup. */
+.bl-sec + .bl-sec { margin-top: 20px; padding-top: 18px; border-top: 1px dashed var(--border); }
+.bl-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.bl-head-ic { flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: rgba(232,163,23,.14); color: var(--gold-ink); }
+.bl-head-ic svg { width: 18px; height: 18px; }
+.bl-head-title { font-size: 1rem; font-weight: 800; color: var(--text); letter-spacing: .01em; }
+.bl-head-sub { font-size: .8rem; color: var(--text-muted); margin-top: 2px; }
+/* Edit Baselines stands out on the dark header. */
+[data-theme="dark"] #inv-edit-baselines { color: var(--gold-ink); border-color: rgba(232,163,23,.45); background: rgba(232,163,23,.1); }
+[data-theme="dark"] #inv-edit-baselines:hover { background: rgba(232,163,23,.2); border-color: var(--gold-ink); }
+.bl-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.bl-sec .field { margin-bottom: 12px; }
+.bl-input { position: relative; }
+.bl-input .control { padding-right: 92px; }
+.bl-unit { position: absolute; right: 12px; top: 50%; translate: 0 -50%; font-size: .78rem; color: var(--text-muted); pointer-events: none; }
+@media (max-width: 560px) { .bl-row { grid-template-columns: 1fr; } }
+
+/* ===== 12. SALES MODULE ===== */
 .date-range-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 20px; }
-/* Shape, hover and active come from THE ONE TAB PILL block; only the size
-   is set here. It used to hover to --gold-ink where every other pill hovers
-   to --text, which is the kind of one-word difference nobody notices in a
-   diff and everybody notices on screen. */
+/* Uses the shared tab pill; only size is set here. */
 .range-btn { --pill-py: 7px; --pill-px: 16px; --pill-fs: var(--fs-xs); }
 
-/* SALES REPORT — the four summary tiles.
-
-   FOUR EXPLICIT COLUMNS, NOT auto-fit. The row used to be
-   `repeat(auto-fit, minmax(160px, 1fr))`, and auto-fit only collapses a
-   repeated track when NOTHING occupies it. The credit note at the end of the
-   row is `grid-column: 1/-1`, so it occupies every track there is — including
-   the fifth one that fits at desktop width and has no card in it. Nothing
-   collapsed, the four cards were pinned to 179px of a 950px row, and ~190px
-   sat empty on the right while six-digit pesos wrapped inside the cards.
-   Four columns cannot do that: the row is always full and the space is in
-   the tiles, where the numbers are.
-
-   AND THE NUMBER NEVER WRAPS. white-space: nowrap keeps "₱1,234,567.89" from
-   breaking after a thousands separator — a money figure split across two
-   lines is not just ugly, it is briefly a different number. Nowrap alone
-   would overflow instead of wrapping, so the size is tied to the tile: 11.5cqi
-   is the largest that still fits eight digits and centavos in the tile's own
-   width, capped at the original 1.5rem so ordinary figures are unchanged.
-   All four tiles are the same width, so they all settle on the same size.
-   (Tabular figures were already here and stay: they are what stops the digits
-   shuffling sideways as the totals refresh.) */
+/* Sales Report summary: four fixed columns, and figures never wrap, scaling with the tile (11.5cqi, capped at 1.5rem). */
 .sales-summary {
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px;
   margin-bottom: 22px;
 }
-/* Two columns below 1200px, not the 980px used elsewhere in this file: with
-   the sidebar taking 252px, four tiles across a 1000px window come out at
-   157px each, and eight digits will not fit in that at a size anyone would
-   call a headline figure. Measured, not guessed — 1200 is where four tiles
-   still hold "₱12,345,678.90". */
+/* Two columns below 1200px, where four tiles become too narrow for large figures. */
 @media (max-width: 1200px) { .sales-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px)  { .sales-summary { grid-template-columns: minmax(0, 1fr); } }
 .sales-sum-card {
@@ -2334,9 +1755,7 @@ select.filter-select:focus { outline: none; border-color: var(--gold); box-shado
 .custom-range-row .control:focus,
 .compare-row .control:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-dim); }
 
-/* =================================================================
-   13. PAYMENT SCHEME MODULE
-   ================================================================= */
+/* ===== 13. PAYMENT SCHEME MODULE ===== */
 .penalty-row {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   background: var(--bg-soft); border: 1px solid var(--border);
@@ -2355,9 +1774,7 @@ select.filter-select:focus { outline: none; border-color: var(--gold); box-shado
   background: rgba(220,38,38,.06); border-left: 3px solid var(--out);
 }
 
-/* =================================================================
-   14. LANDING PAGE MAINTENANCE
-   ================================================================= */
+/* ===== 14. LANDING PAGE MAINTENANCE ===== */
 .lp-section {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-lg); padding: 24px; margin-bottom: 16px;
@@ -2379,9 +1796,7 @@ select.filter-select:focus { outline: none; border-color: var(--gold); box-shado
 .faq-remove:hover { color: var(--out-ink); }
 .faq-remove svg { width: 15px; height: 15px; }
 
-/* =================================================================
-   15. PRODUCT MAINTENANCE
-   ================================================================= */
+/* ===== 15. PRODUCT MAINTENANCE ===== */
 .product-admin-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px;
 }
@@ -2399,23 +1814,57 @@ select.filter-select:focus { outline: none; border-color: var(--gold); box-shado
   color: var(--text-muted);
 }
 .pac-thumb svg { width: 40px; height: 40px; opacity: .4; }
-/* A real photo fills the frame; without this it sits centred at its intrinsic
-   size inside the flex box and every card is a different-looking crop.
-   .product-admin-card carries overflow:hidden, so the top corners clip. */
+/* Product photos fill the card frame (top corners clipped by the card). */
 .pac-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-/* ---- Product image field (Add / Edit Product modal) ----
-   These five rules were inline style= attributes inside the template string in
-   productModalBody(). Moved out because an attribute cannot express :hover or
-   :focus-visible, and the field now has buttons and a zoom affordance that
-   need both. */
+/* ---- Add / Edit Product form: sections, grids, unit inputs ---- */
+/* :has() so the width does not depend on engine.js adding a class. */
+.modal.modal-product, .modal:has(.prod-form) { max-width: 1080px; width: calc(100vw - 32px); max-height: 94svh; }
+.prod-form { display: grid; grid-template-columns: 1.1fr 1fr; gap: 16px; align-items: start; }
+.pf-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+@media (max-width: 900px) { .prod-form { grid-template-columns: 1fr; } }
+.pf-section {
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  padding: 14px 16px 2px; background: var(--surface);
+}
+.pf-title {
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--gold-ink);
+}
+.pf-title small {
+  font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--text-muted);
+}
+.pf-grid { display: grid; gap: 0 12px; }
+.pf-grid-2 { grid-template-columns: 1fr 1fr; }
+/* Category gets its own full row; Price and Net Weight share the next. */
+.pf-grid-3 { grid-template-columns: 1fr 1fr; }
+.pf-grid-3 > :first-child { grid-column: 1 / -1; }
+.pf-grid-4 { grid-template-columns: repeat(2, 1fr); }
+.nut-grid .field label { font-size: var(--fs-xs); }
+.pf-section > .field-error:empty { display: none; }
+.pf-section > .field-error { margin: -6px 0 12px; }
+/* Number + unit in one box: the unit sits inside the input's right (or left) edge. */
+.unit-input { position: relative; }
+.unit-input > span {
+  position: absolute; top: 50%; right: 12px; transform: translateY(-50%);
+  font-size: var(--fs-xs); font-weight: 600; color: var(--text-muted); pointer-events: none;
+}
+.unit-input .control { padding-right: 42px; }
+.unit-input.unit-pre > span { right: auto; left: 12px; font-family: system-ui, sans-serif; font-size: var(--fs-sm, 14px); color: var(--text); }
+.unit-input.unit-pre .control { padding-right: 12px; padding-left: 28px; }
+@media (max-width: 640px) {
+  .pf-grid-4 { grid-template-columns: 1fr 1fr; }
+}
+
+/* Product image field in the Add/Edit Product modal (moved from inline styles to support hover and focus). */
 .img-zone {
   border: 2px dashed var(--border-lift); border-radius: var(--r-md);
   padding: 20px; text-align: center; background: var(--bg-soft);
   position: relative; overflow: hidden;
   transition: border-color var(--t);
 }
-/* Only the EMPTY zone is a click target. With a photo in it the whole box used
-   to open the file picker, so clicking the photo to look at it replaced it. */
+/* Only the empty zone opens the file picker; clicking a photo zooms it. */
 .img-zone:not(.has-image) { cursor: pointer; }
 .img-zone:not(.has-image):hover { border-color: var(--gold-ink); }
 
@@ -2428,8 +1877,7 @@ select.filter-select:focus { outline: none; border-color: var(--gold); box-shado
 .img-preview {
   max-height: 120px; margin: 0 auto; border-radius: var(--r-md);
   object-fit: cover;
-  /* It is a control now — it opens the zoom view — so it says so, takes focus
-     and shows the shared :focus-visible ring. */
+  /* The photo is focusable and opens the zoom view. */
   cursor: zoom-in;
   transition: box-shadow var(--t) var(--ease), transform var(--t) var(--ease);
 }
@@ -2455,12 +1903,8 @@ select.filter-select:focus { outline: none; border-color: var(--gold); box-shado
 .pac-price{ font-size: var(--fs-lg); font-weight: 700; color: var(--gold-ink); margin-bottom: 10px; }
 .pac-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
-/* =================================================================
-   15b. BATCH TRACKING (sortable table, pagination, SKU/qty chips)
-   ================================================================= */
-/* Was --bg-tint/no color — every lot/batch/reference code sitewide
-   (Return Module, modal detail rows, receipts) rendered as a flat tan
-   chip with no visual weight, easy to miss next to actual content. */
+/* ===== 15b. BATCH TRACKING (sortable table, pagination, SKU/qty chips) ===== */
+/* Lot, batch and reference codes get a visible chip style. */
 code {
   font-family: var(--font-mono); font-size: .85em; font-weight: 700;
   color: #9A6B0C; background: rgba(232,163,23,.16);
@@ -2505,28 +1949,24 @@ code {
 .pagination button:disabled { opacity: .4; cursor: not-allowed; }
 .pagination button svg { width: 15px; height: 15px; }
 
-/* =================================================================
-   16. SIDEBAR OVERLAY (mobile)
-   ================================================================= */
+/* ===== 16. SIDEBAR OVERLAY (mobile) ===== */
 .sidebar-overlay {
   display: none; position: fixed; inset: 0;
   background: rgba(0,0,0,.5); z-index: calc(var(--z-sidebar) - 1);
 }
 
-/* =================================================================
-   17. RESPONSIVE
-   ================================================================= */
+/* ===== 17. RESPONSIVE ===== */
 @media (max-width: 900px) {
-  /* Sidebar becomes an off-canvas drawer; the top bar spans the full
-     width of the inset, and content sits directly beneath it. */
+  /* The sidebar becomes an off-canvas drawer and the top bar spans the full width. */
   .sidebar,
   .admin-app.sidebar-collapsed .sidebar {
     width: var(--sidebar-w);
-    /* Plain percentage, not a calc(): a var()-derived transform stalls the
-       transition, leaving the drawer stuck off-screen. -110% clears both
-       the panel and its inset. */
+    /* Use a plain percentage (-110%) so the drawer transition does not stall. */
     transform: translateX(-110%);
+    /* The open drawer and its dimmed backdrop sit above the top bar, so the logo is not hidden under it. */
+    z-index: calc(var(--z-sidebar) + 3);
   }
+  .sidebar-overlay { z-index: calc(var(--z-sidebar) + 2); }
   .sidebar.open {
     transform: translateX(0);
     box-shadow: var(--shadow-ink);
@@ -2537,14 +1977,7 @@ code {
   .admin-main,
   .admin-app.sidebar-collapsed .admin-main { margin-left: var(--shell-gap); }
   .topbar-hamburger { display: flex; }
-  /* Below this width the bar is hamburger + bell + theme + avatar and there is
-     no room left for a caption. The dropdown still spells out both, so nothing
-     is only in the collapsed text.
-
-     THE OUTLINE COLLAPSES WITH IT. A bordered pill around a lone circle reads
-     as a mistake — a box someone forgot to fill — so the chip drops its border,
-     background and padding and degrades to the bare avatar it used to be. The
-     focus ring stays, now hugging the circle. */
+  /* On narrow screens hide the name/role text and the chip's outline, leaving just the avatar. */
   .topbar-identity { display: none; }
   .topbar-user-chip {
     padding: 0; background: none; border-color: transparent;
@@ -2559,13 +1992,48 @@ code {
   .stat-grid { grid-template-columns: 1fr 1fr; }
   .modal { border-radius: var(--r-lg); }
   .modal-header, .modal-body, .modal-footer { padding-inline: 18px; }
+
+  /* Top bar: the search shrinks so the bell, theme and account buttons always fit. */
+  .app-topbar { padding: 0 10px; gap: 6px; }
+  .topbar-search { flex: 1 1 auto; min-width: 0; margin-left: 2px; padding: 0 10px; }
+  .topbar-actions { gap: 2px; flex: none; }
+  .topbar-actions .icon-btn { width: 34px; height: 34px; }
+
+  /* Page headers and the dashboard welcome: tighter, and their buttons wrap to full-width rows. */
+  .mod-header, .dash-welcome { padding: 16px; margin-bottom: 16px; }
+  .mod-header > *, .dash-welcome > * { min-width: 0; max-width: 100%; }
+  .mod-header .actions, .dash-welcome-right { width: 100%; flex-wrap: wrap; gap: 8px; }
+  .mod-header .actions > .btn, .dash-welcome-right > .btn { flex: 1 1 auto; justify-content: center; }
+  .dash-greeting { font-size: var(--fs-2xl); }
+
+  /* Stat cards: figures shrink instead of running past the card edge. */
+  .stat-card { min-width: 0; }
+  .stat-value { font-size: 1.35rem; overflow-wrap: anywhere; }
+
+  /* Status tab rows (Online Transactions, Returns, Inventory Management …): one row you swipe sideways. */
+  /* Scoped under .content so it beats the later sheets (glass.css, orders.css, inventory.css) that set flex-wrap. */
+  .content .tabs, .content .return-tabs, .content .inv-action-tabs {
+    flex-wrap: nowrap; overflow-x: auto; min-width: 0; max-width: 100%;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .content .tabs::-webkit-scrollbar, .content .return-tabs::-webkit-scrollbar, .content .inv-action-tabs::-webkit-scrollbar { display: none; }
+  .content .tabs > *, .content .return-tabs > *, .content .inv-action-tabs > * { flex: none; }
+
+  /* Tables scroll sideways inside their frame; keep each cell on one line so rows stay short. */
+  .table-wrap .data-table th, .table-wrap .data-table td { white-space: nowrap; }
+
+  /* Filters and form fields never wider than the screen. */
+  .content .filter-select, .content .control, .content .search-box { max-width: 100%; min-width: 0; }
+  .content .view-toolbar, .content .view-toolbar > * { min-width: 0; max-width: 100%; }
+  .content .date-range-group { flex-wrap: wrap; width: 100%; }
+  .content .date-range-group .control { flex: 1 1 120px; }
 }
 
-/* =================================================================
-   ROLES & PERMISSIONS — card grid
-   ================================================================= */
+
+/* ===== ROLES & PERMISSIONS: card grid ===== */
 .role-card-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  /* min(420px, 100%): one full-width card per row on a phone. */
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr));
   gap: 20px;
 }
 .role-card {
@@ -2594,21 +2062,7 @@ code {
 }
 .role-toggle-row.locked { cursor: default; color: var(--text-muted); }
 
-/* THE TOGGLE. Gold when on, like everything else that means "active" here —
-   it was --info blue, the one control on the portal that answered in a colour
-   the palette does not otherwise use.
-
-   THE GEOMETRY IS DERIVED FROM ONE NUMBER. Track height, thumb size and the
-   distance it travels were three hand-written pixel values that had to agree;
-   they did not, and the thumb sat 1px off centre even before the glass skin's
-   border pushed it another pixel down. Now --sw-h and --sw-pad are the only
-   inputs: the thumb is the height less twice the padding, and it travels the
-   width less its own size less twice the padding. Change the size on .switch
-   and everything follows.
-
-   vertical-align: middle because an inline-block sits on the text baseline,
-   which is what makes a switch look low beside its label anywhere it is NOT
-   in a flex row. */
+/* Toggle switch: gold when on, with all sizes derived from --sw-h and --sw-pad. */
 .switch {
   --sw-w: 40px;
   --sw-h: 24px;
@@ -2621,19 +2075,10 @@ code {
 .switch input:disabled { cursor: default; }
 .switch-track {
   position: absolute; inset: 0; box-sizing: border-box;
-  /* NOT --border-lift. glass.css re-points that to rgba(255,255,255,.55), and
-     an off switch came out at rgb(251,247,239) on a cream strip — 1.04:1
-     against the strip, with the white thumb at 1.07:1 on top of it. You could
-     not see the control at all.
-
-     Mixed from --text, which the skin does not touch, at the strength that
-     measures over 3:1 both ways: 3.8:1 track against the strip and 4.2:1 thumb
-     against the track in light, 5.1 and 3.4 in dark. A neutral filled track
-     cannot be mistaken for the ON state either, since ON is gold. */
+  /* Off track mixed from --text (not glass.css's white --border-lift) so it reaches 3:1 in both themes. */
   background: color-mix(in srgb, var(--text) 55%, transparent);
   border-radius: var(--r-pill);
-  /* A little depth, so an OFF switch reads as a groove rather than a flat
-     pill. */
+  /* A slight inset shadow so an off switch reads as a groove. */
   box-shadow: inset 0 1px 2px rgba(30,20,8,.16);
   transition: background var(--t) var(--ease);
 }
@@ -2642,15 +2087,10 @@ code {
   width: var(--sw-thumb); height: var(--sw-thumb); border-radius: 50%;
   background: #fff;
   box-shadow: 0 1px 2px rgba(30,20,8,.28), 0 2px 6px rgba(30,20,8,.18);
-  /* Overshoots slightly and settles — the same spring the auth tabs' pill
-     uses, so the two toggles on this app move the same way. */
+  /* Springy motion matching the auth tabs' pill. */
   transition: transform .26s cubic-bezier(.34,1.56,.64,1);
 }
-/* A RING ON THE ON STATE, because the gold cannot carry the boundary alone.
-   Brand gold is a light colour: #e8a317 against the gold-tinted strip a
-   checked switch sits on measures 1.95:1, and the boundary of a control wants
-   3:1 (WCAG 1.4.11). Mixed from --text so it darkens the edge in light and
-   lightens it in dark, which is the direction each needs. */
+/* A ring on the ON state, since gold alone is under 3:1 against the strip. */
 .switch input:checked ~ .switch-track {
   background: var(--gold);
   box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text) 40%, transparent),
@@ -2664,11 +2104,7 @@ code {
 @media (prefers-reduced-motion: reduce) {
   .switch-thumb { transition-duration: .01ms; }
 }
-/* THE FOCUS RING HAS TO BE DRAWN ON THE TRACK. The input that takes the focus
-   is opacity: 0, and opacity applies to an element's outline as well as its
-   box — so the app's :focus-visible ring was being painted on it and was
-   invisible. A keyboard user got no indication at all of where they were.
-   Same ring, same offset, moved onto the part that is actually on screen. */
+/* Draw the focus ring on the track, since the real input is invisible. */
 .switch input:focus-visible { outline: none; }
 .switch input:focus-visible ~ .switch-track {
   outline: 3px solid var(--gold); outline-offset: 3px;
@@ -2686,9 +2122,7 @@ code {
 }
 
 
-/* =================================================================
-   LANDING PAGE — hero images, best-seller picker, storage meter
-   ================================================================= */
+/* ===== LANDING PAGE: hero images, best-seller picker, storage meter ===== */
 .lp-hint {
   margin-left: auto; font-weight: 500; text-transform: none;
   letter-spacing: 0; font-size: var(--fs-xs); color: var(--text-muted);
@@ -2722,13 +2156,7 @@ code {
 .lp-img-actions .btn { cursor: pointer; }
 .lp-img-clear { color: var(--out-ink); }
 
-/* ---- best sellers: a tile grid ----
-
-   Was a seven-column table, which is the right shape for comparing rows and
-   the wrong one for choosing a handful of products to put on the front page.
-   auto-fill/minmax rather than a fixed column count so the same rule gives
-   four or five tiles on a wide screen and one on a phone with no breakpoint
-   to maintain. */
+/* Best sellers as a responsive tile grid instead of a table. */
 .lp-bs-grid {
   display: grid; gap: 14px;
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
@@ -2741,11 +2169,7 @@ code {
 }
 .lp-tile:hover { border-color: var(--border-lift); box-shadow: var(--shadow-sm); }
 
-/* SELECTED, IN THREE CHANNELS. The gold border and tint are two of them; the
-   tick that appears in .lp-feat-box is the third. Seeing which six are
-   featured is the entire purpose of this screen, so it must not rest on a
-   background wash alone — that is the first thing to disappear on a dim
-   laptop or to a red-green colour deficiency. */
+/* Selected tiles show three ways: gold border, tint and a tick. */
 .lp-tile.is-featured {
   border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold);
   background: var(--gold-dim);
@@ -2757,8 +2181,7 @@ code {
   display: flex; align-items: center; justify-content: center;
 }
 .lp-tile-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
-/* The rank, over the photo. It is what the caption promises the list is
-   ordered by, so it gets a position of its own rather than a table cell. */
+/* Rank number over the photo. */
 .lp-tile-rank {
   position: absolute; top: 8px; left: 8px;
   padding: 2px 8px; border-radius: var(--r-pill);
@@ -2786,9 +2209,7 @@ code {
   padding: 8px 10px 10px; border-top: 1px solid var(--border);
 }
 
-/* The feature toggle. A real checkbox, visually replaced by the box beside it
-   — the input keeps its own focus, keyboard and checked semantics, and both
-   `$$("[data-feat]")` call sites keep working. */
+/* A real checkbox, visually replaced by the box beside it. */
 .lp-feat-toggle {
   display: inline-flex; align-items: center; gap: 7px;
   cursor: pointer; font-size: var(--fs-sm); font-weight: 700; color: var(--text);
@@ -2808,20 +2229,13 @@ code {
 .lp-feat-toggle input:checked ~ .lp-feat-box {
   background: var(--gold); border-color: var(--gold); color: var(--ink);
 }
-/* The ring lands on the visible box, since the input it belongs to is the
-   thing that is 1px and invisible. */
+/* The focus ring goes on the visible box. */
 .lp-feat-toggle input:focus-visible ~ .lp-feat-box {
   outline: 3px solid var(--gold); outline-offset: 2px;
 }
 .lp-feat-text { white-space: nowrap; }
 
-/* Numeric columns in a data table.
-
-   Right-aligned so the digits line up on their units, and tabular-nums so a
-   column of figures keeps one column width — proportional numerals make "111"
-   narrower than "999" and the decimal points stop agreeing down the column.
-   Used by the Sales Report's Best Sellers and Payment Methods tables; the
-   header cell takes .num, the body cell .num-cell. */
+/* Numeric table columns: right-aligned with tabular numerals. */
 .data-table th.num,
 .data-table td.num-cell {
   text-align: right;
@@ -2846,22 +2260,12 @@ code {
 
 
 
-/* White labels on coloured fills: darken the FILL, never the label.
-   Measured white-on-fill ratios were 3.06 / 3.81 in dark mode. */
+/* Darken coloured fills (not white labels) for contrast. */
 [data-theme="dark"] .btn-ok  { background: #138746; }
 [data-theme="dark"] .btn-red { background: #da3a3a; }
 [data-theme="dark"] .return-step.done .step-num { background: #138746; }
 
-/* ============================================================
-   LIST STATES — loading / empty / error
-   ------------------------------------------------------------
-   Rendered by EbUI.loadingRow / emptyRow / errorRow as a single
-   full-width row, so a list can show what it is doing without any
-   per-table layout special-casing. Before these existed a loading
-   table was simply an empty one, which is indistinguishable from
-   "there is no data" — and that ambiguity is exactly what makes a
-   silent failure look like a working screen.
-   ============================================================ */
+/* ===== LIST STATES: loading, empty and error rows from EbUI, so a loading list never looks like an empty one ===== */
 .state-cell {
   padding: 2.25rem 1rem;
   text-align: center;
@@ -2873,9 +2277,7 @@ code {
 .state-error .state-cell strong { color: var(--crit, #c43d2a); }
 .state-cell .btn-sm { margin-top: .6rem; padding: .35rem .8rem; font-size: var(--fs-sm); }
 
-/* Spinner. Respects prefers-reduced-motion — a permanently spinning
-   element is a genuine problem for some readers, so it falls back to a
-   static ring rather than simply stopping and looking broken. */
+/* Spinner, shown as a static ring with reduced motion. */
 .spinner {
   display: inline-block;
   width: 1em; height: 1em;
@@ -2897,23 +2299,10 @@ code {
   user-select: none;
 }
 
-/* Field-level validation, driven by EbUI.showFieldErrors from the API's
-   422 `fields` map. */
+/* Field errors shown by EbUI.showFieldErrors from the API's fields map. */
 .has-error { border-color: var(--crit, #c43d2a) !important; }
 
-/* =================================================================
-   PRODUCT REVIEWS — the moderation queue
-   -----------------------------------------------------------------
-   CARDS, NOT A TABLE. Every other queue in this portal is tabular
-   because its rows are short, comparable fields. A review is a
-   paragraph of somebody's prose plus the evidence behind it; in a
-   table it is either truncated — which asks a moderator to decide
-   without reading — or it stretches one column and wrecks the grid.
-
-   Colour never carries a decision on its own here. Each status is
-   spelled out, each hold names its keyword, and the tinted borders
-   only reinforce words that are already there.
-   ================================================================= */
+/* ===== PRODUCT REVIEWS moderation queue: cards (not a table) so full reviews can be read, status always written in words ===== */
 .rev-cards { display: grid; gap: 14px; }
 
 .rev-card {
@@ -2927,8 +2316,7 @@ code {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   margin-bottom: 6px;
 }
-/* Darkened toward --text: bare --gold measures 2.17:1 on the glass card,
-   below the 3:1 a meaningful graphic needs. Still unmistakably gold. */
+/* Gold darkened toward --text to reach 3:1 on the glass card. */
 .rev-row-stars { display: inline-flex; align-items: center; gap: 1px; flex-shrink: 0;
                  color: color-mix(in srgb, var(--gold) 72%, var(--text)); }
 .rev-row-stars svg { width: 15px; height: 15px; }
@@ -2936,9 +2324,7 @@ code {
                color: var(--text); font-variant-numeric: tabular-nums; }
 .rev-card-product { font-weight: 700; font-size: var(--fs-md); color: var(--text); }
 
-/* THE STATUS IS A WORD FIRST. --text on the label, the tint only on the
-   border, so it survives greyscale and being read aloud — the same rule
-   the notification level chip settled on after it measured 3.65:1. */
+/* Status label uses --text; colour only on the border. */
 .rev-card-status {
   margin-left: auto;
   font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .04em;
@@ -2963,8 +2349,7 @@ code {
 }
 .rev-chip-warn { border-color: color-mix(in srgb, var(--warn) 55%, var(--border-lift)); }
 
-/* The customer's own words, set apart from the metadata around them so it
-   is unmistakable which text is theirs and which is ours. */
+/* The customer's own words are set apart from the metadata. */
 .rev-card-body {
   margin: 10px 0 0; padding: 10px 14px;
   border-left: 3px solid var(--border-lift);
@@ -2990,39 +2375,20 @@ code {
 }
 .rev-card-actions:empty { display: none; }
 
-/* The tab row uses the shared .tab-btn; this only sets the gap, matching
-   .return-tabs so the two queues line up. */
+/* Uses the shared .tab-btn; only the gap is set, matching .return-tabs. */
 .rev-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
 
 @media (max-width: 640px) {
   .rev-card-status { margin-left: 0; }
 }
 
-/* =================================================================
-   "No sign-in" — a customer record with no password
-   -----------------------------------------------------------------
-   api/customers/save.php never sets a password (its header explains
-   why: an admin form that could set someone else's is a way to take
-   over their account). So Add Customer creates a record that cannot
-   sign in — which was true, correct, and completely invisible. The
-   storefront answered "Email or password is incorrect" forever, and
-   the only way to discover it was to read the database.
-
-   The WORD says it. The border tint only reinforces, and the title
-   attribute carries the fix, because a marker that names a problem
-   without naming the remedy just moves the confusion.
-   ================================================================= */
+/* ===== No sign-in marker for customer records without a password, with the fix in the title attribute ===== */
 .chip-nosignin {
   display: inline-block;
   margin-left: 7px;
   padding: 1px 7px;
   border-radius: 999px;
-  /* Measured: a straight --warn edge came out at 1.70:1 against the row and
-     barely read as a chip at all; raising the proportion only reached 2.03,
-     because --warn is a mid-gold that is inherently close to white. Mixing
-     toward --text darkens it in light and lightens it in dark, so one
-     declaration clears 3:1 in both. The WORD still carries the meaning — this
-     is legibility, not the thing WCAG is counting. */
+  /* Border mixed toward --text to reach 3:1 in both themes. */
   border: 1px solid color-mix(in srgb, var(--warn) 62%, var(--text));
   background: color-mix(in srgb, var(--warn) 14%, transparent);
   color: var(--text);
@@ -3041,25 +2407,27 @@ code {
 .lp-pay-qr img { object-fit:contain; background:#fff; }
 .lp-pay-card .field { margin-top:10px; }
 
-/* THE PREVIEW IS A BOUNDED SQUARE AND THE CONTROLS SIT UNDER IT.
-
-   A QR code is square, but .lp-img-thumb is 4/3 and as wide as its grid
-   column — 426px wide by 320px tall here — so the code floated in a broad
-   white field with the Upload/Replace row pressed flat against its bottom
-   edge, reading as buttons sitting ON the image. Both accounts had it, and
-   both states did: the "No QR code" box was the same size in grey.
-
-   The box is square and capped, so the code fills it. It keeps its size
-   whether or not an image is in it, so the card does not jump when a QR is
-   added or removed. The controls follow it in flow with a gap — never over
-   it, in either state. */
+/* QR preview is a fixed square that keeps its size with or without an image, with controls below it. */
 .lp-pay-card .lp-img-thumb { aspect-ratio:1; max-width:220px; }
-/* Hero cards put .lp-img-name between the two, which is why only the payment
-   cards ever had the buttons flush against the image. */
+/* Hero cards have a name line between image and buttons; payment cards need this gap instead. */
 .lp-img-thumb + .lp-img-actions { margin-top:10px; }
 
 /* Payment Schemes — review and record */
-.pay-summary-line { display:flex; flex-wrap:wrap; gap:18px; font-size: var(--fs-base); margin:4px 0 12px; }
+.pay-summary-line { display:grid; grid-template-columns: repeat(3, minmax(150px, 1fr)) minmax(280px, 1.6fr); gap:12px; margin:4px 0 14px; }
+.pay-tile { display:flex; flex-direction:column; gap:3px; padding:12px 16px; border-radius:14px; border:1px solid var(--border); background: var(--glass-bg, var(--surface)); border-top:3px solid var(--tile, var(--gold)); }
+.pay-tile.is-ok   { --tile: var(--ok, #18a957); }
+.pay-tile.is-warn { --tile: var(--warn, #e8a317); }
+.pay-tile.is-bad  { --tile: var(--out, #d64545); }
+.pay-tile-label { font-size:.68rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color: var(--text-muted); }
+.pay-tile-val { font-size:1.35rem; font-weight:800; color: var(--text); font-variant-numeric: tabular-nums; line-height:1.2; }
+.pay-tile.is-bad .pay-tile-val { color: var(--out-ink, #b42318); }
+.pay-tile small { font-size:.74rem; color: var(--text-muted); }
+.pay-budgets { display:flex; flex-wrap:wrap; gap:8px 14px; margin-top:4px; }
+.pay-budget { display:inline-flex; align-items:center; gap:7px; }
+.pay-budget .badge { font-size:.6rem; }
+.pay-budget b { font-weight:700; font-variant-numeric: tabular-nums; color: var(--text); }
+@media (max-width: 1100px) { .pay-summary-line { grid-template-columns: repeat(3, 1fr); } .pay-tile-budgets { grid-column: 1 / -1; } }
+@media (max-width: 640px) { .pay-summary-line { grid-template-columns: 1fr 1fr; } }
 .cp-summary { display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:12px;
   padding:12px; border:1px solid var(--border); border-radius:var(--r-md); margin-bottom:14px; }
 .cp-summary > div { display:flex; flex-direction:column; gap:2px; font-size: var(--fs-base); }
@@ -3091,8 +2459,7 @@ code {
 .sidebar-brand .brand-logo { height: 44px; width: auto; display: block; }
 .admin-app.sidebar-collapsed .sidebar-brand .brand-logo { height: 34px; }
 
-/* Sidebar name: same lockup as the storefront header — Cormorant name,
-   gold spaced "Juris Bay Foods" beneath. */
+/* Sidebar name uses the storefront header lockup. */
 .sidebar-brand .name {
   font-family: "Cormorant Garamond", serif; font-size: 1.45rem; font-weight: 700; line-height: 1;
 }
@@ -3103,9 +2470,7 @@ code {
 }
 .sidebar-brand { gap: 12px; }
 
-/* Online Transactions + Return Module: status tabs on their own row, then
-   search / sort / per-page on a second row starting at the left. Sharing one
-   band squeezed the search box until its placeholder was cut off. */
+/* Online Transactions and Return Module: tabs on one row, search/sort/per-page on a second. */
 .view-toolbar.view-toolbar--stack,
 .view-toolbar.view-toolbar--stack:has(> .view-toolbar-filters) { flex-wrap: wrap; }
 .view-toolbar--stack > .tabs,
@@ -3156,8 +2521,7 @@ code {
   .topbar-search { flex: 1 1 auto; margin-left: 8px; }
   .topbar-search-kbd { display: none; }
 }
-/* Solid, not glass: the portal's glass theme made the list see-through over
-   the dashboard cards. Fixed colours per theme so the results stay readable. */
+/* Solid (not glass) dropdown with fixed per-theme colours so results stay readable. */
 .topbar-search-list {
   background: #FFFDF8 !important;
   -webkit-backdrop-filter: none; backdrop-filter: none;
@@ -3196,3 +2560,977 @@ code {
 .rev-td-main .rev-card-nocomment, .rev-td-main .rev-card-reason { margin: 6px 0 0; }
 .rev-td-email { font-size: .78rem; }
 .rev-table .td-actions { flex-wrap: wrap; }
+
+/* Toasts at top-right, under the top bar, so they do not cover the cart button. */
+@keyframes toastInTop  { from{opacity:0;transform:translateY(-14px);} to{opacity:1;transform:none;} }
+@keyframes toastOutTop { from{opacity:1;transform:none;} to{opacity:0;transform:translateY(-14px);} }
+.toast-container { top: 92px; bottom: auto; right: 24px; }
+.toast { animation-name: toastInTop; }
+.toast.removing { animation-name: toastOutTop; }
+@media (max-width: 600px) { .toast-container { top: 76px; right: 12px; left: 12px; } .toast { max-width: none; } }
+
+/* VAT Maintenance layout: icon-header cards, units inside inputs, shared switches, save bar attached below, warm edges in light mode. */
+#mod-vat { --vat-line: rgba(110,78,28,.18); --vat-edge: rgba(110,78,28,.28); }
+[data-theme="dark"] #mod-vat { --vat-line: var(--border); --vat-edge: var(--border-lift); }
+
+.vat-rules { display: flex; flex-direction: column; gap: 16px; }
+.vat-grid { align-items: stretch; margin-bottom: 0; gap: 16px; }
+.vat-card { padding: 0 !important; overflow: hidden; display: flex; flex-direction: column; border: 1px solid var(--vat-line); }
+.vat-card-head {
+  display: flex; align-items: center; gap: 14px;
+  padding: 18px 22px; border-bottom: 1px solid var(--vat-line);
+  background: rgba(184,134,11,.05);
+}
+.vat-card-head .panel-title { margin: 0; font-size: 1.05rem; }
+.vat-card-sub { margin: 3px 0 0; font-size: .82rem; color: var(--text-muted); }
+.vat-card-ic {
+  width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
+  display: grid; place-items: center;
+  background: var(--gold-dim); color: var(--gold-deep, #9a6b00);
+  border: 1px solid rgba(232,163,23,.3);
+}
+.vat-card-ic svg { width: 20px; height: 20px; }
+.vat-card-body { padding: 20px 22px 22px; display: flex; flex-direction: column; gap: 18px; flex: 1; }
+.vat-card-body .field { margin: 0; }
+.vat-card-body .field > label { font-size: .88rem; font-weight: 700; color: var(--text); margin-bottom: 7px; }
+.vat-card-body .field-hint { display: block; margin-top: 6px; font-size: .8rem; line-height: 1.45; }
+.vat-card-body .field + .field { padding-top: 18px; border-top: 1px dashed var(--vat-line); }
+
+/* Number box with its unit inside */
+.vat-input { position: relative; }
+.vat-input .control { padding-right: 40px; font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; border: 1.5px solid var(--vat-edge) !important; background: rgba(255,255,255,.85); }
+.vat-input .control:focus { border-color: var(--gold) !important; box-shadow: 0 0 0 3px var(--gold-dim); }
+.vat-input .control:disabled { background: var(--bg-soft, rgba(0,0,0,.03)); color: var(--text-muted); cursor: not-allowed; }
+.vat-unit {
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  font-weight: 700; font-size: .9rem; color: var(--text-muted); pointer-events: none;
+}
+.vat-input.is-prefix .control { padding-right: 14px; padding-left: 32px; }
+.vat-input.is-prefix .vat-unit { right: auto; left: 13px; }
+.vat-input .control::-webkit-outer-spin-button,
+.vat-input .control::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.vat-input .control { -moz-appearance: textfield; }
+[data-theme="dark"] .vat-input .control { background: var(--surface); }
+
+/* Switch strips */
+.vat-switch { margin: 0 !important; padding: 12px 14px !important; align-items: flex-start !important; border-color: var(--vat-edge) !important; }
+.vat-switch .switch { margin-top: 1px; }
+.vat-switch-text { display: flex; flex-direction: column; gap: 3px; }
+.vat-switch-text b { font-size: .92rem; font-weight: 700; }
+.vat-switch-text small { font-size: .78rem; font-weight: 500; color: var(--text-muted); line-height: 1.45; }
+.vat-sc-group { display: flex; flex-direction: column; gap: 16px; padding-top: 16px; border-top: 1px dashed var(--vat-line); transition: opacity var(--t); }
+.vat-sc-group.is-off { opacity: .45; }
+.vat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+/* Side-by-side fields share one row, so the stacked-field divider must not push the second one down. */
+.vat-card-body .vat-row > .field + .field { padding-top: 0; border-top: 0; }
+@media (max-width: 640px) { .vat-row { grid-template-columns: 1fr; } }
+
+/* Save bar, attached to the cards */
+.vat-savebar {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 14px 16px 14px 22px; border-radius: var(--r-lg, 16px);
+  border: 1px solid var(--vat-line); background: rgba(255,255,255,.55);
+  backdrop-filter: blur(10px);
+  transition: border-color var(--t), background var(--t);
+}
+.vat-savebar-note { font-size: .85rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
+.vat-savebar.is-dirty { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 10%, rgba(255,255,255,.7)); }
+.vat-savebar.is-dirty .vat-savebar-note { color: var(--text); font-weight: 600; }
+.vat-savebar.is-dirty .vat-savebar-note::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--gold); }
+.vat-savebar .btn { min-width: 150px; }
+[data-theme="dark"] .vat-savebar { background: var(--surface); }
+@media (max-width: 640px) { .vat-savebar { flex-direction: column; align-items: stretch; } }
+
+/* Tables (Product Tax Types, Withholding Agents, Summary) */
+#mod-vat .data-table tbody tr td { border-color: var(--vat-line); vertical-align: middle; padding-top: 14px; padding-bottom: 14px; }
+#mod-vat .table-wrap { border: 1px solid var(--vat-line); }
+
+.vat-who { display: flex; align-items: center; gap: 12px; }
+.vat-avatar {
+  width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center; font-weight: 700; font-size: .8rem; letter-spacing: .03em;
+  background: var(--gold-dim); color: var(--gold-deep, #9a6b00); border: 1px solid rgba(232,163,23,.3);
+}
+.vat-email { font-size: .78rem; color: var(--text-muted); margin-top: 2px; }
+.vat-tin {
+  display: inline-block; padding: 4px 10px; border-radius: 8px;
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: .8rem; letter-spacing: .03em;
+  background: rgba(110,78,28,.06); border: 1px solid var(--vat-line);
+}
+.vat-agent-toggle { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
+.vat-agent-state { font-size: .85rem; font-weight: 600; color: var(--text-muted); }
+.vat-agents tr.is-agent .vat-agent-state { color: var(--ok, #18a957); }
+.vat-agents tr.is-agent td:first-child { box-shadow: inset 3px 0 0 var(--gold); }
+.vat-agents .vat-input { max-width: 120px; }
+.vat-agents .vat-input .control { padding-top: 8px; padding-bottom: 8px; font-size: .92rem; }
+.vat-agents .btn-sm { min-width: 84px; }
+.vat-agents .btn-sm:disabled { opacity: .45; cursor: default; }
+
+/* Roles matrix: Delete on custom roles */
+.role-delete-btn { color: var(--red) !important; }
+.role-delete-btn:hover { border-color: var(--red) !important; background: rgba(214,40,40,.08) !important; }
+
+/* Landing Page hero slide picker: every card has image, name dropdown, then Replace and Remove. */
+#lp-hero-grid { align-items: stretch; }
+#lp-hero-grid .lp-img-card { display: flex; flex-direction: column; }
+.lp-hero-name { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.lp-hero-name .ebs, .lp-hero-name .ebs-trigger { width: 100% !important; max-width: none !important; }
+.lp-hero-name .ebs-trigger { font-size: .85rem; font-weight: 600; min-height: 38px; }
+.lp-hero-name .ebs-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lp-hero-custom {
+  width: 100%; min-height: 38px; padding: 8px 12px; font: inherit; font-size: .85rem; font-weight: 600;
+  border: 1.5px solid var(--gold) !important; border-radius: var(--r-pill, 999px);
+  background: #fff; color: var(--text); outline: none; box-shadow: 0 0 0 3px var(--gold-dim);
+}
+:root:not([data-theme="dark"]) .lp-hero-name .ebs-trigger { border-color: rgba(110,78,28,.28); background: #fff; }
+[data-theme="dark"] .lp-hero-custom { background: var(--surface); }
+#lp-hero-grid .lp-img-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: auto; }
+#lp-hero-grid .lp-img-actions .btn { width: 100%; justify-content: center; padding-inline: 6px; margin: 0; }
+#lp-hero-grid .lp-img-actions > :only-child { grid-column: 1 / -1; }
+
+/* B2B application: BIR TIN card — the detail a reviewer verifies first */
+.b2b-tin-card {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  margin-bottom: 14px; padding: 14px 18px; border-radius: var(--r-md);
+  border: 1.5px solid var(--gold); background: color-mix(in srgb, var(--gold) 10%, var(--surface));
+}
+.b2b-tin-label { font-size: .7rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); }
+.b2b-tin-val { font-family: var(--font-mono, ui-monospace, monospace); font-size: 1.25rem; font-weight: 700; letter-spacing: .06em; color: var(--text); margin-top: 2px; }
+.b2b-tin-hint { font-size: .8rem; color: var(--text-muted); }
+.b2b-tin-card.is-missing { border-color: var(--red); background: rgba(214,40,40,.07); }
+.b2b-tin-card.is-missing .b2b-tin-val { color: var(--red); font-family: inherit; font-size: 1rem; letter-spacing: 0; }
+
+/* ---- Shipping Rates module ---- */
+#mod-shipping { --ship-line: rgba(110,78,28,.18); --ship-edge: rgba(110,78,28,.28); }
+[data-theme="dark"] #mod-shipping { --ship-line: var(--border); --ship-edge: var(--border-lift); }
+.ship-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.ship-card { padding: 0 !important; overflow: hidden; border: 1px solid var(--ship-line); margin: 0; }
+.ship-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 16px 20px; border-bottom: 1px solid var(--ship-line); background: rgba(184,134,11,.05); }
+.ship-card-head .panel-title { margin: 0; font-size: 1.02rem; }
+.ship-sub { margin: 4px 0 0; font-size: .8rem; color: var(--text-muted); line-height: 1.45; }
+.ship-card .table-wrap { border: 0; border-radius: 0; margin: 0; }
+.ship-table td { padding: 8px 10px !important; vertical-align: middle; border-color: var(--ship-line); }
+.ship-table th { padding: 10px !important; }
+.ship-table tr.is-off td:not(:nth-last-child(-n+2)) { opacity: .45; }
+.ship-in { position: relative; display: flex; align-items: center; }
+.ship-in .control { width: 100%; min-width: 70px; padding: 7px 34px 7px 10px; font-weight: 600; font-variant-numeric: tabular-nums; border: 1.5px solid var(--ship-edge) !important; background: rgba(255,255,255,.85); }
+.ship-in > span { position: absolute; right: 10px; z-index: 1; font-size: .78rem; font-weight: 700; color: var(--text-muted); pointer-events: none; }
+.ship-in.is-pre .control { padding: 7px 10px 7px 24px; }
+.ship-in.is-pre > span { right: auto; left: 10px; }
+.ship-table td > .control { padding: 7px 10px; font-weight: 600; border: 1.5px solid var(--ship-edge) !important; background: rgba(255,255,255,.85); }
+[data-theme="dark"] .ship-in .control, [data-theme="dark"] .ship-table td > .control { background: var(--surface); }
+.ship-switch { display: inline-flex; cursor: pointer; }
+.ship-try { margin-bottom: 16px; }
+.ship-try-row { display: grid; grid-template-columns: minmax(200px, 260px) 140px 1fr; gap: 16px; align-items: end; padding: 16px 20px 20px; }
+.ship-try-row .field { margin: 0; }
+.ship-try-out { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; padding: 10px 14px; border-radius: var(--r-md); border: 1px dashed var(--ship-edge); min-height: 44px; }
+.ship-try-out div { display: flex; flex-direction: column; gap: 2px; font-size: .78rem; color: var(--text-muted); }
+.ship-try-out b { font-size: .95rem; color: var(--text); }
+.ship-try-out .ship-try-fee b { color: var(--gold-deep, #9a6b00); font-size: 1.1rem; }
+@media (max-width: 760px) { .ship-grid { grid-template-columns: 1fr; } .ship-try-row { grid-template-columns: 1fr; } }
+.ship-grid { grid-template-columns: 1fr; }
+.ship-table { table-layout: auto; }
+.ship-table td:first-child .control { min-width: 140px; }
+.ship-in .control { min-width: 96px; }
+
+/* ---- Shipping Rates: layout pass ---- */
+#mod-shipping .ship-card { margin-bottom: 16px; }
+.ship-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.ship-stat {
+  display: flex; flex-direction: column; gap: 4px; padding: 14px 18px; border-radius: var(--r-md);
+  border: 1px solid var(--ship-line); background: rgba(255,255,255,.55);
+}
+.ship-stat span { font-size: .7rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
+.ship-stat b { font-size: 1rem; color: var(--text); }
+.ship-stat.ship-formula { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 9%, var(--surface)); }
+[data-theme="dark"] .ship-stat { background: var(--surface); }
+
+.ship-card-head { align-items: center; }
+.ship-head-txt { flex: 1; min-width: 0; }
+.ship-ic {
+  width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0; display: grid; place-items: center;
+  background: var(--gold-dim); color: var(--gold-deep, #9a6b00); border: 1px solid rgba(232,163,23,.3);
+}
+.ship-ic svg { width: 20px; height: 20px; }
+
+.ship-table td:first-child .control { min-width: 0; }
+.ship-table .ship-name { min-width: 140px; width: 100%; }
+.ship-table th.ship-c, .ship-table td.ship-c { text-align: center; width: 70px; }
+.ship-idx {
+  display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+  font-size: .75rem; font-weight: 800; color: var(--text-muted); background: rgba(110,78,28,.08);
+}
+.ship-del {
+  width: 32px; height: 32px; border-radius: 50%; display: inline-grid; place-items: center; cursor: pointer;
+  border: 1px solid transparent; background: transparent; color: var(--text-muted); transition: all var(--t);
+}
+.ship-del svg { width: 16px; height: 16px; }
+.ship-del:hover { color: var(--red); border-color: rgba(214,40,40,.35); background: rgba(214,40,40,.07); }
+.ship-table tr:hover td { background: rgba(232,163,23,.04); }
+
+#mod-shipping .control.is-invalid { border-color: var(--red) !important; box-shadow: 0 0 0 3px rgba(214,40,40,.12); }
+.ship-errs {
+  margin: 0; padding: 10px 20px 12px 38px; list-style: disc;
+  font-size: .82rem; color: var(--red); background: rgba(214,40,40,.05); border-top: 1px solid rgba(214,40,40,.2);
+}
+.ship-errs li + li { margin-top: 3px; }
+
+.ship-save-actions { display: flex; gap: 10px; align-items: center; }
+.ship-save-actions .btn { display: inline-flex; align-items: center; gap: 7px; }
+.ship-head-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ship-head-actions .btn { display: inline-flex; align-items: center; gap: 7px; }
+.ship-dirty { font-size: .74rem; font-weight: 700; padding: 4px 10px; border-radius: 99px; color: var(--warn-ink, #8a5a00); background: rgba(232,163,23,.16); }
+@media (max-width: 640px) { .ship-save-actions { width: 100%; } .ship-save-actions .btn { flex: 1; justify-content: center; } }
+
+/* ── Dashboard: Orders Waiting for Approval ── */
+.appr-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px; padding-bottom: 16px;
+}
+.appr-stat {
+  position: relative; display: flex; align-items: center; gap: 12px; text-align: left;
+  padding: 14px 16px; border-radius: 14px; cursor: pointer; font: inherit; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border); box-shadow: 0 1px 2px rgba(30,20,8,.05);
+  transition: border-color .15s, box-shadow .15s, transform .15s;
+}
+.appr-stat:hover { transform: translateY(-1px); border-color: rgba(232,163,23,.45); box-shadow: 0 6px 16px rgba(30,20,8,.08); }
+.appr-stat.is-static { cursor: default; }
+.appr-stat.is-static:hover { transform: none; border-color: var(--border); box-shadow: 0 1px 2px rgba(30,20,8,.05); }
+.appr-stat-ico {
+  flex: none; width: 40px; height: 40px; border-radius: 12px;
+  display: grid; place-items: center; color: var(--tone); background: var(--tone-bg);
+}
+.appr-stat-ico svg { width: 20px; height: 20px; }
+.appr-stat-body { display: flex; flex-direction: column; min-width: 0; }
+.appr-stat-val { font-size: 1.4rem; font-weight: 800; line-height: 1.15; color: var(--text); }
+.appr-stat-lbl { font-size: .76rem; font-weight: 600; color: var(--text-muted); }
+.appr-stat-note {
+  align-self: flex-start; margin-top: 5px; font-size: .64rem; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px; color: #b91c1c; background: rgba(220,38,38,.1);
+}
+.appr-stat.tone-gold  { --tone: #a16207; --tone-bg: rgba(232,163,23,.14); }
+.appr-stat.tone-ok    { --tone: #15803d; --tone-bg: rgba(24,169,87,.12); }
+.appr-stat.tone-alert { --tone: #c2410c; --tone-bg: rgba(234,88,12,.12); }
+.appr-stat.tone-info  { --tone: #2563eb; --tone-bg: rgba(59,130,246,.12); }
+[data-theme="dark"] .appr-stat { background: rgba(255,255,255,.03); }
+[data-theme="dark"] .appr-stat.tone-gold  { --tone: #f2b441; }
+[data-theme="dark"] .appr-stat.tone-ok    { --tone: #34d399; }
+[data-theme="dark"] .appr-stat.tone-alert { --tone: #fb923c; }
+[data-theme="dark"] .appr-stat.tone-info  { --tone: #60a5fa; }
+[data-theme="dark"] .appr-stat-note { color: #fca5a5; background: rgba(248,113,113,.14); }
+.appr-list { display: flex; flex-direction: column; }
+.appr-row {
+  display: grid; grid-template-columns: 150px 1fr auto 110px 80px; align-items: center; gap: 12px;
+  padding: 10px 8px; border: 0; border-top: 1px solid var(--border); background: none;
+  font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: 8px;
+}
+.appr-row:hover { background: var(--gold-dim); }
+.appr-row-cust { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.appr-row-proof { font-size: .74rem; font-weight: 700; }
+.appr-row-proof.ok { color: var(--ok-ink); }
+.appr-row-proof.no { color: var(--out-ink); }
+.appr-row-proof.muted { color: var(--text-muted); font-weight: 600; }
+.appr-row-total { font-weight: 700; text-align: right; }
+.appr-row-age { font-size: .78rem; opacity: .75; text-align: right; }
+.appr-row-age.late { color: var(--out-ink); opacity: 1; font-weight: 700; }
+.appr-more, .appr-empty { padding: 12px 8px 0; font-size: .82rem; opacity: .72; }
+@media (max-width: 640px) {
+  .appr-stats { grid-template-columns: 1fr 1fr; }
+  .appr-row { grid-template-columns: 1fr auto; row-gap: 2px; }
+  .appr-row-cust { grid-column: 1; }
+  .appr-row-proof, .appr-row-age { text-align: right; }
+}
+button.appr-more {
+  align-self: center; margin-top: 10px; padding: 7px 14px; border-radius: 999px; opacity: 1;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  font: inherit; font-size: .8rem; font-weight: 700; cursor: pointer;
+}
+button.appr-more:hover { border-color: rgba(232,163,23,.5); }
+
+/* Shake when the backdrop is clicked, since popups close only from their own buttons (wireBackdropClose()). */
+@keyframes modal-nudge { 0%,100% { translate: 0 } 20% { translate: -8px 0 } 40% { translate: 7px 0 } 60% { translate: -5px 0 } 80% { translate: 3px 0 } }
+.modal.modal-nudge { animation: modal-nudge .38s ease; }
+@media (prefers-reduced-motion: reduce) { .modal.modal-nudge { animation: none; outline: 2px solid var(--gold, #d4a017); } }
+
+
+/* Retailer Discount tab: Save changes in the page header, faded until something changes. */
+#vat-disc-save:disabled { opacity: .5; cursor: default; }
+
+/* Retailer tier picker (B2B approve / change tier) and tier badge in Payment Schemes. */
+.tier-pick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.tier-pick-opt { position: relative; cursor: pointer; }
+.tier-pick-opt input { position: absolute; opacity: 0; pointer-events: none; }
+.tier-pick-opt { --tb: #B45F2D; --tb-bg: rgba(180,95,45,.10); }
+.tier-pick-opt.tb-silver { --tb: #7887A0; --tb-bg: rgba(120,135,160,.12); }
+.tier-pick-opt.tb-gold   { --tb: #E8A317; --tb-bg: rgba(232,163,23,.12); }
+.tier-pick-card { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; padding: 18px 10px 14px; border: 1.5px solid var(--border); border-top: 4px solid var(--tb); border-radius: 14px; background: linear-gradient(180deg, var(--tb-bg), transparent 75%); transition: border-color var(--t), box-shadow var(--t), transform var(--t); }
+.tier-pick-opt:hover .tier-pick-card { transform: translateY(-2px); }
+.tier-pick-medal { width: 44px; height: 44px; margin-bottom: 4px; }
+.tier-pick-medal svg { width: 22px; height: 22px; }
+.tier-pick-name { font-weight: 800; font-size: .95rem; color: var(--text); }
+.tier-pick-amt { font-weight: 600; font-size: 1.02rem; color: var(--text); font-variant-numeric: tabular-nums; }
+.tier-pick-sub { font-size: .72rem; color: var(--text-muted); }
+.tier-pick-check { position: absolute; top: 8px; right: 8px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: var(--tb); opacity: 0; transform: scale(.6); transition: opacity var(--t), transform var(--t); }
+.tier-pick-check svg { width: 12px; height: 12px; }
+.tier-pick-opt input:checked + .tier-pick-card { border-color: var(--tb); box-shadow: 0 0 0 3px var(--tb-bg), 0 6px 16px rgba(20,30,50,.08); }
+.tier-pick-opt input:checked + .tier-pick-card .tier-pick-check { opacity: 1; transform: none; }
+.tier-pick-opt input:focus-visible + .tier-pick-card { outline: 2px solid var(--tb); outline-offset: 2px; }
+@media (max-width: 520px) { .tier-pick { grid-template-columns: 1fr; } }
+.pay-tier .badge { font-size: .6rem; padding: 2px 7px; vertical-align: middle; }
+
+/* Tier Credit Budgets popup: one card per tier, amount on the right. */
+.tb-intro { font-size: .86rem; color: var(--text-muted); margin: 0 0 14px; line-height: 1.5; }
+.tb-intro strong { color: var(--text); }
+.tb-list { display: flex; flex-direction: column; gap: 10px; }
+.tb-card { --tb: #B45F2D; --tb-bg: rgba(180,95,45,.10); display: grid; grid-template-columns: 1fr 190px; align-items: center; gap: 6px 14px; padding: 14px 16px; border: 1px solid var(--border); border-left: 4px solid var(--tb); border-radius: 14px; background: linear-gradient(90deg, var(--tb-bg), transparent 70%); }
+.tb-silver { --tb: #7887A0; --tb-bg: rgba(120,135,160,.12); }
+.tb-gold   { --tb: #E8A317; --tb-bg: rgba(232,163,23,.12); }
+.tb-who { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.tb-medal { flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; color: var(--tb); background: var(--tb-bg); box-shadow: inset 0 0 0 1.5px var(--tb); }
+.tb-medal svg { width: 20px; height: 20px; }
+.tb-name { display: block; font-weight: 800; font-size: .95rem; color: var(--text); letter-spacing: .01em; margin: 0; cursor: pointer; }
+.tb-hint { font-size: .76rem; color: var(--text-muted); margin-top: 2px; }
+.tb-amt { position: relative; }
+.tb-peso { position: absolute; z-index: 1; left: 12px; top: 50%; translate: 0 -50%; font-weight: 800; color: var(--tb); pointer-events: none; }
+.tb-amt .control { width: 100%; min-width: 0; padding-left: 30px; font-weight: 500; font-size: .95rem; border: 1px solid var(--border); border-radius: 10px; text-align: right; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
+.tb-amt .control::-webkit-outer-spin-button, .tb-amt .control::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.tb-amt .control:focus { border-color: var(--tb); box-shadow: 0 0 0 3px var(--tb-bg); }
+.tb-err { grid-column: 1 / -1; }
+.tb-err:empty { display: none; }
+.tb-foot { font-size: .76rem; color: var(--text-muted); margin: 14px 0 0; }
+[data-theme="dark"] .tb-name { color: var(--text); }
+@media (max-width: 520px) { .tb-card { grid-template-columns: 1fr; } }
+
+/* Retailer Discount tab: minimum items per order, a compact strip like the switch above it. */
+.vat-disc-min { display: flex; align-items: center; gap: 14px; padding: 12px 14px 12px 16px; border: 1px solid var(--vat-line, var(--border)); border-radius: 14px; background: var(--glass-bg, var(--surface)); }
+.vat-disc-min-ic { flex: none; width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; color: var(--gold-ink, #9A6B0C); background: var(--gold-dim, rgba(232,163,23,.14)); }
+.vat-disc-min-ic svg { width: 19px; height: 19px; }
+.vat-disc-min-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.vat-disc-min-text label { font-weight: 700; font-size: .9rem; color: var(--text); margin: 0; }
+.vat-disc-min-text small { font-size: .78rem; color: var(--text-muted); }
+.vat-disc-min-text .field-error:empty { display: none; }
+.vat-disc-min-field { flex: none; display: flex; align-items: stretch; width: 170px; border: 1.5px solid var(--vat-edge, var(--border)); border-radius: 12px; overflow: hidden; background: rgba(255,255,255,.85); transition: border-color var(--t), box-shadow var(--t); }
+.vat-disc-min-field:focus-within { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-dim); }
+.vat-disc-min-field .control { flex: 1; width: auto; min-width: 0; border: 0 !important; border-radius: 0; background: transparent; box-shadow: none !important; padding: 9px 12px; font-size: 1rem; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
+.vat-disc-min-field .control::-webkit-outer-spin-button, .vat-disc-min-field .control::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.vat-disc-min-unit { display: grid; place-items: center; padding: 0 12px; font-size: .78rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); background: var(--bg-soft, rgba(0,0,0,.04)); border-left: 1px solid var(--vat-line, var(--border)); }
+[data-theme="dark"] .vat-disc-min-field { background: var(--surface); }
+[data-theme="dark"] .vat-disc-min-ic { color: var(--gold); }
+@media (max-width: 640px) { .vat-disc-min { flex-wrap: wrap; } .vat-disc-min-field { width: 100%; } }
+
+/* VAT Maintenance numbers: regular weight, with inner padding and rounded corners. */
+#mod-vat .vat-input .control { font-weight: 500; padding-left: 12px; border-radius: 10px; }
+#mod-vat .vat-input.is-prefix .control { padding-left: 32px; }
+#mod-vat .vat-disc-min-field .control { font-weight: 500; }
+
+/* Replenish (Bulk): shared dates and one quantity for every selected product, in one aligned toolbar. */
+.rep-top { display: flex; align-items: flex-start; gap: 18px; flex-wrap: wrap; padding: 14px 16px; margin-bottom: 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--glass-bg-soft, var(--bg-soft, transparent)); }
+.rep-top .field { margin: 0; }
+.rep-top label { display: flex; align-items: center; gap: 8px; min-height: 22px; margin-bottom: 6px; }
+.rep-top .control, .rep-top .ebd-trigger { height: 42px; box-sizing: border-box; }
+.rep-group { display: grid; grid-template-columns: 190px 190px; gap: 12px; }
+.rep-divider { align-self: stretch; width: 1px; background: var(--border); }
+.rep-bulk { flex: 1; min-width: 260px; }
+.rep-bulk-row { display: flex; gap: 8px; }
+.rep-bulk-row .control { width: 140px; text-align: center; -moz-appearance: textfield; }
+.rep-bulk-row .control::-webkit-outer-spin-button, .rep-bulk-row .control::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.rep-bulk-row .btn { height: 42px; white-space: nowrap; }
+.rep-count { font-size: .7rem; font-weight: 700; padding: 2px 8px; border-radius: 99px; color: var(--text-muted); background: var(--bg-tint, rgba(0,0,0,.06)); }
+@media (max-width: 760px) { .rep-divider { display: none; } .rep-group { grid-template-columns: 1fr 1fr; width: 100%; } .rep-bulk-row .control { flex: 1; width: auto; } }
+
+/* Online Transactions table: order tags, customer avatar, right-aligned totals and actions. */
+.otx-table td { vertical-align: middle; padding-top: 14px; padding-bottom: 14px; }
+.otx-table tbody tr { transition: background var(--t); }
+.otx-table tbody tr:hover { background: rgba(232,163,23,.06); }
+.otx-table th.num, .otx-table td.num { text-align: right; padding-right: 28px; }
+.otx-table th.otx-act-h { text-align: right; padding-right: 18px; }
+.otx-id { font-family: var(--font-mono, ui-monospace, monospace); font-size: .8rem; font-weight: 700; color: var(--text); letter-spacing: .01em; }
+.otx-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.otx-tag { font-size: .64rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 2px 8px; border-radius: 99px; color: var(--text-muted); background: rgba(255,255,255,.45); border: 1px solid rgba(255,255,255,.7); box-shadow: 0 1px 2px rgba(20,30,50,.06); }
+[data-theme="dark"] .otx-tag { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.12); box-shadow: none; }
+.otx-cust { display: flex; align-items: center; gap: 10px; }
+.otx-avatar { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-size: .72rem; font-weight: 800; color: var(--gold-ink, #9A6B0C); background: var(--gold-dim, rgba(232,163,23,.14)); }
+.otx-name { font-weight: 600; color: var(--text); }
+.otx-sub { font-size: .74rem; color: var(--text-muted); margin-top: 2px; }
+.otx-date { font-size: .86rem; color: var(--text); }
+.otx-pay { font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.otx-total { font-weight: 800; font-size: .95rem; font-variant-numeric: tabular-nums; color: var(--text); }
+.otx-actions { justify-content: flex-end; }
+[data-theme="dark"] .otx-avatar { color: var(--gold); }
+[data-theme="dark"] .otx-table tbody tr:hover { background: rgba(255,255,255,.04); }
+
+/* Change Password: rule checklist under New Password (each item turns green when met). */
+.pw-rules { list-style: none; margin: 8px 0 2px; padding: 10px 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; border-radius: 10px; background: var(--bg-soft, rgba(0,0,0,.04)); border: 1px solid var(--border); font-size: .76rem; color: var(--text-muted); }
+.pw-rules li { display: flex; align-items: center; gap: 6px; transition: color .15s; }
+.pw-rule-ic { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid currentColor; opacity: .55; position: relative; }
+.pw-rules li.is-met { color: var(--ok-ink, #2e8b57); font-weight: 600; }
+.pw-rules li.is-met .pw-rule-ic { opacity: 1; background: currentColor; }
+.pw-rules li.is-met .pw-rule-ic::after { content: ""; position: absolute; left: 4px; top: 1px; width: 3px; height: 7px; border: solid #fff; border-width: 0 1.6px 1.6px 0; transform: rotate(45deg); }
+@media (max-width: 420px) { .pw-rules { grid-template-columns: 1fr; } }
+
+/* Sales Report export: quick-range chips and From/To dates in the export popup. */
+.sx-presets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.sx-preset { padding: 7px 14px; border-radius: 99px; border: 1px solid var(--border-lift, var(--border)); background: var(--glass-bg-soft, var(--surface)); color: var(--text); font: 600 .8rem/1.2 inherit; cursor: pointer; transition: border-color var(--t), background var(--t); }
+.sx-preset:hover { border-color: var(--gold); }
+.sx-preset.active { background: var(--gold); border-color: var(--gold); color: #1e1a0e; }
+.sx-dates { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.sx-dates .field { margin: 0; }
+
+/* Sales Report export: optional expenses for the net income statement (reports.financial only). */
+.sx-exp { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+.sx-exp-head h4 { margin: 0; font: 700 .9rem/1.3 inherit; color: var(--text); }
+.sx-exp-head h4 span { font-weight: 500; color: var(--text-muted); }
+.sx-exp-head .field-hint { margin: 2px 0 12px; }
+.sx-exp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px 14px; }
+.sx-exp-grid .field { margin: 0; }
+.sx-peso { position: relative; }
+/* The ₱ sits on top of the input (z-index), with the amount right after it. */
+.sx-peso > span { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); z-index: 1; color: var(--text-muted); font-weight: 600; line-height: 1; pointer-events: none; }
+.sx-peso .control { padding-left: 30px; font-variant-numeric: tabular-nums; text-align: left; }
+.sx-peso .control.is-invalid { border-color: var(--red) !important; box-shadow: 0 0 0 3px rgba(214,40,40,.12); }
+.sx-exp-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 12px; }
+.sx-link { background: none; border: 0; padding: 0; color: var(--gold-ink, var(--gold)); font: 600 .8rem/1.2 inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.sx-exp-source { font-size: .78rem; color: var(--text-muted); }
+.sx-imp { margin-top: 14px; padding: 14px; border: 1px solid var(--border-lift, var(--border)); border-radius: 12px; background: var(--glass-bg-soft, var(--surface)); }
+.sx-imp-file { font: 700 .82rem/1.3 inherit; word-break: break-all; }
+.sx-imp-summary { margin: 4px 0 12px; font-size: .82rem; line-height: 1.5; color: var(--text); }
+.sx-imp-summary.is-none { color: var(--red); }
+.sx-imp-warn { color: var(--crit, #c2410c); font-weight: 600; font-size: .8rem; }
+.sx-imp-map { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 12px; }
+.sx-imp-map .field { margin: 0; }
+.sx-imp-map .control { font-size: .8rem; }
+.sx-imp-map.needs-amount .sx-map-amount .control { border-color: var(--red); box-shadow: 0 0 0 3px rgba(214,40,40,.12); }
+.sx-imp-totals { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin: 12px 0; }
+.sx-imp-total { padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); }
+.sx-imp-total span { display: block; font-size: .68rem; color: var(--text-muted); line-height: 1.3; }
+.sx-imp-total b { font-size: .88rem; font-variant-numeric: tabular-nums; }
+.sx-imp-total.is-neg b { color: var(--red); }
+.sx-imp-table { max-height: 240px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+.sx-imp-table .data-table { margin: 0; font-size: .8rem; }
+.sx-imp-table th { position: sticky; top: 0; z-index: 1; background: var(--surface, #fff); }
+.sx-imp-table .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sx-imp-skipped { margin-top: 10px; font-size: .8rem; }
+.sx-imp-skipped summary { cursor: pointer; font-weight: 600; }
+.sx-imp-skipped ul { margin: 6px 0 0; padding-left: 18px; }
+.sx-imp-skipped em { color: var(--text-muted); font-style: normal; margin-left: 4px; }
+.sx-imp-actions { display: flex; gap: 8px; margin-top: 12px; }
+
+/* Landing Page: section tabs above the editor. */
+.lp-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.lp-section[hidden] { display: none !important; }
+
+/* Landing Page: hero text fields and a small preview drawn like the storefront overlay. */
+.lp-hero-text { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
+.lp-hero-text .lp-hero-wide { grid-column: 1 / -1; }
+.lp-stat-row { display: grid; grid-template-columns: 110px 1fr; gap: 8px; }
+.lp-hero-preview { margin-top: 10px; padding: 18px 20px; border-radius: 14px; color: #fff; background: linear-gradient(135deg, #2a2116, #4a3a22 60%, #6b4e1f); }
+.lp-hp-stats { display: flex; gap: 22px; justify-content: flex-end; }
+.lp-hp-stats div { display: flex; flex-direction: column; align-items: flex-end; }
+.lp-hp-stats b { font-family: var(--font-display, Georgia, serif); font-size: 1.5rem; line-height: 1; }
+.lp-hp-stats span { font-size: .62rem; letter-spacing: .14em; text-transform: uppercase; color: #f0c060; }
+.lp-hp-tag { margin: 14px 0 4px; font-family: var(--font-display, Georgia, serif); font-size: 1.45rem; font-weight: 700; }
+.lp-hp-tag em { color: #f0c060; }
+.lp-hp-lead { margin: 0; font-size: .86rem; color: rgba(255,255,255,.85); }
+@media (max-width: 720px) { .lp-hero-text { grid-template-columns: 1fr; } }
+
+/* POS: the reference box the server refused (format, or already used). */
+#pay-refnum.is-invalid { border-color: var(--red) !important; box-shadow: 0 0 0 3px rgba(214,40,40,.12); }
+#m-rp-ref.is-invalid { border-color: var(--red) !important; box-shadow: 0 0 0 3px rgba(214,40,40,.12); }
+#status-tracking.is-invalid { border-color: var(--red) !important; box-shadow: 0 0 0 3px rgba(214,40,40,.12); }
+
+/* Kept last in the file so these phone/tablet sizes win over the base rules above. */
+/* ===== COMPACT LAYOUT: tablets get tighter spacing, phones a dense one, so more fits on the screen ===== */
+@media (max-width: 900px) {
+  :root { --shell-gap: 10px; --topbar-h: 56px; }
+  .content { padding: 12px 0 20px; }
+  .mod-header, .dash-welcome { padding: 16px 18px; margin-bottom: 16px; }
+  .panel { padding: 16px; }
+  .panel-header { margin-bottom: 12px; padding-bottom: 10px; }
+  .stat-grid { gap: 12px; margin-bottom: 16px; }
+  .stat-card { padding: 16px 18px; }
+  .stat-card-linked { padding: 0; }
+  .stat-card-face { padding: 16px 18px 0; }
+  .stat-sub-link { padding: 4px 18px 16px; }
+  .stat-card-linked > .stat-sub:not(.stat-sub-link), .stat-card-linked > .stat-delta { margin-inline: 18px; }
+  .stat-card-linked > :last-child:not(.stat-sub-link) { margin-bottom: 16px; }
+  .data-table thead th { padding: 10px 12px; }
+  .data-table td { padding: 10px 12px; }
+}
+
+@media (max-width: 600px) {
+  :root { --shell-gap: 8px; --topbar-h: 52px; }
+  .content { padding: 10px 0 16px; }
+
+  /* Top bar */
+  .app-topbar { border-radius: 14px; padding: 0 8px; }
+  .topbar-search { height: 34px; }
+  .topbar-actions .icon-btn, .topbar-hamburger { width: 32px; height: 32px; }
+  .topbar-user-chip .avatar, .topbar-avatar { width: 32px; height: 32px; }
+
+  /* Page headers */
+  .mod-header, .dash-welcome { padding: 12px 14px; margin-bottom: 12px; border-radius: 14px; gap: 8px; }
+  .mod-header h2 { font-size: 1.3rem; }
+  .mod-desc { font-size: .78rem; margin-top: 2px; line-height: 1.4; }
+  .eyebrow { font-size: .6rem; margin-bottom: 2px; }
+  .dash-greeting { font-size: 1.3rem; }
+  .dash-date { font-size: .72rem; }
+
+  /* Buttons and pills */
+  .btn { min-height: 34px; padding: 7px 14px; font-size: .7rem; gap: 6px; }
+  .btn-sm { min-height: 28px; padding: 5px 10px; font-size: .65rem; }
+  .btn svg { width: 13px; height: 13px; }
+  .tab-btn, .return-tab-btn, .alert-tab, .inv-action-btn, .range-btn, .rs-basis-btn { --pill-py: 6px; --pill-px: 12px; --pill-fs: .68rem; }
+  .dash-shortcut-btn { padding: 8px 14px; font-size: .66rem; }
+
+  /* Stat cards: two per row, small icon, figures on one line */
+  .stat-grid { gap: 8px; margin-bottom: 12px; }
+  .stat-card { padding: 12px; border-radius: 14px; }
+  .stat-card-linked { padding: 0; }
+  .stat-card-face { padding: 12px 12px 0; }
+  .stat-sub-link { padding: 2px 12px 12px; }
+  .stat-card-linked > .stat-sub:not(.stat-sub-link), .stat-card-linked > .stat-delta { margin-inline: 12px; }
+  .stat-card-linked > :last-child:not(.stat-sub-link) { margin-bottom: 12px; }
+  .stat-card .stat-icon { width: 30px; height: 30px; margin-bottom: 8px; border-radius: 9px; }
+  .stat-card .stat-icon svg { width: 16px; height: 16px; }
+  .stat-label { font-size: .6rem; letter-spacing: .06em; margin-bottom: 3px; }
+  .stat-value { font-size: clamp(.95rem, 4.4vw, 1.2rem); white-space: nowrap; overflow-wrap: normal; }
+  .stat-sub, .stat-sub-link { font-size: .66rem; line-height: 1.35; }
+  .stat-delta { font-size: .62rem; padding: 2px 6px; margin-top: 4px; }
+
+  /* Panels and tables */
+  .panel { padding: 12px; border-radius: 14px; }
+  .panel-header { margin-bottom: 10px; padding-bottom: 8px; }
+  .panel-title { font-size: .88rem; }
+  .data-table { font-size: .8rem; }
+  .data-table thead th { padding: 8px 10px; font-size: .58rem; }
+  .data-table td { padding: 8px 10px; }
+  .table-wrap { border-radius: 14px; }
+
+  /* Form fields */
+  .content .control, .content .filter-select { min-height: 36px; font-size: .82rem; }
+  .content .field { margin-bottom: 10px; }
+
+  /* Dashboard "Orders Waiting for Approval" tiles */
+  .appr-stats { gap: 8px; padding-bottom: 10px; }
+  .appr-stat { padding: 10px; gap: 8px; border-radius: 12px; }
+  .appr-stat-ico { width: 30px; height: 30px; border-radius: 9px; }
+  .appr-stat-ico svg { width: 15px; height: 15px; }
+  .appr-stat-val { font-size: 1.1rem; }
+  .appr-stat-lbl { font-size: .66rem; line-height: 1.3; }
+
+  /* Popups */
+  .modal-header, .modal-body, .modal-footer { padding-inline: 14px; }
+  .modal-body { padding-block: 12px; }
+}
+
+/* Small phones (320–380px). */
+@media (max-width: 380px) {
+  .dash-shortcut-btn { white-space: normal; max-width: 100%; text-align: left; }
+  .appr-stats { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  .appr-stat { padding: 12px; gap: 8px; min-width: 0; }
+  .mini-stat-group > * { flex: 1 1 100%; }
+}
+
+/* Phone: dashboard welcome shortcuts and Stock Levels rows. */
+@media (max-width: 600px) {
+  /* RBAC / Payment Schemes: full-width rows of equal width, label and badge on one line. */
+  .dash-welcome-right { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+  .dash-welcome-right > .dash-shortcut-btn {
+    width: 100%; justify-content: center; min-width: 0;
+    padding: 8px 12px; gap: 8px; white-space: nowrap; text-align: center;
+  }
+
+  /* Stock Levels: name and count on the first line, the bar full width underneath, so names are not cut to "P…". */
+  .stock-row {
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    grid-template-areas: "rank name right" "rank bar bar";
+    gap: 4px 8px; padding: 8px 6px;
+  }
+  .stock-row-rank { grid-area: rank; align-self: start; padding-top: 2px; }
+  .stock-row-name { grid-area: name; font-size: .8rem; }
+  .stock-row-right { grid-area: right; }
+  .stock-bar-wrap { grid-area: bar; height: 6px; }
+  .stock-row-val { font-size: .8rem; }
+  .stock-bars { max-height: 320px; }
+}
+
+/* Phone: tab strips, empty tables, order tags and the From → To date pair. */
+@media (max-width: 600px) {
+  /* VAT Maintenance tabs swipe like every other tab strip instead of wrapping onto uneven rows. */
+  .content .vat-tabs { flex-wrap: nowrap; overflow-x: auto; min-width: 0; max-width: 100%; scrollbar-width: none; }
+  .content .vat-tabs::-webkit-scrollbar { display: none; }
+  .content .vat-tabs > * { flex: none; }
+
+  /* The strip fades at the edge that has more tabs (classes set by tabStripHints() in engine.js). */
+  .strip-more-right { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+  .strip-more-left { -webkit-mask-image: linear-gradient(to right, transparent, #000 40px); mask-image: linear-gradient(to right, transparent, #000 40px); }
+  .strip-more-left.strip-more-right {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
+  }
+
+  /* An empty table ("All Verified", "No orders"): hide the column headings so the message is centred on screen
+     instead of across the full scrolling width. */
+  .table-wrap:has(tbody > .state-row:only-child) thead { display: none; }
+  .table-wrap:has(tbody > .state-row:only-child) .state-cell { white-space: normal; padding: 1.5rem 1rem; }
+
+  /* Order tags (DELIVERY · 3 ITEMS) stay on one line. */
+  .otx-tags { flex-wrap: nowrap; }
+
+  /* From → To dates: two equal halves on one line, each opening the themed calendar. */
+  .content .date-range-group { display: flex; flex-wrap: nowrap; width: 100%; }
+  .content .date-range-group > .ebd, .content .date-range-group > input[type="date"] { flex: 1 1 0; min-width: 0; }
+  .content .date-range-group .ebd-trigger { width: 100%; min-width: 0; padding-inline: 10px; }
+}
+
+/* Batch Tracking: Trace a Batch (recall look-up). */
+.bt-pick { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.bt-pick .field { margin: 0; min-width: 0; }
+.bt-results:empty { display: none; }
+.bt-results { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.bt-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.bt-lot { font-family: var(--font-mono, ui-monospace, monospace); font-weight: 800; font-size: 1rem; color: var(--gold-ink); }
+.bt-meta { font-size: .78rem; color: var(--text-muted); margin-top: 2px; line-height: 1.5; }
+.bt-stats { margin-bottom: 12px; }
+.bt-stats .mini-stat { flex: 1 1 110px; }
+.bt-warn { color: var(--out-ink, #c43d2a) !important; }
+.bt-contact { font-size: .74rem; color: var(--text-muted); margin-top: 2px; }
+.bt-where { max-width: 240px; white-space: normal; line-height: 1.4; }
+/* City and province only (the full address is in the tooltip and the CSV), at most two lines. */
+.bt-place { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.bt-table .num { text-align: right; }
+/* The trace popup gets more room for its table; dates and channels stay on one line, addresses wrap. */
+.modal.modal-lg:has(#bt-results) { max-width: min(1080px, calc(100vw - 32px)); }
+.bt-table td, .bt-table th { white-space: nowrap; }
+.bt-table td.bt-where { white-space: normal; min-width: 170px; max-width: 220px; }
+.bt-table td.bt-channel { white-space: normal; min-width: 80px; }
+@media (max-width: 600px) {
+  .bt-pick { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .bt-stats .mini-stat { flex: 1 1 calc(50% - 5px); }
+  .bt-where { white-space: normal; min-width: 180px; }
+}
+
+/* ===== PHONE: filter toolbars, card tables, Landing Page tiles ===== */
+@media (max-width: 600px) {
+  /* Toolbars wrap as rows (not one column, which squashed the search box to its text height):
+     search on its own full-width row, then filters and page size two per row. */
+  .content .view-toolbar, .content .view-toolbar-filters {
+    flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px;
+  }
+  .content .view-toolbar > .tabs, .content .view-toolbar > .return-tabs,
+  .content .view-toolbar > .inv-action-tabs, .content .view-toolbar > .view-toolbar-filters { flex: 1 1 100%; margin-left: 0; }
+  .content .view-toolbar .search-box {
+    flex: 1 1 100%; height: 40px; min-height: 40px; max-width: none; min-width: 0; padding-block: 0;
+  }
+  .content .view-toolbar .ebs, .content .view-toolbar > select, .content .view-toolbar-filters > select,
+  .content .view-toolbar > .btn, .content .view-toolbar-filters > .btn { flex: 1 1 calc(50% - 4px); min-width: 0; }
+  .content .view-toolbar .ebs-trigger { width: 100%; justify-content: space-between; }
+  .content .view-toolbar .vt-spacer { display: none; }
+  .content .view-toolbar .tab-filters { flex: 1 1 100%; flex-wrap: wrap; gap: 8px; }
+  .content .view-toolbar > .date-range-group, .content .view-toolbar > .mini-stat-group,
+  .content .view-toolbar > .inv-legend { flex: 1 1 100%; }
+
+  /* Tables become a list of small cards: each row a card, each cell "LABEL  value" (labels from labelTableCells()). */
+  .content .table-wrap { overflow: visible; }
+  .content .data-table:not(.no-cards) thead { display: none; }
+  .content .data-table:not(.no-cards),
+  .content .data-table:not(.no-cards) tbody { display: block; width: 100%; }
+  .content .data-table:not(.no-cards) tbody tr { display: block; }
+  .content .table-wrap .data-table:not(.no-cards) td {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 5px 0; border: 0; white-space: normal; text-align: right; min-width: 0;
+  }
+  .content .table-wrap .data-table:not(.no-cards) td + td { border-top: 1px dashed var(--border); }
+  .content .data-table:not(.no-cards) td::before {
+    content: attr(data-label); flex: none; max-width: 42%;
+    font-size: .6rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--text-muted); text-align: left;
+  }
+  .content .data-table:not(.no-cards) td[data-label=""]::before { display: none; }
+  .content .data-table:not(.no-cards) td[data-label=""] { justify-content: flex-end; }
+  /* Frames that normally scroll inside a fixed height grow with their cards instead (no spill over the pager). */
+  .content .table-wrap, .content .table-wrap.viewport-bound, .content .table-wrap.scrollable { max-height: none !important; overflow: visible !important; }
+  .content .table-wrap .data-table:not(.no-cards) td { padding: 4px 0; font-size: .8rem; }
+  /* The first cell (order / product / name) is the card title: full width, no label. */
+  .content .table-wrap .data-table:not(.no-cards) td:first-child {
+    display: block; text-align: left; font-weight: 700; font-size: .86rem; padding: 2px 0 6px;
+  }
+  .content .data-table:not(.no-cards) td:first-child::before { display: none; }
+  .content .data-table:not(.no-cards) td > * { min-width: 0; }
+  .content .data-table:not(.no-cards) .td-actions { justify-content: flex-end; flex-wrap: wrap; }
+  /* Empty / loading / error rows stay a single centred message. */
+  .content .data-table:not(.no-cards) tr.state-row td { display: block; text-align: center; }
+  .content .data-table:not(.no-cards) tr.state-row td::before { display: none; }
+  .content .data-table:not(.no-cards) tr.sk-row td::before { display: none; }
+
+  /* Landing Page: two tiles per row with smaller text, so more fit on screen. */
+  .lp-img-grid, .lp-bs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .lp-img-card { padding: 6px; }
+  .lp-img-name { font-size: .78rem; margin: 6px 0 4px; }
+  .lp-img-card .control, .lp-img-card select { font-size: .74rem; min-height: 32px; }
+  .lp-img-actions .btn, #lp-hero-grid .lp-img-actions .btn { min-height: 28px; padding: 4px 6px; font-size: .6rem; }
+  .lp-tile-body { padding: 8px 8px 6px; }
+  .lp-tile-name { font-size: .78rem; }
+  .lp-tile-rank { top: 6px; left: 6px; font-size: .58rem; }
+}
+
+/* Phone card tables, denser: two fields per line (label above value), title across the top, actions along the bottom. */
+@media (max-width: 600px) {
+  .content .data-table:not(.no-cards) tbody tr:not(.state-row):not(.sk-row) {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 12px; padding: 10px 12px;
+  }
+  .content .table-wrap .data-table:not(.no-cards) tbody tr:not(.state-row) td {
+    display: block; text-align: left; padding: 0; border: 0; min-width: 0; overflow-wrap: anywhere;
+  }
+  .content .table-wrap .data-table:not(.no-cards) td + td { border-top: 0; }
+  .content .data-table:not(.no-cards) tbody tr:not(.state-row) td::before {
+    display: block; max-width: none; margin-bottom: 1px; font-size: .56rem;
+  }
+  .content .data-table:not(.no-cards) tbody tr:not(.state-row) td:first-child {
+    grid-column: 1 / -1; padding-bottom: 6px; margin-bottom: 2px; border-bottom: 1px solid var(--border);
+  }
+  .content .data-table:not(.no-cards) tbody tr:not(.state-row) td:first-child::before { display: none; }
+  /* The actions cell (buttons) spans the card and sits right-aligned at the bottom. */
+  .content .data-table:not(.no-cards) tbody tr:not(.state-row) td:last-child:has(.btn) {
+    grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap;
+    padding-top: 6px; margin-top: 2px; border-top: 1px solid var(--border);
+  }
+  .content .data-table:not(.no-cards) tbody tr:not(.state-row) td:last-child:has(.btn)::before { display: none; }
+  .content .data-table:not(.no-cards) td .td-actions { justify-content: flex-end; }
+  .content .data-table:not(.no-cards) tbody tr:not(.state-row) td.td-wide { grid-column: 1 / -1; }
+  .content .data-table:not(.no-cards) tbody tr:not(.state-row) td.td-empty { display: none; }
+  .content .table-wrap .data-table:not(.no-cards) tbody tr:not(.state-row) td { font-size: .8rem; }
+}
+@media (max-width: 600px) {
+  /* Landing Page tiles: the product picker fits inside its tile. */
+  .lp-img-card .ebs, .lp-img-card .ebs-trigger { width: 100%; min-width: 0; max-width: 100%; }
+  .lp-img-card .ebs-trigger { min-height: 32px; height: 32px; padding: 0 8px 0 10px; font-size: .74rem; }
+  .lp-img-card { min-width: 0; overflow: hidden; }
+}
+@media (max-width: 600px) {
+  .lp-img-card .ebs-trigger { min-width: 0 !important; max-width: 100% !important; box-sizing: border-box; }
+  .lp-img-card .ebs { display: flex; }
+  /* Best-seller tiles: shorter photo, one-line category and stats, compact footer. */
+  .lp-tile-media { aspect-ratio: 16 / 10; }
+  .lp-tile-cat, .lp-tile-meta { font-size: .66rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .lp-tile-sold { font-size: .74rem; margin-top: 2px; }
+  .lp-tile-meta .badge { font-size: .55rem; padding: 1px 5px; }
+  .lp-tile-foot { padding: 6px 8px; gap: 4px; }
+  .lp-tile-foot .btn { min-height: 26px; padding: 3px 8px; font-size: .6rem; }
+  .lp-feat-text { font-size: .7rem; }
+}
+
+/* ===== PHONE LIST TABLES + SECTION FIXES (kept last so it wins) ===== */
+@media (max-width: 600px) {
+  /* Tables: one frosted panel holding plain rows split by thin lines (no card inside a card, and no nested blur,
+     which Chrome draws as stray rectangles while scrolling). Same look in pages and in popups. */
+  :is(.content, .modal-body) .table-wrap {
+    overflow: visible !important; max-height: none !important;
+    padding: 0 12px; border-radius: 14px;
+  }
+  /* Inside a panel (dashboard Recent Transactions) the panel is already the frame. */
+  .content .panel .table-wrap { padding: 0; background: none; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+  :is(.content, .modal-body) .data-table:not(.no-cards) thead { display: none; }
+  :is(.content, .modal-body) .data-table:not(.no-cards),
+  :is(.content, .modal-body) .data-table:not(.no-cards) tbody { display: block; width: 100%; }
+  :is(.content, .modal-body) .data-table:not(.no-cards) tbody tr:not(.state-row):not(.sk-row) {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 14px;
+    padding: 12px 0; margin: 0; background: none; border: 0; border-radius: 0; box-shadow: none;
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+    border-bottom: 1px solid var(--border);
+  }
+  :is(.content, .modal-body) .data-table:not(.no-cards) tbody tr:last-child { border-bottom: 0; }
+  :is(.content, .modal-body) .data-table:not(.no-cards) tbody tr:hover { background: none; }
+  :is(.content, .modal-body) .table-wrap .data-table:not(.no-cards) tbody tr:not(.state-row) td {
+    display: block; padding: 0 !important; border: 0; text-align: left; white-space: normal; overflow-wrap: anywhere;
+    min-width: 0; font-size: .8rem; line-height: 1.4; height: auto;
+  }
+  /* A dropdown in a cell (VAT Tax Type) fills its half like any other field. */
+  :is(.content, .modal-body) .data-table:not(.no-cards) tbody tr:not(.state-row) td .ebs { display: flex; width: 100%; }
+  :is(.content, .modal-body) .data-table:not(.no-cards) tbody tr:not(.state-row) td .ebs-trigger { width: 100%; min-width: 0; }
+  :is(.content, .modal-body) .data-table:not(.no-cards) tbody tr:not(.state-row) td::before {
+    content: attr(data-label); display: block; margin-bottom: 1px;
+    font-size: .58rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted);
+  }
+  :is(.content, .modal-body) .data-table:not(.no-cards) tbody tr:not(.state-row) td[data-label=""]::before { display: none; }
+  /* Title: the first cell across the top, bold, no label and no divider. */
+  :is(.content, .modal-body) .data-table:not(.no-cards) tbody tr:not(.state-row) td:first-child {
+    grid-column: 1 / -1; padding: 0; margin: 0; border: 0; font-weight: 700; font-size: .86rem;
+  }
+  :is(.content, .modal-body) .data-table:not(.no-cards) tbody tr:not(.state-row) td:first-child::before { display: none; }
+  :is(.content, .modal-body) .data-table:not(.no-cards) tbody tr:not(.state-row) td.td-wide { grid-column: 1 / -1; }
+  :is(.content, .modal-body) .data-table:not(.no-cards) tbody tr:not(.state-row) td.td-empty { display: none; }
+  /* Buttons: along the bottom of the row, right-aligned, no extra divider. */
+  /* Buttons: the right-hand column, next to the last field when there is room, bottom-aligned. */
+  :is(.content, .modal-body) .data-table:not(.no-cards) tbody tr:not(.state-row) td:last-child:has(.btn) {
+    grid-column: -2 / -1; align-self: end; display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap;
+    padding: 2px 0 0; margin: 0; border: 0;
+  }
+  /* Two or more buttons need the full row. */
+  :is(.content, .modal-body) .data-table:not(.no-cards) tbody tr:not(.state-row) td:last-child:has(.btn ~ .btn) { grid-column: 1 / -1; }
+  :is(.content, .modal-body) .data-table:not(.no-cards) tbody tr:not(.state-row) td:last-child:has(.btn)::before { display: none; }
+  :is(.content, .modal-body) .data-table:not(.no-cards) tr.state-row td { display: block; text-align: center; padding: 1.5rem .5rem; }
+  :is(.content, .modal-body) .data-table:not(.no-cards) tr.state-row td::before { display: none; }
+
+  /* Tab rows that still wrapped (Sales Report ranges, Product Reviews): one swipeable row like the others. */
+  .content .date-range-tabs, .content .rev-tabs {
+    display: flex; flex-wrap: nowrap; overflow-x: auto; min-width: 0; max-width: 100%;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch; gap: 6px;
+  }
+  .content .date-range-tabs::-webkit-scrollbar, .content .rev-tabs::-webkit-scrollbar { display: none; }
+  .content .date-range-tabs > *, .content .rev-tabs > * { flex: none; }
+
+  /* Summary tiles: two per row instead of one tall column (Sales Report, Shipping, VAT Summary). */
+  .content .sales-summary, .content .sales-summary.vat-summary-cards, .content .ship-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
+  }
+  .content .sales-sum-card { padding: 12px; min-width: 0; }
+  .content .sales-sum-val { font-size: clamp(.95rem, 4.4vw, 1.2rem); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .content .sales-summary.vat-summary-cards .sales-sum-val { font-size: clamp(.9rem, 4.2vw, 1.1rem); }
+
+  /* Popups: a label with extra detail (Estimated Delivery Fee · Metro Manila · 59.25 kg) wraps instead of pushing the amount out. */
+  /* A value too long to sit beside its label (address, payment summary) drops to its own line instead of overlapping. */
+  .modal .detail-row { flex-wrap: wrap; gap: 2px 10px; }
+  .modal .detail-row-label { flex: 1 0 auto; max-width: 65%; min-width: 0; }
+  .modal .detail-row-label .muted { display: block; }
+  .modal .detail-row-val { flex: 0 1 auto; min-width: 0; max-width: 100%; margin-left: auto; overflow-wrap: anywhere; }
+  .modal-body { overflow-x: hidden; }
+  .modal .order-item-row { flex-wrap: wrap; row-gap: 2px; }
+  .modal .order-item-name { flex: 1 1 60%; min-width: 0; }
+  .modal-title { font-size: 1.05rem; line-height: 1.25; }
+
+  /* Landing Page best-seller tile footer: "Featured" and "Change" fit side by side. */
+  .lp-tile-foot { padding: 6px 8px; gap: 4px; flex-wrap: wrap; }
+  .lp-tile-foot .btn { margin-left: auto; }
+  .lp-feat-toggle { min-width: 0; }
+}
+
+/* Phone: Shipping card headers (icon + title on one row, the action button underneath, full width). */
+@media (max-width: 600px) {
+  .ship-card-head { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 8px 10px; padding: 12px 14px; }
+  .ship-card-head > .btn { grid-column: 1 / -1; width: 100%; justify-content: center; }
+  .ship-card-head .ship-ic { width: 34px; height: 34px; }
+  .ship-card-head .ship-head-txt p, .ship-card-head .ship-head-txt small { font-size: .74rem; line-height: 1.4; }
+}
+
+/* Tablet (601–900px): real tables, cells on one line, the frame scrolls sideways when the columns need more room. */
+@media (min-width: 601px) and (max-width: 900px) {
+  .content .table-wrap { overflow-x: auto !important; }
+  .content .table-wrap .data-table th, .content .table-wrap .data-table td { white-space: nowrap; }
+  .content .table-wrap .data-table td.bt-where, .content .table-wrap .data-table td .otx-tags { white-space: normal; }
+  .content .table-wrap .data-table .td-actions { flex-wrap: nowrap; }
+}
+
+/* Payment Schemes account popup: the order on its own row, then Billed / Paid / Left / Due two per row,
+   instead of auto-fit tiles that wrap unevenly with their dividers in the wrong places. */
+@media (max-width: 760px) {
+  .cp-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 0; padding: 14px; }
+  .cp-summary > div { padding: 0 12px 0 0; border-left: none; min-width: 0; }
+  .cp-summary > div:first-child { grid-column: 1 / -1; padding: 0 0 12px; border-bottom: 1px dashed var(--border); }
+  .cp-summary > div:nth-child(odd):not(:first-child) { padding: 0 0 0 12px; border-left: 1px solid var(--border); }
+  .cp-summary strong { overflow-wrap: anywhere; }
+}
+
+/* Delivery Fees tables on phones: each zone / weight bracket is a compact two-line row (number, name, on/off and
+   delete on top; the amounts side by side below) on a 12-column grid, and the inputs drop their desktop
+   minimum widths so nothing spills past the panel. */
+@media (max-width: 600px) {
+  .content .table-wrap .data-table.ship-table tbody tr:not(.state-row) {
+    grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px 6px; align-items: end;
+  }
+  .content .table-wrap .data-table.ship-table tbody tr:not(.state-row) td { grid-column: span 4; }
+  .content .table-wrap .data-table.ship-table tbody tr:not(.state-row) td:first-child { grid-column: span 1; align-self: end; padding-bottom: 9px !important; }
+  .content .table-wrap .data-table.ship-table tbody tr:not(.state-row) td.ship-c { width: auto; display: flex; justify-content: flex-end; align-items: center; min-height: 36px; }
+  .content .table-wrap .data-table.ship-table tbody tr:not(.state-row) td.ship-c::before { display: none; }
+  .content .table-wrap .data-table.ship-table tbody tr:not(.state-row) td:nth-last-child(2) { grid-column: span 2; }
+  .content .table-wrap .data-table.ship-table tbody tr:not(.state-row) td:last-child { grid-column: span 1; }
+  /* Zones: # · name · on/off · delete, then From · To · Base fee. */
+  .content .table-wrap .data-table.ship-table tbody tr[data-zone-row] td:nth-child(2) { grid-column: span 8; }
+  .content .table-wrap .data-table.ship-table tbody tr[data-zone-row] td:nth-child(2)::before { display: none; }
+  .content .table-wrap .data-table.ship-table tbody tr[data-zone-row] td:nth-child(3) { order: 5; }
+  .content .table-wrap .data-table.ship-table tbody tr[data-zone-row] td:nth-child(4) { order: 6; }
+  .content .table-wrap .data-table.ship-table tbody tr[data-zone-row] td:nth-child(5) { order: 7; }
+  /* Weight brackets: # · From · To · on/off · delete, then Fee · Extra per kg. */
+  .content .table-wrap .data-table.ship-table tbody tr[data-weight-row] td:nth-child(2),
+  .content .table-wrap .data-table.ship-table tbody tr[data-weight-row] td:nth-child(3) { grid-column: span 4; }
+  .content .table-wrap .data-table.ship-table tbody tr[data-weight-row] td:nth-child(4),
+  .content .table-wrap .data-table.ship-table tbody tr[data-weight-row] td:nth-child(5) { grid-column: span 6; order: 5; }
+  .content .ship-table .ship-in .control, .content .ship-table .ship-name, .content .ship-table td:first-child .control { min-width: 0; }
+  .content .ship-table .ship-in .control { padding-right: 30px; }
+  .content .ship-table .ship-in.is-pre .control { padding: 7px 8px 7px 22px; }
+  .content .ship-table .ship-del { width: 32px; height: 32px; }
+
+  /* Each zone / bracket is its own soft tile with breathing room, instead of rows pressed against the card edge. */
+  .content .ship-card .table-wrap { padding: 12px !important; background: none; }
+  .content .table-wrap .data-table.ship-table tbody { display: flex !important; flex-direction: column; gap: 10px; }
+  .content .table-wrap .data-table.ship-table tbody tr:not(.state-row) {
+    padding: 10px 12px 12px; border: 1px solid var(--ship-line); border-radius: 12px;
+    background: rgba(255,255,255,.55); box-shadow: 0 1px 2px rgba(60,40,10,.05);
+  }
+  .content .table-wrap .data-table.ship-table tbody tr:not(.state-row):last-child { border-bottom: 1px solid var(--ship-line); }
+  [data-theme="dark"] .content .table-wrap .data-table.ship-table tbody tr:not(.state-row) { background: rgba(255,255,255,.04); }
+  .content .table-wrap .data-table.ship-table tbody tr.is-off { background: rgba(0,0,0,.03); border-style: dashed; }
+  .content .ship-table .ship-idx { background: var(--gold); color: #1E1A0E; }
+  /* The zone name reads as the tile's title. */
+  .content .ship-table .ship-name { font-weight: 700; font-size: .9rem; }
+  .content .table-wrap .data-table.ship-table tbody tr:not(.state-row) td:not(:first-child)::before { margin-bottom: 3px; }
+}
+
+/* New-lot expiry: computed from the production date (bottled +1 year, deboned +6 months), shown but not editable. */
+.control.lot-auto-date { background: rgba(110,78,28,.06) !important; color: var(--text-muted); cursor: default; pointer-events: none; }
+.control.lot-auto-date::-webkit-calendar-picker-indicator { display: none; }
+[data-theme="dark"] .control.lot-auto-date { background: rgba(255,255,255,.04) !important; }
+.lot-auto-note { font-size: .82rem; line-height: 1.45; color: var(--text-muted); padding: 8px 12px; border-radius: 10px; border: 1px dashed var(--border); }
+
+/* Payment Schemes: interest per Net term. */
+.interest-row { margin-top: -6px; flex-wrap: wrap; }
+.interest-hint { font-size: .74rem; flex-basis: 100%; }
+.penalty-title { font-weight: 700; font-size: .86rem; white-space: nowrap; }
+.penalty-terms { display: flex; flex-wrap: wrap; gap: 8px; }
+.penalty-term {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; margin: 0;
+  border: 1px solid var(--border); border-radius: 999px; background: rgba(255,255,255,.45); font-size: .78rem; font-weight: 700;
+}
+[data-theme="dark"] .penalty-term { background: rgba(255,255,255,.04); }
+.penalty-term span { color: var(--text-muted); letter-spacing: .03em; }
+.penalty-term em { font-style: normal; color: var(--text-muted); font-weight: 600; }
+.penalty-term .penalty-input { width: 64px; padding: 5px 8px; }
+.penalty-term .penalty-input[readonly] { background: transparent; border-color: transparent; cursor: default; }
+
+/* Shipping Rates: delivery days (min – max), packing time and the island & remote areas table (migration 038). */
+.ship-days { display: flex; align-items: center; gap: 6px; }
+.ship-days > span { color: var(--text-muted); font-weight: 700; }
+.ship-days .ship-in { flex: 1; min-width: 0; }
+.ship-days .ship-in .control { min-width: 0 !important; width: 100%; }
+.ship-pack { display: inline-flex; align-items: center; gap: 10px; margin-top: 8px; font-size: .8rem; font-weight: 600; color: var(--text-muted); }
+.ship-pack .ship-in { width: 120px; }
+.ship-remote-table td > .control, .ship-remote-table select.control { min-width: 140px; }
+.ship-remote-table tr.is-paused td { background: rgba(214,40,40,.05); }
+.ship-remote-table tr.is-paused td:first-child { box-shadow: inset 3px 0 0 var(--out, #d62828); }
+
+@media (max-width: 600px) {
+  /* Zones gain a fourth figure (delivery days): From · To · Base fee · Days, three columns each. */
+  .content .table-wrap .data-table.ship-table tbody tr[data-zone-row] td:nth-child(3),
+  .content .table-wrap .data-table.ship-table tbody tr[data-zone-row] td:nth-child(4),
+  .content .table-wrap .data-table.ship-table tbody tr[data-zone-row] td:nth-child(5) { grid-column: span 4; }
+  .content .table-wrap .data-table.ship-table tbody tr[data-zone-row] td:nth-child(6):not(.ship-c) { grid-column: span 12; order: 8; }
+  /* Remote areas: destination · paused · delete on top, then fee and days, then the note. */
+  .content .table-wrap .data-table.ship-remote-table tbody tr[data-remote-row] td:nth-child(1) { grid-column: span 9; }
+  .content .table-wrap .data-table.ship-remote-table tbody tr[data-remote-row] td:nth-child(2) { grid-column: span 5; order: 5; }
+  .content .table-wrap .data-table.ship-remote-table tbody tr[data-remote-row] td:nth-child(3) { grid-column: span 7; order: 6; }
+  .content .table-wrap .data-table.ship-remote-table tbody tr[data-remote-row] td:nth-child(4) { grid-column: span 12; order: 7; }
+  .content .ship-remote-table td > .control, .content .ship-remote-table select.control { min-width: 0; }
+  .ship-pack { flex-wrap: wrap; }
+}
+@media (max-width: 600px) {
+  /* Holidays: date and name side by side, delete at the end. */
+  .content .table-wrap .data-table.ship-hol-table tbody tr[data-holiday-row] td:nth-child(1) { grid-column: span 5; padding-bottom: 0 !important; }
+  .content .table-wrap .data-table.ship-hol-table tbody tr[data-holiday-row] td:nth-child(2) { grid-column: span 6; }
+}
+.ship-hol-table tr.is-off td { opacity: .5; }
+
+/* Reference number, one field per method (EbUI.splitRefField): the counter under the visible field. */
+.ref-split .ref-one { display: flex; flex-direction: column; gap: 3px; }
+.ref-split .ref-one[hidden] { display: none; }
+.ref-split .ref-count { font-size: .72rem; color: var(--text-muted); min-height: 1em; }

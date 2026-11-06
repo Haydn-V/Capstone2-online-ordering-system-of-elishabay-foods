@@ -1,70 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Lockout — the progressive sign-in throttle, in one place.
- *
- * WHY THIS IS ITS OWN FILE
- * ------------------------
- * Four paths refuse a bad password: staff sign-in, customer sign-in, the
- * customer password change (shop/password.php) and the staff password change
- * (users/me-password.php). The last two share sign-in's counter *deliberately* —
- * password.php's header says so — because a stolen session must not become an
- * unlimited password oracle. Four call sites for one policy is exactly how
- * `products.sold` came to disagree with itself before Stock was extracted.
- *
- * WHAT REPLACED THE OLD POLICY
- * ----------------------------
- * It was: 5 failures inside 15 minutes, then a flat 15-minute refusal. Two
- * problems. A real customer who mistypes twice and then genuinely forgets is
- * locked out of their own account for a quarter of an hour, which is a long
- * time to be told nothing useful. And the counter was keyed on the EMAIL ALONE,
- * so anyone who knew a customer's address could lock them out of it on purpose
- * by failing five times — a denial-of-service built on purpose. See KEYING.
- *
- * THE POLICY NOW
- * --------------
- *   Failures 1-3   free. Typos happen, and charging for them buys nothing:
- *                  an attacker is not deterred by three attempts, only a real
- *                  person is inconvenienced.
- *   Failure 4      locked 2 minutes.
- *   Each further   +2 minutes: 4, 6, 8, 10 …
- *   Cap            10 minutes for customers, 30 for staff. See THE STAFF CAP.
- *   Success        clears the streak completely.
- *   Quiet period   30 minutes with no attempt at all resets the streak, so
- *                  somebody who failed twice this morning does not arrive this
- *                  evening one attempt from a lock.
- *
- * The lock is not a stored flag. It is derived: the streak length gives a
- * penalty, and the penalty runs from the moment of the LAST failure. Nothing
- * has to be scheduled, nothing has to be cleaned up, and a row that ages out of
- * the decay window stops counting on its own.
- *
- * KEYING: EMAIL **AND** IP, NEVER EMAIL ALONE
- * -------------------------------------------
- * Keying on the email alone means the throttle can be aimed at a victim: fail
- * four times against someone's address and they are locked out of their own
- * account, from their own machine, having done nothing. That is a
- * denial-of-service the system would be performing on its own users' behalf.
- *
- * Keyed on (email, IP), an attacker locks out only themselves. The cost is that
- * a distributed attacker gets a fresh budget per source address — which is why
- * there is a second, looser limit on the IP alone (see sprayCheck): one machine
- * failing against many different accounts is the pattern per-key limits cannot
- * see, and it is the one that actually indicates an attack rather than a
- * forgotten password.
- *
- * THE STAFF CAP IS HIGHER, DELIBERATELY
- * -------------------------------------
- * This change is a WEAKENING of a security control: ten minutes is less than
- * fifteen, and the first three attempts now cost nothing. For a storefront that
- * is a good trade — the realistic harm is a customer locked out of their own
- * order history, and the passwords guard a shopping cart. It is a worse trade
- * for the staff portal, where an account carries stock adjustments, refunds,
- * price changes and, for Super Admin, the permission table itself. So staff
- * keep the same free attempts (a cashier mistypes too) but escalate to a
- * 30-minute ceiling rather than 10.
- */
+/** Lockout is the single progressive sign-in throttle for all four password paths: 3 free failures, then 2, 4, 6... minutes (max 10 for customers, 30 for staff), reset on success or after 30 quiet minutes, keyed on email plus IP so nobody can lock out someone else. */
 final class Lockout
 {
     /** Storefront: cheap to get wrong, low value behind it. */
@@ -72,12 +9,7 @@ final class Lockout
     /** Portal: real privileges behind it, so a higher ceiling. */
     public const CTX_STAFF    = 'staff';
 
-    /**
-     * How long the caller must wait, in seconds. 0 means not locked.
-     *
-     * Reads only — it never writes, so a caller can ask before doing work and
-     * ask again afterwards without inflating anything.
-     */
+    /** Seconds the caller must still wait (0 = not locked); read-only, so it can be called any time. */
     public static function secondsRemaining(string $email, string $context = self::CTX_CUSTOMER): int
     {
         if (!self::available()) {
@@ -88,9 +20,7 @@ final class Lockout
         $ip    = self::ip();
         $decay = (int) $cfg['decay_seconds'];
 
-        /* The streak IS the surviving failed rows for this key: record() deletes
-           them on success, so anything still here is consecutive by
-           construction. The decay window does the forgetting. */
+        /* The streak is simply the failed rows still on record for this key, since a success deletes them and old ones age out. */
         $row = Database::one(
             'SELECT COUNT(*) AS n, UNIX_TIMESTAMP(MAX(attempted_at)) AS last_at
                FROM login_attempts
@@ -105,31 +35,21 @@ final class Lockout
         }
 
         $penalty = self::penaltyFor($fails, $context);
-        /* Measured from the LAST failure, not the first. Each new failure
-           restarts a longer wait, which is what makes it escalate. */
+        /* The wait runs from the last failure, so each new failure restarts a longer wait. */
         $until   = (int) ($row['last_at'] ?? 0) + $penalty;
         $now     = self::nowFromDb();
 
         return $until > $now ? $until - $now : 0;
     }
 
-    /**
-     * Refuse with a 429 if this key is locked. Called before the password is
-     * checked, so a locked-out caller cannot keep testing passwords.
-     */
+    /** Refuse with 429 if this key is locked, before the password is even checked. */
     public static function enforce(string $email, string $context = self::CTX_CUSTOMER): void
     {
         self::sprayCheck();
 
         $wait = self::secondsRemaining($email, $context);
         if ($wait > 0) {
-            /* A DISTINCT MESSAGE, AND A NUMBER IN IT.
-
-               The old one said "Email or password is incorrect" for this case
-               too, which is why a lockout was indistinguishable from a typo and
-               sent people back to retype a password that was already right.
-               `retryAfter` lets the sign-in modal count down instead of leaving
-               somebody guessing — see the handler in site.js. */
+            /* Use a distinct lockout message with retryAfter so the sign-in form can show a countdown instead of "incorrect password". */
             Response::rateLimited(
                 'Too many failed sign-in attempts. Try again in ' . self::humanWait($wait) . '.',
                 $wait
@@ -137,9 +57,7 @@ final class Lockout
         }
     }
 
-    /**
-     * Record one attempt. A success wipes the streak for this key.
-     */
+    /** Record one attempt; a success clears the streak for this key. */
     public static function record(string $email, bool $success, string $context = self::CTX_CUSTOMER): void
     {
         if (!self::available()) {
@@ -154,10 +72,7 @@ final class Lockout
         );
 
         if ($success) {
-            /* Scoped to this key, not to the email. Clearing every failure for
-               the address would let a successful sign-in from one machine wipe
-               an attacker's streak on another — handing them a free reset by
-               waiting for the real owner to sign in. */
+            /* Clear only this email+IP key, so the real owner signing in elsewhere never resets an attacker's streak. */
             Database::run(
                 'DELETE FROM login_attempts
                   WHERE email = ? AND ip_address = ? AND context = ? AND successful = 0',
@@ -166,22 +81,7 @@ final class Lockout
         }
     }
 
-    /**
-     * Record a failed attempt, then refuse if THAT failure created the lock.
-     *
-     * WHY THIS IS NOT JUST record(false).
-     *
-     * enforce() runs before the password is checked, so it can only see the
-     * failures that came earlier. With three free attempts, the fourth wrong
-     * password passes enforce() (three on record), fails, and is stored — and
-     * the caller is told "incorrect", even though they are now locked. They
-     * only discover it on the fifth attempt. That is a lock that announces
-     * itself one attempt late, to somebody who has already been told to go and
-     * retype the password.
-     *
-     * Checking again after recording makes the attempt that crosses the line
-     * the one that says so.
-     */
+    /** Record a failure and refuse immediately if that failure triggered the lock, so the user is told on that same attempt. */
     public static function recordFailure(string $email, string $context = self::CTX_CUSTOMER): void
     {
         self::record($email, false, $context);
@@ -195,12 +95,22 @@ final class Lockout
         }
     }
 
-    /**
-     * The wait after `$fails` consecutive failures, in seconds.
-     *
-     * Public because it is the policy, and a test that cannot read the policy
-     * can only assert the numbers it was told to expect.
-     */
+    /** Failed tries left before the next failure starts a wait (0 once a wait is in force), so the sign-in message can warn honestly. */
+    public static function attemptsLeft(string $email, string $context = self::CTX_CUSTOMER): int
+    {
+        if (!self::available()) {
+            return 0;
+        }
+        $fails = (int) Database::scalar(
+            'SELECT COUNT(*) FROM login_attempts
+              WHERE email = ? AND ip_address = ? AND context = ? AND successful = 0
+                AND attempted_at > (NOW() - INTERVAL ? SECOND)',
+            [$email, self::ip(), $context, (int) self::config()['decay_seconds']]
+        );
+        return max(0, (int) self::config()['free_attempts'] - $fails);
+    }
+
+    /** Wait time in seconds after $fails consecutive failures (public so tests can read the policy). */
     public static function penaltyFor(int $fails, string $context = self::CTX_CUSTOMER): int
     {
         $cfg  = self::config();
@@ -215,19 +125,7 @@ final class Lockout
         return min(($fails - $free) * (int) $cfg['step_seconds'], $cap);
     }
 
-    /**
-     * ONE MACHINE, MANY ACCOUNTS — the pattern a per-key limit cannot see.
-     *
-     * (email, IP) keying is what stops the throttle being aimed at a victim,
-     * but it also hands someone spraying one password across a thousand
-     * addresses a fresh budget for every one of them. This is the backstop:
-     * too many DISTINCT emails failing from a single address in the window and
-     * that address is refused outright.
-     *
-     * The threshold is deliberately far above anything a household or an office
-     * behind one NAT would reach by forgetting passwords — this is not a second
-     * lockout, it is an "attack in progress" signal.
-     */
+    /** Block an IP that fails against too many different emails in the window, catching password spraying that per-account limits miss. */
     private static function sprayCheck(): void
     {
         $cfg = self::config();
@@ -262,14 +160,7 @@ final class Lockout
         return $mins . ' minute' . ($mins === 1 ? '' : 's');
     }
 
-    /**
-     * The policy, with defaults.
-     *
-     * Defaults live here rather than only in config.php so an install whose
-     * config predates this file still gets the policy instead of a set of
-     * zeroes — which would read as "never lock" and silently remove the
-     * control entirely.
-     */
+    /** The lockout policy with built-in defaults, so an older config.php without these keys never disables the protection. */
     private static function config(): array
     {
         $sec = Database::config()['security'] ?? [];
@@ -283,30 +174,14 @@ final class Lockout
         ];
     }
 
-    /**
-     * The caller's address, as the column stores it.
-     *
-     * VARCHAR(45) fits IPv6, which is what localhost actually sends (`::1`).
-     * A missing REMOTE_ADDR becomes a literal rather than an empty string, so
-     * every row has a usable key and CLI callers all share one bucket instead
-     * of colliding with a real address.
-     */
+    /** The caller's IP (fits IPv6), or a fixed placeholder when missing so every row has a usable key. */
     private static function ip(): string
     {
         $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
         return $ip === '' ? 'cli' : substr($ip, 0, 45);
     }
 
-    /**
-     * Now, according to the DATABASE.
-     *
-     * The failure timestamps come from MySQL's clock (`attempted_at` defaults
-     * to CURRENT_TIMESTAMP). Comparing them against PHP's `time()` would drift
-     * whenever the two disagree about the timezone — and on XAMPP they often
-     * do, because PHP reads php.ini's date.timezone and MySQL does not. A few
-     * hours of drift either way turns every lock permanent or every lock into
-     * nothing.
-     */
+    /** Current time from the database clock, so it matches the stored attempt timestamps regardless of PHP's timezone. */
     private static function nowFromDb(): int
     {
         return (int) Database::scalar('SELECT UNIX_TIMESTAMP()');

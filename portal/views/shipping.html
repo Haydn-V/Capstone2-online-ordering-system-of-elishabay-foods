@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>shipping module</title>
+  <!-- Module partial for section mod-shipping, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
+  </head>
+  <body>
+<section id="mod-shipping" class="mod-panel" aria-label="Shipping Rates">
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Maintenance</div>
+      <h2>Shipping Rates</h2>
+      <p class="field-hint" style="margin-top: 6px">
+        Estimated Delivery Fee = distance-zone base fee + weight fee. Our own
+        estimate from Dagupan City — not an official LBC quotation.
+      </p>
+    </div>
+    <!-- Filled by shipping.js: Default and Save rates. -->
+    <div class="actions ship-head-actions" id="ship-head-actions"></div>
+  </div>
+  <div id="shipping-content" aria-live="polite"></div>
+</section>
+  </body>
+</html>

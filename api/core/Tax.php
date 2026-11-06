@@ -1,38 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Tax — the one definition of how a sale's VAT is worked out.
- *
- * Every figure on a Sales Invoice comes from compute() below, run on the server
- * at the moment of sale and stored with the order (migration 014). Nothing
- * recalculates an order afterwards: an invoice is a legal record, and a rule
- * changed in VAT Maintenance next year must not rewrite this year's invoices.
- *
- * THE THREE THINGS BEYOND "12% OF EVERYTHING"
- * -------------------------------------------
- *   VAT-exempt products   products.tax_type = 'exempt'. Their shelf price has no
- *                         VAT inside it, so the whole line is VAT-Exempt Sales.
- *   Senior citizen / PWD  a discount on the amount NET of VAT; by default the
- *                         discounted sale is VAT-exempt (RA 9994 / RA 10754).
- *                         Rate, exemption and a weekly peso cap per ID are
- *                         settings, because which rule applies to grocery goods
- *                         is the client's accountant's call, not this file's.
- *   Withholding tax       a retailer registered as a withholding agent keeps a
- *                         percentage of the amount net of VAT and remits it to
- *                         the BIR on the seller's behalf (BIR Form 2307). The
- *                         sale is unchanged; the cash due is less.
- *
- * Zero-rated sales are not handled: they are export sales, and the system does
- * not sell for export. The invoice line prints 0.00.
- *
- * ROUNDING
- * --------
- * Each figure is rounded once, and the last figure of any group is taken as
- * the REMAINDER rather than rounded independently. So VATable Sales + VAT +
- * VAT-Exempt Sales always equals the total to the centavo, and the invoice
- * never shows columns that do not add up.
- */
+/** Tax computes each sale's VAT once at the moment of sale (stored with the order), handling VAT-exempt products, Senior/PWD discounts and withholding tax, with rounding that always adds up to the total. */
 final class Tax
 {
     public const TAX_TYPES    = ['vatable', 'exempt'];
@@ -46,6 +15,8 @@ final class Tax
         'sc_pwd_vat_exempt'        => 1.0,
         'sc_pwd_weekly_cap'        => 0.0,
         'withholding_default_rate' => 1.0,
+        /* Retailer discount needs at least this many items in the order (0 = no minimum). */
+        'withholding_min_qty'      => 0.0,
     ];
 
     /** Accepted ranges, for VAT Maintenance's save and for reading back. */
@@ -56,18 +27,13 @@ final class Tax
         'sc_pwd_vat_exempt'        => [0.0, 1.0],
         'sc_pwd_weekly_cap'        => [0.0, 1000000.0],
         'withholding_default_rate' => [0.0, 50.0],
+        'withholding_min_qty'      => [0.0, 100000.0],
     ];
 
     /** @var array<string,float>|null */
     private static ?array $cache = null;
 
-    /**
-     * The current rules, read once per request and coerced to numbers here —
-     * they are operator input, and a value outside its range falls back to the
-     * default rather than producing a 500% discount.
-     *
-     * @return array<string,float>
-     */
+    /** Current tax settings read once per request, falling back to defaults for out-of-range values. */
     public static function rules(): array
     {
         if (self::$cache !== null) {
@@ -89,6 +55,8 @@ final class Tax
             $val = is_numeric($raw) ? (float) $raw : $fallback;
             $out[$key] = ($val < $lo || $val > $hi) ? $fallback : $val;
         }
+        /* Senior/PWD discounts are not offered, whatever the stored setting says. */
+        $out['sc_pwd_enabled'] = 0.0;
         return self::$cache = $out;
     }
 
@@ -102,15 +70,14 @@ final class Tax
         return round($n + ($n >= 0 ? 1e-9 : -1e-9), 2);
     }
 
-    /**
-     * The withholding rate for a buyer, or null when they do not withhold.
-     *
-     * Only a CURRENT retailer: an agent row left behind for an account later
-     * archived or demoted must not start deducting tax from a regular sale.
-     */
-    public static function withholdingRateFor(?string $customerId): ?float
+    /** The buyer's withholding rate, only for a current retailer (null otherwise). */
+    public static function withholdingRateFor(?string $customerId, ?int $qty = null): ?float
     {
         if ($customerId === null || $customerId === '') {
+            return null;
+        }
+        /* Below the minimum item count the retailer discount does not apply. */
+        if ($qty !== null && $qty < self::minDiscountQty()) {
             return null;
         }
         $rate = Database::scalar(
@@ -123,10 +90,34 @@ final class Tax
         return ($rate === false || $rate === null) ? null : (float) $rate;
     }
 
-    /**
-     * SC/PWD discount already given to one ID number this week (Monday–Sunday),
-     * for the weekly cap. Cancelled orders gave nothing and are not counted.
-     */
+    /** Items an order needs before the retailer discount applies (0 = no minimum). */
+    public static function minDiscountQty(): int
+    {
+        return (int) self::rules()['withholding_min_qty'];
+    }
+
+    /** Total item count of a request's items list ([{id, qty}, ...]). */
+    public static function itemCount($items): int
+    {
+        $n = 0;
+        foreach (is_array($items) ? array_slice($items, 0, 100) : [] as $line) {
+            $n += max(0, (int) ($line['qty'] ?? 0));
+        }
+        return $n;
+    }
+
+    /** For a retailer with a discount who is under the minimum: how far short they are, so screens can say so; null otherwise. */
+    public static function discountShortfall(?string $customerId, int $qty): ?array
+    {
+        $min = self::minDiscountQty();
+        if ($qty >= $min || self::withholdingRateFor($customerId) === null) {
+            return null;
+        }
+        return ['minQty' => $min, 'qty' => $qty, 'short' => $min - $qty,
+                'rate' => self::withholdingRateFor($customerId)];
+    }
+
+    /** Senior/PWD discount already given to one ID this week (Mon to Sun) for the weekly cap, ignoring cancelled orders. */
     public static function weeklyDiscountUsed(string $scPwdId): float
     {
         return (float) Database::scalar(
@@ -139,18 +130,7 @@ final class Tax
         );
     }
 
-    /**
-     * Read and validate a senior citizen / PWD block from a request body.
-     *
-     * Returns null when the sale is not an SC/PWD sale. Adds messages to
-     * $errors and returns null when it is but the details are incomplete —
-     * the BIR requires the ID number and the name on the invoice, so a
-     * discount without them is not one this system will record.
-     *
-     * @param array<string,mixed>  $in
-     * @param array<string,string> $errors
-     * @return array{type:string,id:string,name:string}|null
-     */
+    /** Read and validate a Senior/PWD block (ID number and name are required by BIR), returning null when not an SC/PWD sale. */
     public static function scPwdFrom(array $in, array &$errors): ?array
     {
         $block = $in['sc_pwd'] ?? null;
@@ -162,7 +142,7 @@ final class Tax
         $name = trim((string) ($block['name'] ?? ''));
 
         if ((int) self::rules()['sc_pwd_enabled'] !== 1) {
-            $errors['sc_pwd'] = 'Senior citizen and PWD discounts are switched off in VAT Maintenance.';
+            $errors['sc_pwd'] = 'Senior citizen and PWD discounts are not offered.';
             return null;
         }
         if (!in_array($type, self::SC_PWD_TYPES, true)) {
@@ -179,14 +159,7 @@ final class Tax
             : ['type' => $type, 'id' => $id, 'name' => $name];
     }
 
-    /**
-     * The whole VAT breakdown for one sale.
-     *
-     * @param array<int,array{gross:float,tax_type:string}> $lines  shelf price × qty per line
-     * @param array{type:string,id:string,name:string}|null $scPwd
-     * @param float|null $withholdingRate  percent, or null when the buyer does not withhold
-     * @return array<string,mixed>
-     */
+    /** The full VAT breakdown for one sale. */
     public static function compute(array $lines, ?array $scPwd, ?float $withholdingRate): array
     {
         $rules = self::rules();
@@ -230,15 +203,13 @@ final class Tax
                 $vatAmount    = 0.0;
                 $exemptSales  = $afterDiscount;
             } else {
-                /* Not exempt: the discount falls on both parts in proportion,
-                   and VAT is charged again on what is left of the VATable part. */
+                /* Not exempt: the discount applies proportionally and VAT is recharged on the remaining VATable part. */
                 $share        = $net > 0 ? $afterDiscount / $net : 0.0;
                 $vatableSales = self::r2($vatNet * $share);
                 $exemptSales  = self::r2($afterDiscount - $vatableSales);
                 $vatAmount    = self::r2($vatableSales * $rate);
             }
-            /* Stated as the remainder so the invoice's right-hand column —
-               net − discount + VAT — lands exactly on the total. */
+            /* Computed as the remainder so net - discount + VAT lands exactly on the total. */
             $discount = self::r2($net - $vatableSales - $exemptSales);
         } else {
             $discount     = 0.0;
@@ -250,8 +221,7 @@ final class Tax
         $total = self::r2($vatableSales + $vatAmount + $exemptSales);
 
         $whtRate = ($withholdingRate !== null && $withholdingRate > 0) ? $withholdingRate : null;
-        /* Withheld on the amount net of VAT — the tax is on the sale, not on
-           the VAT collected for the government. */
+        /* Withholding is calculated on the amount net of VAT. */
         $withholding = $whtRate !== null ? self::r2(($vatableSales + $exemptSales) * $whtRate / 100) : 0.0;
 
         return [
@@ -273,16 +243,7 @@ final class Tax
         ];
     }
 
-    /**
-     * Priced lines for a PREVIEW (pos/quote.php, shop/quote.php).
-     *
-     * Reads price and tax type from the database like the checkouts do, but
-     * checks no stock and locks nothing: a quote reserves nothing, and the
-     * checkout re-reads every figure inside its own transaction anyway.
-     *
-     * @param mixed $items  [{id, qty}, …] as posted
-     * @return array<int,array{gross:float,tax_type:string}>
-     */
+    /** Priced lines for a preview (quote endpoints): reads prices like checkout but checks no stock and locks nothing. */
     public static function quoteLines($items): array
     {
         if (!is_array($items)) {
@@ -330,17 +291,13 @@ final class Tax
         ];
     }
 
-    /**
-     * An order row's stored breakdown, in the shape the invoice reads.
-     * Every reader of an order that can print an invoice returns this block.
-     *
-     * @param array<string,mixed> $r  an orders row selected with the 014 columns
-     * @return array<string,mixed>
-     */
+    /** An order's stored tax breakdown, in the shape the invoice reads. */
     public static function describeOrder(array $r): array
     {
         $total = (float) $r['total'];
         $wht   = (float) ($r['withholding_tax'] ?? 0);
+        /* Interest for buying on Net terms (Payments::applyInterest), part of what the retailer owes. */
+        $int   = (float) ($r['term_interest'] ?? 0);
         return [
             'grossTotal'      => (float) ($r['gross_total'] ?? $total),
             'vatRate'         => $r['vat_rate'] === null ? null : (float) $r['vat_rate'],
@@ -354,7 +311,21 @@ final class Tax
             'total'           => $total,
             'withholdingRate' => $r['withholding_rate'] === null ? null : (float) $r['withholding_rate'],
             'withholdingTax'  => $wht,
-            'amountDue'       => round($total - $wht, 2),
+            'termInterestRate' => isset($r['term_interest_rate']) ? (float) $r['term_interest_rate'] : null,
+            'termInterest'    => $int,
+            'amountDue'       => round($total - $wht + $int, 2),
+            'shippingFee'     => (float) ($r['shipping_fee'] ?? 0),
+            'shipping'        => (float) ($r['shipping_fee'] ?? 0) > 0 ? [
+                'fee'         => (float) $r['shipping_fee'],
+                'zone'        => $r['shipping_zone'] ?? null,
+                'distanceKm'  => isset($r['shipping_km']) ? (float) $r['shipping_km'] : null,
+                'weightKg'    => isset($r['shipping_weight_kg']) ? (float) $r['shipping_weight_kg'] : null,
+                'destination' => $r['shipping_destination'] ?? null,
+                /* Estimated arrival and island/remote flag (migration 038). */
+                'remote'      => !empty($r['shipping_remote']),
+                'etaFrom'     => $r['eta_from'] ?? null,
+                'etaTo'       => $r['eta_to'] ?? null,
+            ] : null,
             'scPwd'           => $r['sc_pwd_type'] === null ? null : [
                 'type' => $r['sc_pwd_type'],
                 'id'   => $r['sc_pwd_id'],
@@ -369,6 +340,18 @@ final class Tax
         $cols = ['gross_total', 'vat_rate', 'less_vat', 'net_of_vat', 'sc_pwd_discount', 'vatable_sales',
                  'vat_amount', 'vat_exempt_sales', 'sc_pwd_type', 'sc_pwd_id', 'sc_pwd_name',
                  'withholding_rate', 'withholding_tax'];
+        /* Estimated delivery fee (migration 021), when applied. */
+        if (class_exists('Shipping') && Shipping::ready()) {
+            array_push($cols, 'shipping_fee', 'shipping_zone', 'shipping_km', 'shipping_weight_kg', 'shipping_destination');
+        }
+        /* Estimated arrival (migration 038), when applied. */
+        if (class_exists('Shipping') && Shipping::etaReady()) {
+            array_push($cols, 'shipping_remote', 'eta_from', 'eta_to');
+        }
+        /* Interest for buying on Net terms (migration 037), when applied. */
+        if (class_exists('Payments') && Payments::interestReady()) {
+            array_push($cols, 'term_interest_rate', 'term_interest');
+        }
         return implode(', ', array_map(static fn(string $c): string => "{$alias}.{$c}", $cols));
     }
 }

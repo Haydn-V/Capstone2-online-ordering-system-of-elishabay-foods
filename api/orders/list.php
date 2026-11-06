@@ -1,36 +1,13 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/orders/list.php
- *
- * Query: ?page=1&limit=25&status=&type=online|walk-in&customer_type=
- *        &search=&from=&to&pay_verified=0|1&sort=newest|oldest|total
- *
- * Requires orders.view or transactions.view — the same list backs the Order
- * Queue, Online Transactions and Transaction History screens, which different
- * roles reach.
- *
- * Line items ARE included, because every order screen renders item chips — but
- * fetched in ONE grouped query for the whole page rather than one per row.
- * A 25-row page costs 3 queries (count, orders, items) instead of 27.
- *
- * Item shape is { id, qty, price, name } where `id` is the product id: 23 call
- * sites across orders.js, engine.js and pos.js already read `it.id` and
- * `it.qty`, and changing the key name would be churn for no gain.
- */
+/** GET /api/orders/list.php (needs orders.view or transactions.view) backs the order screens, loading all line items for the page in one grouped query. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
 Response::requireMethod('GET');
 
-/* The Scope's one-hour auto-complete rides here.
-
-   XAMPP has no scheduler, so the rule runs opportunistically on any request
-   that lists orders. Orders::sweepIfDue() throttles itself to once every five
-   minutes and never throws — a background rule must not turn somebody's order
-   list into a 500. api/system/auto-complete.php calls the same function for a
-   real deployment with Task Scheduler. */
+/* Run the one-hour auto-complete sweep here (self-throttled, never throws), since XAMPP has no scheduler. */
 Orders::sweepIfDue();
 Rbac::requireAny('orders.view', 'transactions.view', 'orders.accept', 'orders.status');
 
@@ -40,9 +17,7 @@ $paging = Validate::paging($q, 25, 200);
 $where  = [];
 $params = [];
 
-/* Accepts one status or a comma-separated set, so the Queue screen can ask for
-   pending,accepted,on-hold in a single request. Each value is checked against
-   the known set and bound individually — never interpolated. */
+/* Status accepts one value or a comma list, each checked and bound individually. */
 $statusIn = trim((string) ($q['status'] ?? ''));
 if ($statusIn !== '' && $statusIn !== 'all') {
     $valid = ['pending','on-hold','accepted','shipping','delivered','completed','cancelled'];
@@ -55,16 +30,7 @@ if ($statusIn !== '' && $statusIn !== 'all') {
 }
 
 if (!empty($q['type']) && in_array($q['type'], ['online', 'walk-in'], true)) {
-    /* `with_deliveries` brings WALK-IN DELIVERIES onto the online order
-       screens. A delivery rung up at the POS is a parcel exactly like an online
-       one: it needs a courier tracking number and moves through shipping and
-       delivered. Those screens asked for type=online alone, so a walk-in
-       delivery was created `accepted` and then had nowhere to be moved on —
-       never shipped, never completed, never counted as revenue.
-
-       A flag rather than a changed meaning for type=online: the Sales Report,
-       the dashboard and the online-revenue split still mean the CHANNEL, and a
-       counter sale must not start counting as an online one there. */
+    /* with_deliveries also includes walk-in deliveries, which need tracking and shipping like online orders, without changing what type=online means for reports. */
     if ($q['type'] === 'online' && !empty($q['with_deliveries'])) {
         $where[] = "(o.type = 'online' OR (o.type = 'walk-in' AND o.order_type = 'delivery'))";
     } else {
@@ -83,11 +49,7 @@ if (isset($q['pay_verified']) && $q['pay_verified'] !== '') {
     $params[] = $q['pay_verified'] ? 1 : 0;
 }
 
-/* Whether a payment proof has been uploaded. The Payment Verification screen
-   only shows orders that have something to verify; without this filter the
-   count said "5 entries" while four cards rendered, because the fifth had no
-   proof and the client skipped it. A count that disagrees with what is on
-   screen is worse than either number alone. */
+/* Filter by whether a payment proof was uploaded, so Payment Verification's count matches what it shows. */
 if (isset($q['proof_uploaded']) && $q['proof_uploaded'] !== '') {
     $where[] = 'o.proof_uploaded = ?';
     $params[] = $q['proof_uploaded'] ? 1 : 0;
@@ -100,9 +62,7 @@ if ($search !== '') {
     array_push($params, $like, $like, $like, $like);
 }
 
-/* Date range on the order date. Validated rather than passed through — a
-   malformed date would otherwise silently match nothing and look like "no
-   orders that week". */
+/* Validate the date range so a bad date is an error rather than silently matching nothing. */
 foreach (['from' => '>=', 'to' => '<='] as $key => $op) {
     if (!empty($q[$key])) {
         $d = DateTime::createFromFormat('Y-m-d', $q[$key]);
@@ -118,7 +78,16 @@ $sortMap = [
     'newest' => 'o.datetime DESC',
     'oldest' => 'o.datetime ASC',
     'total'  => 'o.total DESC',
+    /* Most recently completed first (falls back to the order date for orders completed before completed_at existed). */
+    'completed' => 'COALESCE(o.completed_at, o.datetime) DESC',
 ];
+/* Latest activity: the newest of placed, delivered, completed and any status change (future-dated history is ignored). */
+$activitySql = 'GREATEST(o.datetime, COALESCE(o.delivered_at, o.datetime), COALESCE(o.completed_at, o.datetime)'
+    . (Database::hasTable('order_status_history')
+        ? ', COALESCE((SELECT MAX(h.changed_at) FROM order_status_history h WHERE h.order_id = o.id AND h.changed_at <= NOW()), o.datetime)'
+        : '')
+    . ')';
+$sortMap['activity'] = "$activitySql DESC, o.datetime DESC";
 $order = $sortMap[$q['sort'] ?? 'newest'] ?? $sortMap['newest'];
 
 $sql = 'FROM orders o';
@@ -128,21 +97,8 @@ if ($where) {
 
 $total = (int) Database::scalar("SELECT COUNT(*) $sql", $params);
 
-/* Revenue across the WHOLE filtered set, not just this page.
-
-   The Transaction History screen shows "matching orders" and "total revenue"
-   above the table. While paging was client-side those figures were correct
-   because the browser held every row; moving to server paging without this
-   would silently reduce them to a per-page sum — a stat that looks right and
-   quietly under-reports. Cancelled orders are excluded, as everywhere else. */
-/* Per-status counts for the tab badges.
-
-   The Queue, Payment Verification and Order Status screens each show a row of
-   tabs with a count on every one — "Pending 4", "On Hold 1". Those counts are
-   for the WHOLE set, not the current page, so paging the rows without them
-   would leave every badge showing at most the page size. Computed in one
-   grouped query against the same filters, minus the status filter itself
-   (a tab row that only counted the selected tab would be pointless). */
+/* Total revenue for the whole filtered set (not just this page), excluding cancelled orders. */
+/* Per-status counts for the tab badges across the whole set, ignoring the status filter itself. */
 $countWhere  = [];
 $countParams = [];
 foreach ($where as $i => $clause) {
@@ -163,20 +119,12 @@ foreach (Database::all("SELECT o.status, COUNT(*) AS n $countSql GROUP BY o.stat
     $statusCounts[$c['status']] = (int) $c['n'];
 }
 
-/* D2 — the same constant the Sales Report uses, so the two figures cannot
-   drift apart.
-
-   The revenue placeholders are APPENDED to $params, matching the order they
-   appear in the statement: $sql's own conditions come first, then the status
-   clause bolted on after. Reusing $params alone left the statement with more
-   placeholders than values and every order list answered
-   "SQLSTATE[HY093]: Invalid parameter number". */
+/* Uses the same revenue definition as the Sales Report; its placeholders are appended to $params in statement order. */
 [$revClause, $revParams] = Revenue::clause('o');
 $revenueSql    = $sql . ($where ? " AND $revClause" : " WHERE $revClause");
 $revenueParams = array_merge($params, $revParams);
-$filteredRevenue = (float) Database::scalar("SELECT COALESCE(SUM(o.total),0) $revenueSql", $revenueParams);
-/* Plus money received on the Net orders in this filtered set: a credit order is
-   not revenue in itself, its verified payments are (Revenue). */
+$filteredRevenue = (float) Database::scalar("SELECT COALESCE(SUM(" . Payments::dueSql('o') . "),0) $revenueSql", $revenueParams);
+/* Add verified payments received on Net orders in this set, since a credit order counts only through its payments. */
 [$crClause] = Revenue::creditClause('cp');
 $filteredRevenue += (float) Database::scalar(
     "SELECT COALESCE(SUM(cp.amount), 0)
@@ -192,7 +140,7 @@ $rows = Database::all(
             o.date, o.datetime, o.status, o.notes,
             o.pay_verified, o.proof_uploaded, o.proof_ref_num, o.proof_image_path,
             o.proof_amount,
-            o.cashier, o.batch_code_hint, o.tracking_number, o.delivered_at,
+            " . Orders::cashierSql('o') . " AS cashier, o.batch_code_hint, o.tracking_number, o.delivered_at, o.completed_at, $activitySql AS last_activity,
             " . Orders::buyerTinSql('o.customer_id') . " AS buyer_tin,
             " . Tax::selectColumns('o') . ",
             (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id) AS item_count,
@@ -203,8 +151,7 @@ $rows = Database::all(
     $params
 );
 
-/* One grouped fetch of every line item for the orders on this page. Keyed by
-   order id so the mapping below is a lookup rather than a query. */
+/* Fetch every line item for this page in one query, keyed by order id. */
 $itemsByOrder = [];
 $orderIds = array_column($rows, 'id');
 if ($orderIds !== []) {
@@ -217,18 +164,20 @@ if ($orderIds !== []) {
           ORDER BY oi.id",
         $orderIds
     );
+    /* Which batches each line's units came from (empty until stock is taken, or for orders before lot tracking). */
+    $lotsByOrder = Stock::lotsByOrders($orderIds);
     foreach ($itemRows as $it) {
         $itemsByOrder[$it['order_id']][] = [
             'id'    => $it['product_id'],
             'name'  => $it['name'],
             'qty'   => (int) $it['qty'],
             'price' => (float) $it['price_at_purchase'],
+            'lots'  => $lotsByOrder[$it['order_id']][$it['product_id']] ?? [],
         ];
     }
 }
 
-/* Net orders carry their account's figures, so every order screen can say
-   "On Net 60 terms · ₱5,000 of ₱13,330 paid" rather than "payment pending". */
+/* Net orders include their account figures so screens can show "₱5,000 of ₱13,330 paid". */
 $creditByOrder = [];
 if ($orderIds !== []) {
     $inList = implode(',', array_fill(0, count($orderIds), '?'));
@@ -253,8 +202,7 @@ Response::ok(array_map(static fn(array $r): array => [
     'customerType'  => $r['customer_type'],
     'payMethod'     => $r['method'],
     'total'         => (float) $r['total'],
-    /* The VAT breakdown stored at the sale (api/core/Tax.php) — what the Sales
-       Invoice prints, never recalculated. `amountDue` nets off withholding. */
+    /* The VAT breakdown stored at the sale (api/core/Tax.php), never recalculated; amountDue already subtracts withholding. */
     'tax'           => Tax::describeOrder($r),
     'date'          => $r['date'],
     'datetime'      => $r['datetime'],
@@ -264,19 +212,17 @@ Response::ok(array_map(static fn(array $r): array => [
     'proof'         => [
         'uploaded' => (bool) $r['proof_uploaded'],
         'refNum'   => $r['proof_ref_num'],
-        /* The customer's uploaded screenshot, as an application-root-relative
-           path. Payment Verification rendered the words "Proof Uploaded" and a
-           reference number and had no image element at all — there was nothing
-           to render, because nothing could be uploaded. */
+        /* The customer's uploaded payment screenshot as an app-root-relative path. */
         'image'    => $r['proof_image_path'],
         'amount'   => (float) $r['proof_amount'],
     ],
     'cashier'       => $r['cashier'],
     'batch'         => $r['batch_code_hint'],
-    /* Proof of dispatch. The courier is not integrated (a stated Limitation);
-       this is the number staff quote and the customer takes to the courier. */
+    /* Courier tracking number entered by staff as proof of dispatch (no courier integration). */
     'trackingNumber'=> $r['tracking_number'],
     'deliveredAt'   => $r['delivered_at'],
+    'completedAt'   => $r['completed_at'],
+    'lastActivity'  => $r['last_activity'],
     'itemCount'     => (int) $r['item_count'],
     'unitCount'     => (int) $r['unit_count'],
     /* Never null — every renderer maps over this without checking. */

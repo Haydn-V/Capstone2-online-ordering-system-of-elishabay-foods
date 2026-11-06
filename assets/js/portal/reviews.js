@@ -1,45 +1,12 @@
-/* ============================================================
-   PRODUCT REVIEWS — the staff moderation queue
-   ------------------------------------------------------------
-   WHAT THIS SCREEN DECIDES, AND WHAT IT MUST NOT
+/* ===== PRODUCT REVIEWS moderation queue: moderates abuse and policy only, never the score; the Pending tab is filled by a keyword list (each row shows the matched word), and rejecting or unpublishing needs a reason shown to the customer ===== */
 
-   Abuse and policy: advertising, contact details, somebody else's
-   dispute pasted in, language that has no place on the shop page.
-
-   NOT the score. A 1- or 2-star review publishes the moment it is
-   written and never reaches the Pending tab; it raises a Warning
-   notification instead, so the team hears about a real problem with
-   a real order quickly. Nothing here reads `rating` to decide
-   anything, and api/reviews/moderate.php does not either. If a
-   rating could be moderated away, the average on every product page
-   would quietly become a measure of which reviews staff liked.
-
-   THE PENDING QUEUE IS FILLED BY A KEYWORD LIST. One list, in
-   settings.review_flag_words, matched case-insensitively on word
-   boundaries. It is not content classification: it misses abuse and
-   it flags ordinary sentences. That is why every held row prints the
-   word that caught it — a moderator who cannot see what the machine
-   objected to is guessing, and guessing safely means rejecting
-   innocent text.
-
-   A REASON IS REQUIRED TO TAKE ANYTHING DOWN, for reject and for
-   unpublish alike. The customer is shown it on their own review
-   (api/shop/reviews.php returns it in `mine`), and a removal with no
-   stated cause is indistinguishable from one made because staff
-   disliked the score — including to the staff member who has to
-   explain it later. Publishing needs no reason: it is the outcome the
-   customer already asked for.
-   ============================================================ */
-
-/* Server-owned. Empty until the first load, so a failed request shows an
-   empty screen and its error rather than invented rows. */
+/* Server data only; starts empty. */
 let REVIEWS = [];
 let REVIEW_COUNTS = { all: 0, pending: 0, published: 0, rejected: 0 };
 let reviewsLoaded = false;
 
 const REVIEW_TABS = [
-  /* Pending first and selected by default: this screen exists to be cleared,
-     and the work belongs at the front of it. */
+  /* Pending is first and selected by default. */
   { id: "pending",   label: "Pending" },
   { id: "published", label: "Published" },
   { id: "rejected",  label: "Not published" },
@@ -48,8 +15,7 @@ const REVIEW_TABS = [
 
 function reviewFilter(){ return adminState.reviewFilter || "pending"; }
 
-/* Client-side paging over the loaded (sorted) list. Back to page 1 whenever
-   the tab, search, sort or page size changes; kept after a moderation reload. */
+/* Client-side paging, back to page 1 whenever tab, search, sort or page size changes. */
 const REV_PG = { page: 1, limit: 10, key: "" };
 
 async function loadReviews(){
@@ -70,8 +36,7 @@ async function loadReviews(){
   }catch(err){
     reviewsLoaded = false;
     if(host){
-      /* Says which failure it was. "Could not load" over a 403 sends a
-         moderator hunting for a network problem they do not have. */
+      /* Say which kind of failure happened. */
       host.innerHTML = err.isForbidden
         ? emptyState("No access", "You do not have permission to moderate reviews.")
         : emptyState("Reviews could not be loaded", escHtml(err.message));
@@ -85,13 +50,9 @@ function renderReviewTabs(){
   if(!el) return;
   const active = reviewFilter();
   el.innerHTML = REVIEW_TABS.map(t=>{
-    /* tabBadge gates on WORK_TABS, which already holds "pending" — so the
-       queue carries a count and the three record tabs do not. One table
-       decides that for every screen; this one does not get its own idea. */
+    /* Only the Pending tab shows a count (from WORK_TABS). */
     const b = tabBadge(t.id, t.label, REVIEW_COUNTS[t.id] || 0, "waiting");
-    /* .tab-btn is the shared pill — glass.css frosts it and portal.css owns
-       the badge. A screen-local class would have drifted from the other five
-       within a release. */
+    /* Use the shared .tab-btn pill. */
     return `<button class="tab-btn${active===t.id?" active":""}" role="tab"
       aria-selected="${active===t.id}" aria-label="${escHtml(b.aria)}"
       data-rev-tab="${t.id}">${b.html}</button>`;
@@ -105,15 +66,7 @@ function renderReviewTabs(){
   });
 }
 
-/* THE NUMBER IS PRINTED, not just drawn.
-
-   Measured: --gold on the glass card is 2.17:1, under the 3:1 WCAG asks of a
-   graphic that carries meaning — and on this card the stars were the only
-   thing carrying the score. Darkening the fill fixes the ratio (see
-   .rev-row-stars in portal.css); printing "2/5" beside it removes the
-   question, because the rating no longer depends on counting shapes or
-   separating two golds. Same rule the rest of this portal follows: never
-   signal state with colour alone. */
+/* Print the rating as "2/5" beside the stars, so it does not rely on colour. */
 function reviewStarsRow(n){
   return `<span class="rev-row-stars" aria-label="${n} out of 5">` +
     [1,2,3,4,5].map(i=>`<svg viewBox="0 0 24 24" fill="${i<=n?"currentColor":"none"}"
@@ -122,13 +75,7 @@ function reviewStarsRow(n){
     `<b class="rev-row-num" aria-hidden="true">${n}/5</b></span>`;
 }
 
-/* hold_reason is stored self-describing ("keyword: scam") so it reads
-   correctly in the audit log and in a raw query. Under a heading that already
-   says "keyword list" it would repeat itself, so the prefix is peeled off here
-   and only here — the stored value is not weakened to suit one screen.
-
-   The other shape it takes is "edited after rejection", which names no word;
-   that one is printed as it stands. */
+/* Strip the "keyword: " prefix for display only (the stored value keeps it). */
 function holdNote(reason){
   const m = /^keyword:\s*(.+)$/i.exec(String(reason).trim());
   return m
@@ -151,8 +98,7 @@ function renderReviews(){
 
   if(!REVIEWS.length){
     const f = reviewFilter();
-    /* An empty queue is good news and should read like it, not like a screen
-       that failed to load. emptyState() is the shared one from orders.js. */
+    /* An empty queue reads as good news (shared emptyState()). */
     host.innerHTML = f === "pending"
       ? emptyState("Nothing is waiting",
           "Reviews reach this queue only when the keyword list catches something in the wording.")
@@ -160,10 +106,8 @@ function renderReviews(){
     return;
   }
 
-  /* One row per review, in the portal's standard table. The review text sits
-     under the product in the same cell; hold / rejection notes follow it. */
-  /* Sort (client-side: the whole filtered list is already loaded). Ties
-     fall back to newest first so the order never looks random. */
+  /* One table row per review, with the text and any notes under the product. */
+  /* Client-side sort, ties broken by newest first. */
   const sortKey = $("#rev-sort")?.value || "newest";
   if(!$("#rev-sort")?.dataset.wired && $("#rev-sort")){
     $("#rev-sort").dataset.wired = "1";
@@ -194,9 +138,7 @@ function renderReviews(){
       <th>Rating</th><th>Product &amp; review</th><th>Customer</th><th>Order</th>
       <th>Date</th><th>Status</th><th>Actions</th>
     </tr></thead><tbody>` + rows.map(r=>{
-    /* The evidence as it stands TODAY. A review whose order was later
-       cancelled is not automatically wrong, but a moderator should not have
-       to open another screen to find that out. */
+    /* Show the order's current status (e.g. cancelled later). */
     const orderOdd = r.order_status && r.order_status !== "completed";
     return `
     <tr data-rev="${r.id}">
@@ -241,14 +183,7 @@ function renderReviews(){
   });
 }
 
-/* Reject and unpublish ask for the reason BEFORE the request, so the refusal
-   is not a round trip — the endpoint requires one either way.
-
-   THE PORTAL'S openModal, NOT THE STOREFRONT'S. They share a name and take
-   completely different arguments: this one is EbUI.openModal({title, body,
-   confirmLabel, onConfirm}) and builds its own footer buttons; the storefront's
-   is openModal(title, html, {onOpen}). A page carries one or the other, never
-   both — the note on toast() in core/ui.js catalogues the same pair. */
+/* Ask for the reason before the request, using the portal's EbUI.openModal (not the storefront's openModal). */
 function moderateReview(action, id, btn){
   if(action === "publish") return sendModeration(action, id, "", btn);
 
@@ -258,8 +193,7 @@ function moderateReview(action, id, btn){
   openModal({
     title: what,
     confirmLabel: what,
-    /* Red, because both actions remove something a customer wrote. The
-       colour is a warning, not the explanation — the body says what it does. */
+    /* Red button because both actions remove a customer's words. */
     confirmClass: "btn-red",
     body: `
       <p class="field-hint" style="margin-bottom:14px">
@@ -277,8 +211,7 @@ function moderateReview(action, id, btn){
       const err = document.querySelector("#rev-reason-err");
       const reason = (ta?.value || "").trim();
       if(!reason){
-        /* openModal's confirm handler does not close by itself, which is what
-           makes refusing here possible without rebuilding the dialog. */
+        /* The confirm handler does not auto-close, so a missing reason can be refused in place. */
         err.textContent = "A reason is required to take a review down.";
         ta?.focus();
         return;
@@ -293,9 +226,7 @@ async function sendModeration(action, id, reason, btn){
   const restore = btn ? busyBtn(btn) : ()=>{};
   try{
     const { data } = await EbApi.post("reviews/moderate.php", { id, action, reason });
-    /* Says what changed on the shop side too. Moderating a review moves a
-       public average, and a moderator should see that happen rather than
-       discover it later on the storefront. */
+    /* Mention the change to the public average too. */
     toast(
       `${action === "publish" ? "Published" : action === "reject" ? "Rejected" : "Unpublished"}.` +
       (data.review_count
@@ -304,8 +235,7 @@ async function sendModeration(action, id, reason, btn){
       "ok"
     );
     await loadReviews();
-    /* The queue badge in the sidebar and the notification list both count
-       from server state, so they are refreshed rather than adjusted here. */
+    /* Refresh the sidebar badge and notifications from the server. */
     if(typeof loadOpsData === "function") loadOpsData();
   }catch(err){
     restore();
@@ -313,33 +243,21 @@ async function sendModeration(action, id, reason, btn){
   }
 }
 
-/* Shared button state — a second click while the first request is in flight
-   is how one decision becomes two. */
+/* Disable the button while the request runs. */
 function busyBtn(btn){
   const old = btn.textContent, wasDisabled = btn.disabled;
   btn.disabled = true; btn.textContent = "Working…";
   return ()=>{ btn.disabled = wasDisabled; btn.textContent = old; };
 }
 
-/* ============================================================
-   Wiring. Called from engine.js init(), after module-loader.js has
-   injected portal/views/reviews.html — the markup does not exist at
-   DOMContentLoaded.
-
-   THE SEARCH IS NOT ON data-refilters. That mechanism re-renders from
-   data already in the browser on every keystroke, which is right for
-   the screens that hold their rows client-side. This screen filters
-   SERVER-side (the queue can outgrow what is worth shipping to the
-   page), so every keystroke would be a request. Debounced instead.
-   ============================================================ */
+/* Wired from init() after views load; search is debounced and server-side (not data-refilters). */
 function initReviews(){
   const box = $("#rev-search");
   if(!box) return;
   let t = null;
   box.addEventListener("input", ()=>{
     clearTimeout(t);
-    /* Long enough that typing a product name is one request, short enough
-       that it still feels like search. */
+    /* Search debounce delay. */
     t = setTimeout(()=>{ if(reviewsLoaded || $("#mod-reviews")?.classList.contains("active")) loadReviews(); }, 300);
   });
 }

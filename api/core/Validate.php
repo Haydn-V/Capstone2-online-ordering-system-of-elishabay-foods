@@ -1,13 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Input validation.
- *
- * Every value from the client is untrusted — including hidden fields, ids and
- * prices. Collect failures rather than bailing on the first one, so a form can
- * show every problem at once instead of one per round trip.
- */
+/** Input validation that treats every client value as untrusted and collects all errors so a form can show them at once. */
 final class Validate
 {
     private array $data;
@@ -32,8 +26,7 @@ final class Validate
 
     private function fail(string $field, string $message): void
     {
-        /* First message per field wins — "is required" is more useful than the
-           three type errors that follow from a missing value. */
+        /* Keep only the first message per field. */
         $this->errors[$field] ??= $message;
     }
 
@@ -154,10 +147,7 @@ final class Validate
         return $this->errors !== [];
     }
 
-    /**
-     * Stop with a 422 if anything failed; otherwise hand back the clean values.
-     * Only fields that passed a rule appear — raw input never leaks through.
-     */
+    /** Stop with 422 if anything failed, otherwise return only the validated values. */
     public function values(): array
     {
         if ($this->failed()) {
@@ -172,9 +162,7 @@ final class Validate
     {
         $page  = max(1, (int) ($query['page'] ?? 1));
         $limit = (int) ($query['limit'] ?? $defaultLimit);
-        /* Clamp rather than reject: an absurd limit is usually a typo, and a
-           caller asking for 100000 rows should not be able to make the server
-           try. */
+        /* Clamp an oversized page limit instead of rejecting it. */
         $limit = max(1, min($limit, $maxLimit));
         return ['page' => $page, 'limit' => $limit, 'offset' => ($page - 1) * $limit];
     }

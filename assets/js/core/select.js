@@ -1,51 +1,7 @@
-/* ============================================================
-   EbSelect — one custom listbox, used for every dropdown
-   ------------------------------------------------------------
-   WHY THIS EXISTS
+/* EbSelect: a themed custom listbox for every dropdown that keeps the native <select> as the source of truth (writes its value and fires change), enhances .filter-select or data-eb-select (opt out with data-eb-select="off"), and leaves touch devices native. */
 
-   Every filter control in the system was a native <select>. The closed
-   box is styleable — portal.css dresses `select.filter-select` with the
-   pill border, the gold focus ring and a chevron — but the POPUP is
-   drawn by the operating system. No stylesheet can reach inside it:
-   no hover treatment, no motion, no theming, no dark mode. Clicking a
-   filter dropped you out of the application's visual language and into
-   Windows'. That is what "the dropdowns feel dead" was describing.
-
-   THE RULE THAT KEEPS THIS FROM BREAKING EVERYTHING
-
-   The native <select> STAYS IN THE DOM and stays the source of truth.
-   Over a dozen views and several thousand lines of script read these
-   controls directly — `$("#filter-products").onchange`,
-   `$("#cust-page-size").value`, `#sort-select` on the storefront, the
-   [data-refilters] table in engine.js, EbPaginate's page-size handling.
-   This enhances them; it does not replace them.
-
-   On selection the component writes `select.value` and dispatches
-   `new Event("change", { bubbles: true })`, so every existing listener
-   fires exactly as it did before and the element still submits with its
-   form. A parallel state store would have meant finding and rewriting
-   every consumer, and the ones missed would have failed silently — a
-   filter that no longer filters, with no error to find it by.
-
-   OPT-IN BY ATTRIBUTE OR CLASS
-
-   Anything matching SELECTOR below is enhanced on load. A new screen
-   opts in by adding `class="filter-select"` (which it already does, for
-   the styling) or `data-eb-select`, and opts OUT with
-   `data-eb-select="off"`. No per-screen JavaScript.
-
-   TOUCH DEVICES KEEP THE NATIVE CONTROL — see shouldEnhance().
-   ============================================================ */
-
-/* Every dropdown in the system, by the class it already carries.
-
-   `filter-select` is the portal's toolbar filter, `sort-select` the
-   storefront's, `control` a form field inside a modal, `auth-input` the same
-   on the public partner form. They are NOT one shape — a toolbar filter is a
-   pill and a form field is a full-width box — so the trigger takes its shape
-   from the class the native carried (see FIELD_CLASSES). Adding
-   `data-eb-select` opts a new control in; `data-eb-select="off"` opts out. */
-import { placeLayer, closeOn, isCoarsePointer, removeAfterExit } from "./popup.js";
+/* Which dropdowns are enhanced; the trigger takes its shape from the native element's class (see FIELD_CLASSES). */
+import { placeLayer, closeOn, isCoarsePointer, isPortal, removeAfterExit } from "./popup.js";
 
 const SELECTOR = "select.filter-select, select.sort-select, select.control, " +
                  "select.auth-input, select[data-eb-select]";
@@ -61,17 +17,7 @@ const MIN_SPACE  = 140;  /* below this much room underneath, flip upward */
 let seq = 0;
 let openInstance = null;
 
-/* ------------------------------------------------------------------
-   Component stylesheet, injected once.
-
-   It lives here rather than in portal.css or styles.css because the
-   component is used by BOTH and those two files are loaded by different
-   pages — the alternative was the same block copied into each, which is
-   how two stylesheets start disagreeing. Every value is an existing
-   token, so it inherits both themes with no work: the tokens are
-   redefined per theme by whichever stylesheet is present, and the popup
-   reads whatever is in scope on <html>.
-   ------------------------------------------------------------------ */
+/* The component's stylesheet, injected once and built only from existing tokens so it follows both themes on portal and storefront. */
 const CSS = `
 .ebs {
   position: relative; display: inline-flex; vertical-align: middle;
@@ -181,6 +127,58 @@ const CSS = `
 .ebs-opt[aria-selected="true"] .ebs-check { opacity: 1; }
 .ebs-opt-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Search box (address fields). The list scrolls under it. */
+.ebs-pop--search { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+.ebs-search {
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+  margin: 6px; padding: 0 12px; border-radius: var(--r-sm, 8px);
+  border: 1.5px solid var(--border-lift); background: var(--surface);
+}
+.ebs-search:focus-within { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-dim); }
+.ebs-search svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--text-muted); }
+.ebs-search input {
+  flex: 1; min-width: 0; border: 0; outline: 0; background: transparent;
+  padding: 9px 0; font: inherit; font-size: .9rem; color: var(--text);
+}
+.ebs-list { overflow-y: auto; overscroll-behavior: contain; flex: 1; min-height: 0; padding: 0 5px 5px; }
+.ebs-empty { padding: 14px 12px; font-size: .85rem; color: var(--text-muted); text-align: center; }
+
+/* Touch: bottom sheet. */
+.ebs-backdrop { position: fixed; inset: 0; z-index: 9998; background: rgba(20,8,6,.45); }
+.ebs-pop.ebs-pop--sheet {
+  left: 0 !important; right: 0 !important; top: auto !important; bottom: 0 !important;
+  width: auto !important; min-width: 0; max-height: 62vh; max-height: 62dvh;
+  border-radius: 20px 20px 0 0; border-bottom: 0;
+  padding: 0 10px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: var(--bg, var(--surface));
+  transform: translateY(24px); transform-origin: bottom center;
+}
+.ebs-pop--sheet.is-in { transform: none; }
+/* Rides above the on-screen keyboard (--vvh / --vvtop come from site.js). */
+.ebs-pop--sheet.ebs-pop--search {
+  bottom: calc(100% - var(--vvh, 100%) - var(--vvtop, 0px)) !important;
+  max-height: min(62dvh, calc(var(--vvh, 100dvh) - 70px));
+  padding: 0 0 calc(8px + env(safe-area-inset-bottom, 0px));
+}
+.ebs-pop--sheet.ebs-pop--search::before { margin: 0 0 8px; }
+.ebs-pop--sheet .ebs-search { margin: 0 12px 6px; }
+.ebs-pop--sheet .ebs-search input { font-size: 16px; padding: 11px 0; }
+.ebs-pop--sheet .ebs-list { padding: 0 10px; }
+.ebs-pop--sheet::before {
+  content: attr(data-title); display: block; position: sticky; top: 0; z-index: 1;
+  margin: 0 -10px 6px; padding: 22px 20px 12px; flex-shrink: 0;
+  background: inherit; border-bottom: 1px solid var(--border, rgba(110,78,28,.15));
+  font-weight: 700; font-size: 1rem; color: var(--text);
+  background-image: linear-gradient(var(--border-lift, #ccc), var(--border-lift, #ccc));
+  background-size: 40px 4px; background-position: center 9px; background-repeat: no-repeat;
+}
+.ebs-pop--sheet .ebs-opt {
+  min-height: 48px; padding: 12px 14px; font-size: .95rem; border-radius: 12px;
+}
+.ebs-pop--sheet .ebs-opt + .ebs-opt { margin-top: 2px; }
+.ebs-pop--sheet .ebs-opt[aria-selected="true"] { background: var(--gold-dim, rgba(232,163,23,.14)); }
+.ebs-pop--sheet .ebs-opt-text { white-space: normal; }
+
 /* Long lists get the same auto-hiding scrollbar the rest of the app uses. */
 .ebs-pop { scrollbar-width: thin; scrollbar-color: transparent transparent; }
 .ebs-pop:hover { scrollbar-color: var(--gold-line) transparent; }
@@ -210,22 +208,14 @@ function injectCSS() {
 const CARET = `<svg class="ebs-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
 const CHECK = `<svg class="ebs-check" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 010 1.4l-7.5 7.5a1 1 0 01-1.4 0L3.3 9.7a1 1 0 111.4-1.4l3.8 3.8 6.8-6.8a1 1 0 011.4 0z" clip-rule="evenodd"/></svg>`;
 
-/**
- * Should this control be enhanced at all?
- *
- * NO ON TOUCH, DELIBERATELY. A phone's native <select> opens the platform
- * picker — a full-height wheel with momentum, large hit targets and the
- * keyboard handling the OS already does well. A custom listbox on the same
- * device is a smaller, worse copy of it. The brief allows falling back to
- * native below a breakpoint; keying on `pointer: coarse` is better than a
- * width, because it asks what the user is pointing WITH rather than
- * guessing from how wide the window is.
- */
+/** Skip enhancement on touch devices (pointer: coarse), where the native picker is better. */
 function shouldEnhance(select) {
   if (select.dataset.ebSelect === "off") return false;
   if (select.multiple || select.size > 1) return false;
   if (select.closest(".ebs")) return false;            /* already enhanced */
-  if (isCoarsePointer()) return false;
+  /* Except the address picker, whose long lists open as a bottom sheet on phones, and the staff portal, which
+     uses the themed list (as a bottom sheet) everywhere so its filters match the rest of the portal. */
+  if (isCoarsePointer() && !isPortal() && !select.closest(".addr-cell") && !select.hasAttribute("data-eb-select")) return false;
   return true;
 }
 
@@ -248,27 +238,16 @@ class EbSelectInstance {
 
     const wrap = document.createElement("span");
     wrap.className = "ebs";
-    /* The field SHAPE (taller padding, softer radius) follows the class; the
-       full WIDTH follows .field, which is the condition the stylesheet itself
-       uses for `width: 100%`. Tying width to the class alone stretched the
-       Sales Report's "Compare with" select across the entire panel — it wears
-       .control for its border, not for its width. */
+    /* Shape follows the class, but full width only inside .field. */
     if (FIELD_CLASSES.some(c => sel.classList.contains(c))) {
       wrap.classList.add("ebs--field");
-      /* `.auth-field` counts as a form field too. It is the auth modal's and
-         the retailer form's name for the same wrapper `.field` is elsewhere,
-         and leaving it out meant every dropdown in those two forms fell to
-         `ebs--auto` and sized itself to its content — so picking "Bangsamoro
-         Autonomous Region In Muslim Mindanao (BARMM)" grew the Region box
-         across the Province box beside it. */
+      /* .auth-field counts as a form field too, so long options do not resize the box. */
       if (!sel.closest(".field, .auth-field")) wrap.classList.add("ebs--auto");
     }
     sel.parentNode.insertBefore(wrap, sel);
     wrap.appendChild(sel);
     sel.classList.add("ebs-native");
-    /* Out of the tab order but still programmatically focusable, and hidden
-       from the accessibility tree so it is not announced twice — the trigger
-       below carries the label and the state. */
+    /* The native select is removed from the tab order and hidden from assistive tech, since the trigger carries the label. */
     sel.setAttribute("tabindex", "-1");
     sel.setAttribute("aria-hidden", "true");
 
@@ -280,8 +259,7 @@ class EbSelectInstance {
     trigger.setAttribute("aria-haspopup", "listbox");
     trigger.setAttribute("aria-expanded", "false");
     trigger.setAttribute("aria-controls", this.id + "-pop");
-    /* The accessible name comes off the native control, which already has an
-       aria-label on every one of these in the views. */
+    /* The accessible name comes from the native control's aria-label. */
     const label = sel.getAttribute("aria-label");
     if (label) trigger.setAttribute("aria-label", label);
     else if (sel.id) {
@@ -299,14 +277,10 @@ class EbSelectInstance {
     trigger.addEventListener("click", e => { e.stopPropagation(); this.toggle(); });
     trigger.addEventListener("keydown", e => this.onTriggerKey(e));
 
-    /* Other code may set select.value directly and dispatch change (or have
-       change dispatched at it). Either way the trigger has to follow, or the
-       button says one thing while the query runs on another. */
+    /* Keep the trigger in sync when other code changes select.value. */
     sel.addEventListener("change", () => this.syncFromNative());
 
-    /* Options are rebuilt at runtime on several screens — the status filters
-       in the orders module, the category filter, the retailer picker. Without
-       this the popup would keep offering last render's list. */
+    /* Rebuild the popup when the options change at runtime. */
     this.mo = new MutationObserver(() => this.syncFromNative());
     this.mo.observe(sel, { childList: true, subtree: true, characterData: true });
   }
@@ -319,11 +293,7 @@ class EbSelectInstance {
     const opt = this.select.selectedOptions[0];
     const text = opt ? opt.textContent.trim() : "";
     this.labelEl.textContent = text;
-    /* The label ellipsises when it does not fit — "Bangsamoro Autonomous
-       Region In Muslim Mindanao (BARMM)" will not fit anywhere sensible — so
-       the full text is kept on the title for a hover. The accessible name
-       still comes from the content, which browsers prefer over title, so this
-       adds nothing for a screen reader to say twice. */
+    /* The full label is in the title for hover, since long labels are truncated. */
     this.trigger.title = text;
     this.trigger.disabled = this.select.disabled;
     if (this.open) this.renderOptions();
@@ -339,10 +309,36 @@ class EbSelectInstance {
 
     const pop = document.createElement("div");
     pop.className = "ebs-pop";
+    /* Address fields get a search box that narrows the list as you type. */
+    this.searchable = !!this.select.closest(".addr-cell");
+    /* Touch: a bottom sheet with a dimmed backdrop, titled with the field label. */
+    this.sheet = isCoarsePointer();
+    if (this.sheet) {
+      pop.classList.add("ebs-pop--sheet");
+      /* Also the sort / page-size selects that opt in with data-eb-select. */
+      const lab = this.select.closest(".addr-cell")?.querySelector("label");
+      pop.dataset.title = ((lab ? lab.textContent : "") || this.select.getAttribute("aria-label") || "").replace("*", "").trim() || "Choose one";
+      this.backdrop = document.createElement("div");
+      this.backdrop.className = "ebs-backdrop";
+      document.body.appendChild(this.backdrop);
+    }
     pop.id = this.id + "-pop";
-    pop.setAttribute("role", "listbox");
     const label = this.trigger.getAttribute("aria-label");
-    if (label) pop.setAttribute("aria-label", label);
+    this.listEl = pop;
+    if (this.searchable) {
+      pop.classList.add("ebs-pop--search");
+      const box = document.createElement("div");
+      box.className = "ebs-search";
+      box.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="text" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="Type to search…" aria-label="Search">`;
+      this.searchEl = box.querySelector("input");
+      this.listEl = document.createElement("div");
+      this.listEl.className = "ebs-list";
+      pop.append(box, this.listEl);
+      this.searchEl.addEventListener("input", () => this.filter());
+      this.searchEl.addEventListener("keydown", e => this.onSearchKey(e));
+    }
+    this.listEl.setAttribute("role", "listbox");
+    if (label) this.listEl.setAttribute("aria-label", label);
     document.body.appendChild(pop);
 
     this.pop = pop;
@@ -356,19 +352,11 @@ class EbSelectInstance {
     this.paintActive(true);
     this.position();
 
-    /* Flush the start state, then reveal — a forced reflow rather than
-       requestAnimationFrame.
-
-       rAF is the usual way to do this and is WRONG here: browsers suspend it
-       in a background or hidden tab, so a popup opened while the tab was not
-       being painted never got `is-in` and stayed at opacity 0 — an invisible
-       list that still ate clicks. Reading offsetHeight commits the initial
-       styles synchronously, which is all the transition actually needs, and it
-       happens whether or not anything is being painted. */
+    /* Force a reflow (not requestAnimationFrame, which pauses in background tabs) before showing the popup. */
     void pop.offsetHeight;
     pop.classList.add("is-in");
 
-    pop.addEventListener("mousedown", e => e.preventDefault()); /* keep focus on the trigger */
+    pop.addEventListener("mousedown", e => { if (e.target !== this.searchEl) e.preventDefault(); }); /* keep focus where it is */
     pop.addEventListener("click", e => {
       const row = e.target.closest(".ebs-opt");
       if (!row || row.getAttribute("aria-disabled") === "true") return;
@@ -381,13 +369,52 @@ class EbSelectInstance {
       this.paintActive(false);
     });
 
-    /* A fixed popup does not move with the page, so anything that moves the
-       page under it has to close it — otherwise it hangs in mid-air pointing
-       at nothing. One teardown function rather than four listeners to
-       remember; see popup.js. */
-    /* The fourth argument is what turns a page scroll into a reposition
-       instead of a dismissal — see closeOn(). */
+    /* One teardown for all the fixed popup's listeners (see popup.js). */
+    /* The fourth argument makes page scrolls reposition the popup instead of closing it (see closeOn()). */
     this.teardown = closeOn(pop, this.wrap, () => this.close(), () => this.position());
+    if (this.searchEl) this.searchEl.focus({ preventScroll: true });
+  }
+
+  /* Search matches names or words that start with the typed text, falling back to matches inside words only when none start with it. */
+  filter() {
+    const q = (this.searchEl?.value || "").trim().toLowerCase();
+    const rows = this.listEl.querySelectorAll(".ebs-opt");
+    const kind = this.options.map(o => {
+      if (!q) return 2;
+      if (o.value === "") return 0;            /* the "Choose a …" placeholder */
+      const t = o.textContent.trim().toLowerCase();
+      if (t.startsWith(q) || t.split(/[\s(/-]+/).some(w => w.startsWith(q))) return 2;
+      return t.includes(q) ? 1 : 0;
+    });
+    const need = kind.includes(2) ? 2 : 1;
+    this.hiddenRows = new Set();
+    let best = -1;
+    rows.forEach((row, i) => {
+      const show = kind[i] >= need;
+      row.hidden = !show;
+      if (!show) this.hiddenRows.add(i);
+      else if (best < 0 && !this.options[i].disabled) best = i;
+    });
+    let empty = this.listEl.querySelector(".ebs-empty");
+    const none = q && best < 0;
+    if (none && !empty) {
+      empty = document.createElement("div");
+      empty.className = "ebs-empty";
+      empty.textContent = "No matching place";
+      this.listEl.appendChild(empty);
+    } else if (!none && empty) empty.remove();
+    if (q && best >= 0) { this.activeIndex = best; this.paintActive(true); }
+    else if (!q) this.listEl.scrollTop = 0;
+  }
+
+  onSearchKey(e) {
+    switch (e.key) {
+      case "ArrowDown": e.preventDefault(); this.move(1); break;
+      case "ArrowUp":   e.preventDefault(); this.move(-1); break;
+      case "Enter":     e.preventDefault(); if (!this.hiddenRows?.has(this.activeIndex)) this.choose(this.activeIndex); break;
+      case "Escape":    e.preventDefault(); e.stopPropagation(); this.close(true); break;
+      case "Tab":       this.close(); break;
+    }
   }
 
   close(refocus) {
@@ -402,27 +429,30 @@ class EbSelectInstance {
 
     const pop = this.pop;
     this.pop = null;
+    this.searchEl = null; this.hiddenRows = null;
     if (pop) { pop.classList.remove("is-in"); removeAfterExit(pop); }
+    if (this.backdrop) { this.backdrop.remove(); this.backdrop = null; }
     if (refocus) this.trigger.focus();
   }
 
-  /** Place the popup against the trigger. Geometry lives in popup.js so this
-      and the date picker flip and clamp identically — see the note there. */
+  /** Positioning lives in popup.js so EbSelect and EbDate behave the same. */
   position() {
-    placeLayer(this.trigger, this.pop, { gap: GAP, maxH: MAX_H, minSpace: MIN_SPACE });
+    if (this.sheet) return;   /* pinned to the bottom by CSS */
+    placeLayer(this.trigger, this.pop, { gap: GAP, maxH: MAX_H, minSpace: MIN_SPACE,
+      /* <select data-dropup> opens its list upward when it can. */
+      prefer: this.select.hasAttribute("data-dropup") ? "above" : "below" });
   }
 
   renderOptions() {
     if (!this.pop) return;
-    this.pop.innerHTML = this.options.map((o, i) => `
+    this.hiddenRows = null;
+    this.listEl.innerHTML = this.options.map((o, i) => `
       <div class="ebs-opt" role="option" id="${this.id}-o${i}" data-i="${i}"
            aria-selected="${o.selected ? "true" : "false"}"
            ${o.disabled ? 'aria-disabled="true"' : ""}>
         ${CHECK}<span class="ebs-opt-text"></span>
       </div>`).join("");
-    /* Text set as text, not interpolated into the template — option labels
-       are data (product names, customer names) and must not be able to carry
-       markup into the popup. */
+    /* Option labels are set as text, never HTML. */
     this.pop.querySelectorAll(".ebs-opt-text").forEach((el, i) => {
       el.textContent = this.options[i].textContent.trim();
     });
@@ -445,7 +475,7 @@ class EbSelectInstance {
     let i = this.activeIndex;
     for (let step = 0; step < n; step++) {
       i = (i + delta + n) % n;
-      if (!this.options[i].disabled) break;
+      if (!this.options[i].disabled && !this.hiddenRows?.has(i)) break;
     }
     this.activeIndex = i;
     this.paintActive(true);
@@ -457,15 +487,7 @@ class EbSelectInstance {
     this.paintActive(true);
   }
 
-  /**
-   * Commit a choice.
-   *
-   * THIS IS THE WHOLE CONTRACT WITH THE REST OF THE SYSTEM: write the native
-   * value, then dispatch a bubbling `change`. Everything downstream —
-   * [data-refilters] in engine.js, EbPaginate's page-size handling, the
-   * storefront's sort handler — is listening for exactly that event on
-   * exactly that element and needs no knowledge of this component.
-   */
+  /** Commit a choice: write the native value and fire a bubbling change event, which is all the rest of the system listens for. */
   choose(i) {
     const opt = this.options[i];
     if (!opt || opt.disabled) return;
@@ -484,15 +506,7 @@ class EbSelectInstance {
   onTriggerKey(e) {
     const k = e.key;
 
-    /* A SPACE IN THE MIDDLE OF A SEARCH IS PART OF THE SEARCH.
-
-       Space normally opens the list (closed) or chooses the active row (open).
-       But names are full of spaces — "San Jose", "Barangay 105", "Poblacion
-       East" — and typing one of those used to hit the space, open or commit the
-       list, and drop the rest of the name on the floor. So while a type-ahead
-       buffer is live (typed within the last second), Space is a character.
-       With no search in progress it keeps its usual job. This is the behaviour
-       the WAI-ARIA combobox pattern describes for the same conflict. */
+    /* While a type-ahead search is active (last second), Space is typed as part of the search instead of opening or choosing. */
     if (k === " " && this.typeBuf && Date.now() - this.typeAt <= 1000) {
       e.preventDefault();
       const i = this.typeAhead(k);
@@ -500,12 +514,18 @@ class EbSelectInstance {
       return;
     }
 
+    if (this.select.closest(".addr-cell") && k.length === 1 && k !== " " && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      if (!this.open) this.openPop();
+      if (this.searchEl) { this.searchEl.value += k; this.filter(); }
+      return;
+    }
+
     if (!this.open) {
       if (k === "Enter" || k === " " || k === "ArrowDown" || k === "ArrowUp") {
         e.preventDefault(); this.openPop();
       } else if (k.length === 1) {
-        /* Type-ahead works on the closed control too, the way the native one
-           does: typing "ret" with the box shut selects Retailer outright. */
+        /* Type-ahead also works on the closed control. */
         e.preventDefault();
         const i = this.typeAhead(k);
         if (i >= 0) this.choose(i);
@@ -531,10 +551,7 @@ class EbSelectInstance {
     }
   }
 
-  /**
-   * Type-ahead. The buffer resets after a second of silence, so "ret" jumps
-   * to Retailer while a later "r" starts again rather than looking for "retr".
-   */
+  /** Type-ahead buffer resets after one second of no typing. */
   typeAhead(ch) {
     const now = Date.now();
     this.typeBuf = (now - this.typeAt > 1000) ? ch : this.typeBuf + ch;
@@ -542,18 +559,7 @@ class EbSelectInstance {
     const q = this.typeBuf.toLowerCase();
     const opts = this.options;
     const from = this.open ? this.activeIndex : this.select.selectedIndex;
-    /* ONE LETTER starts AFTER the current row, so pressing "s" again cycles
-       through every entry beginning with S. SEVERAL LETTERS start AT the current
-       row, so "sa" stays on "San Antonio" while it still matches and moves on
-       only when it stops matching.
-
-       This used to compute the offset as `typeBuf.length > 1 ? 0 : n`, which for
-       any buffer longer than one letter is zero on EVERY pass — the loop checked
-       the current row over and over and never moved. So "san j" stopped on
-       "San Antonio" instead of reaching "San Jose", and multi-letter type-ahead
-       only ever worked when the current row already matched. Found through the
-       address picker, where a city's barangay list runs to a hundred entries;
-       the product picker had the same fault. */
+    /* One letter cycles from the next row; several letters start at the current row so "san j" can move on to "San Jose". */
     const multi = this.typeBuf.length > 1;
     for (let n = 1; n <= opts.length; n++) {
       const i = (from + (multi ? n - 1 : n) + opts.length) % opts.length;
@@ -580,9 +586,7 @@ function CSS_ESC(s) {
   return (window.CSS && CSS.escape) ? CSS.escape(s) : s.replace(/["\\]/g, "\\$&");
 }
 
-/* ------------------------------------------------------------------
-   Public surface
-   ------------------------------------------------------------------ */
+/* Public surface */
 
 /** Enhance every matching <select> inside `root` that is not already done. */
 function enhance(root = document) {
@@ -609,10 +613,7 @@ document.addEventListener("keydown", e => {
   if (e.key === "Escape" && openInstance) { e.stopPropagation(); openInstance.close(true); }
 }, true);
 
-/* Screens inject their markup after load — the portal's module-loader
-   assembles every view before init(), and renders replace whole panels. One
-   observer catches all of it, so nothing has to remember to call enhance().
-   Debounced because a render can add hundreds of nodes in one go. */
+/* A debounced MutationObserver enhances selects added after load, so screens never need to call enhance(). */
 let pending = null;
 function watch() {
   const mo = new MutationObserver(muts => {

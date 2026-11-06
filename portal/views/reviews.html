@@ -3,40 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <title>reviews module</title>
-    <!-- ============================================================
-         MODULE PARTIAL — section id="mod-reviews".
-
-         Wrapped as a complete HTML document ON PURPOSE — see the note
-         at the top of returns.html for why (dev-server live-reload
-         injection lands inside the logo mark otherwise).
-         ============================================================ -->
+    <!-- Module partial for section mod-reviews, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
   </head>
   <body>
-<!-- ============================================================
-     MAINTENANCE: PRODUCT REVIEWS
-
-     WHAT THIS SCREEN IS FOR, AND WHAT IT IS NOT FOR.
-
-     It is for abuse and policy: advertising, contact details, someone
-     else's dispute pasted into a review, language that would not be
-     acceptable on the shop page.
-
-     It is NOT for low scores. A one- or two-star review publishes the
-     moment it is written and never appears in the Pending queue; it
-     raises a Warning notification instead, so the team hears about a
-     real problem with a real order quickly. Nothing in
-     api/reviews/moderate.php reads `rating`, and if it did, the
-     average on every product page would quietly become a measure of
-     which reviews staff were willing to keep.
-
-     The Pending queue is filled by ONE thing: a keyword list, held in
-     settings.review_flag_words, matched case-insensitively on word
-     boundaries. It is not content classification. It misses abuse and
-     it flags ordinary sentences, which is exactly why each row shows
-     the word that caught it — a moderator who cannot see what the
-     machine objected to is left guessing, and guessing safely means
-     rejecting innocent text.
-     ============================================================ -->
+<!-- Product Reviews moderation: for abuse and policy only, never low scores (those publish and notify staff); the Pending queue comes from a keyword list in settings.review_flag_words, and each row shows the matched word. -->
 <section id="mod-reviews" class="mod-panel" aria-label="Product Reviews">
   <div class="mod-header">
     <div>
@@ -49,8 +19,7 @@
     </div>
   </div>
 
-  <!-- Tabs left, search right, one band — the same .view-toolbar the other
-       queues use, so this screen does not invent a fourth toolbar shape. -->
+  <!-- Tabs on the left, search on the right, using the shared .view-toolbar. -->
   <div class="view-toolbar">
     <div class="rev-tabs" id="rev-tabs" role="tablist" aria-label="Review status"></div>
     <div class="view-toolbar-filters">

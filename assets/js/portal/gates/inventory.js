@@ -1,16 +1,5 @@
 "use strict";
 
-/* ============================================================
-   Inventory Staff portal — role gate
-   ------------------------------------------------------------
-   Inventory Staff — stock, batch/QA traceability, expiry, audit log.
-
-   All the logic lives in Core/role-gate.js, shared by all five
-   portals. This file exists only to name the role this entry
-   point accepts. Which MODULES the role can then see is decided
-   by ROLE_PERMISSIONS in admin.js and enforced by applyRBAC() —
-   change permissions there, or from the Roles & Permissions
-   screen, not here.
-   ============================================================ */
+/* Inventory Staff portal role gate: names the role this entry accepts (logic in role-gate.js; module access via permissions). */
 
 installRoleGate("Inventory Staff");

@@ -1,16 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/shop/register-verify.php
- * Body: { "code": "123456" }   — confirm and create the account
- *    or { "resend": true }     — email a new code (once a minute)
- *
- * STEP 2 OF 2 of sign-up (step 1: shop/register.php). The account is written
- * to customers ONLY here, after the emailed code matches. The held sign-up
- * lives in the session (api/core/Signup.php); nothing exists in the database
- * before this point.
- */
+/** POST /api/shop/register-verify.php is sign-up step 2: the account is created only after the emailed code matches (or resends a code). */
 
 /* No account session yet, like register.php. */
 define('CSRF_EXEMPT', true);
@@ -26,8 +17,7 @@ if (!empty($in['resend'])) {
 
 $p = Signup::verify(trim((string) ($in['code'] ?? '')));
 
-/* Re-checked: the email may have been registered in the minutes the code
-   was in transit. */
+/* Re-check the email is still free. */
 $existing = Database::one('SELECT id, password, status FROM customers WHERE email = ?', [$p['email']]);
 if ($existing !== null && $existing['password'] !== null) {
     Signup::clear();
@@ -41,8 +31,7 @@ if ($existing !== null && $existing['status'] === 'archived') {
 $addrCols = is_array($p['addrCols'] ?? null) ? $p['addrCols'] : [];
 
 if ($existing !== null) {
-    /* A seeded customer with no password claims their record, so their order
-       history follows them in (see register.php's header). */
+    /* A seeded customer with no password claims their existing record, keeping their order history. */
     Database::run(
         'UPDATE customers SET password = ?, name = ?, contact = COALESCE(?, contact) WHERE id = ?',
         [$p['hash'], $p['name'], $p['contact'], $existing['id']]
@@ -73,7 +62,7 @@ if ($existing !== null) {
 }
 
 if (!empty($p['first']) && !empty($p['last'])) {
-    CustomerName::write($id, $p['first'], $p['last']);
+    CustomerName::write($id, $p['first'], $p['last'], $p['middle'] ?? null);
 }
 
 Signup::clear();

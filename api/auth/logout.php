@@ -1,16 +1,9 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/auth/logout.php
- *
- * Always succeeds, even with no active session — logging out of nothing is not
- * an error, and returning 401 here would make the client show a sign-in prompt
- * to somebody who is trying to leave.
- */
+/** POST /api/auth/logout.php always succeeds, since logging out with no session is not an error worth a sign-in prompt. */
 
-/* Exempt on purpose. The worst a forged logout achieves is signing someone
-   out, and refusing a stale token here would strand a user who cannot leave. */
+/* CSRF-exempt on purpose: a forged logout only signs someone out, and refusing a stale token would trap a user who wants to leave. */
 define('CSRF_EXEMPT', true);
 
 require __DIR__ . '/../core/bootstrap.php';

@@ -3,27 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <title>payments module</title>
-  <!-- ============================================================
-       MODULE PARTIAL — section id="mod-payments".
-
-       Wrapped as a complete HTML document ON PURPOSE.
-
-       Dev servers inject a live-reload script into every .html file
-       they serve, placed just before the closing body tag. A bare
-       fragment has no closing body tag, so VS Code Live Server falls
-       back to injecting before the first closing svg tag instead —
-       which lands inside the Elisha Bay logo mark, corrupts the
-       parse, and leaves the portal showing "Portal failed to load".
-
-       With a real body element the injection lands harmlessly at the
-       end, and Core/module-loader.js strips every script element
-       before using this markup.
-
-       Keep the html/head/body wrapper. Also avoid writing a literal
-       closing body, head or svg tag anywhere in a comment in these
-       files — Live Server matches raw text and will inject there,
-       breaking the comment and everything after it.
-       ============================================================ -->
+  <!-- Module partial for section mod-payments, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
   </head>
   <body>
 <!-- ── PAYMENT SCHEMES ── -->
@@ -74,8 +54,22 @@
       <option value="50">50 per page</option>
     </select>
   </div>
-  <!-- Filled by renderPayments(): outstanding, overdue, and how many payments
-       retailers have sent that are waiting for someone to check them. -->
+  <!-- Interest for buying on Net terms, added once to the amount due at checkout (Payments::applyInterest). Only the
+       Super Admin (credit.limits) can change the rates; everyone else sees them read-only. -->
+  <div class="penalty-row interest-row">
+    <span class="penalty-title">Interest for Net Terms:</span>
+    <div class="penalty-terms">
+      <label class="penalty-term"><span>Net 30</span>
+        <input type="number" id="interest-rate-net30" class="penalty-input" min="0" max="100" step="0.5" aria-label="Net 30 interest percentage"/><em>%</em></label>
+      <label class="penalty-term"><span>Net 60</span>
+        <input type="number" id="interest-rate-net60" class="penalty-input" min="0" max="100" step="0.5" aria-label="Net 60 interest percentage"/><em>%</em></label>
+      <label class="penalty-term"><span>Net 90</span>
+        <input type="number" id="interest-rate-net90" class="penalty-input" min="0" max="100" step="0.5" aria-label="Net 90 interest percentage"/><em>%</em></label>
+    </div>
+    <button class="btn btn-gold btn-sm" id="save-interest-btn" data-perm="credit.limits">Save Interest</button>
+    <span class="muted interest-hint">Added once to the amount due when a retailer chooses that term, e.g. ₱30,000 on Net 30 at 2% = ₱30,600.</span>
+  </div>
+  <!-- Filled by renderPayments(): outstanding, overdue, and payments waiting for review. -->
   <div class="pay-summary-line" id="pay-summary"></div>
   <div class="table-wrap">
     <table class="data-table" id="payments-table">

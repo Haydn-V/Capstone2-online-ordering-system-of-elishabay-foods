@@ -1,18 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/orders/verify-payment.php
- * Body: { "id": "ORD-20260617-001", "verified": true, "note": "optional" }
- *
- * Requires orders.accept.
- *
- * Verification is a judgement a person makes by looking at a payment proof
- * against the order total. What the server can do is refuse the cases that are
- * obviously wrong — no proof uploaded at all, or an order already settled — and
- * record who made the call, which is the part that matters when a payment is
- * later disputed.
- */
+/** POST /api/orders/verify-payment.php (needs orders.accept) records a staff member's decision on a payment proof, refusing orders with no proof or already settled. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -49,27 +38,22 @@ if ((bool) $order['pay_verified'] === $verified) {
         : 'That payment is already marked unverified.');
 }
 
-/* A Net 30/60/90 order is not verified here. Nothing was paid at the time;
-   its payments are sent later and checked one by one in Payment Schemes. */
+/* Net orders are not verified here; their payments are checked in Payment Schemes. */
 if (Payments::isCredit((string) $order['method'])) {
     Response::conflict('This order is on ' . Payments::schemeLabel((string) $order['method'])
         . ' terms. Its payments are checked in Payment Schemes, not here.');
 }
 
-/* Cash on pickup has no proof to upload, so only electronic methods are held
-   to that requirement. */
+/* Only electronic methods require an uploaded proof (cash has none). */
 $needsProof = in_array($order['method'], ['gcash', 'bank'], true);
 if ($verified && $needsProof && (int) $order['proof_uploaded'] !== 1) {
     Response::conflict('No payment proof has been uploaded for this order yet.');
 }
 
-/* A short payment is a real event, not a validation error — it gets recorded
-   and surfaced rather than blocked, because the operator may be accepting a
-   partial deliberately. The mismatch goes into the audit trail either way. */
+/* A short payment is recorded and flagged in the audit, not blocked, since staff may accept a partial on purpose. */
 $mismatch = null;
 if ($verified && $needsProof) {
-    /* Against the AMOUNT DUE: a withholding retailer pays the total less the tax
-       it keeps for the BIR (migration 014), and that is a correct payment. */
+    /* Compare against the amount due, since a withholding retailer pays the total minus the tax it keeps. */
     $due  = round((float) $order['total'] - (float) $order['withholding_tax'], 2);
     $diff = round((float) $order['proof_amount'] - $due, 2);
     if (abs($diff) >= 0.01) {
@@ -85,7 +69,8 @@ $pdo = Database::pdo();
 try {
     $pdo->beginTransaction();
 
-    Database::run('UPDATE orders SET pay_verified = ? WHERE id = ?', [$verified ? 1 : 0, $order['id']]);
+    Database::run('UPDATE orders SET pay_verified = ?, cashier = COALESCE(cashier, ?) WHERE id = ?',
+                  [$verified ? 1 : 0, $user['id'], $order['id']]);
 
     Database::run(
         'INSERT INTO audit_logs (ts, actor, actor_user_id, type, description)
@@ -105,8 +90,7 @@ try {
     throw $e;
 }
 
-/* Tell the customer (their bell in the storefront header). After the commit:
-   a notification that fails must never undo the change itself. */
+/* Notify the customer after the commit, so a failed notification never undoes the change. */
 CustomerNotify::payment($order['id'], $verified);
 
 Response::ok([

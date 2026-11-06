@@ -1,20 +1,12 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/returns/list.php?status=&search=&page=&limit=
- *
- * Requires orders.returns.
- *
- * Refund amounts are returned as stored, not recalculated from the product's
- * current price — a refund is for what the customer actually paid, and a later
- * price change must not silently alter what is owed.
- */
+/** GET /api/returns/list.php (needs orders.returns) returns refunds as stored, never recalculated from current prices. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
 Response::requireMethod('GET');
-Rbac::require('orders.returns');
+$user = Rbac::require('orders.returns');
 
 $q      = $_GET;
 $paging = Validate::paging($q, 25, 200);
@@ -45,8 +37,7 @@ if ($where) { $sql .= ' WHERE ' . implode(' AND ', $where); }
 
 $total = (int) Database::scalar("SELECT COUNT(*) $sql", $params);
 
-/* Customer requests (migration 016): the photo, whole-order vs picked items,
-   and when the order completed, so staff can check the 24-hour window. */
+/* Customer request details (migration 016): photo, whole order vs. picked items, and completion time for the 24-hour window. */
 $extraCols = Returns::ready()
     ? ', r.proof_image, r.scope, (SELECT o.completed_at FROM orders o WHERE o.id = r.order_id) AS order_completed_at'
     : '';
@@ -66,8 +57,7 @@ $rows = Database::all(
     $params
 );
 
-/* Counts per status, so the tab badges do not need a second request or a
-   client-side pass over rows the page has not loaded. */
+/* Counts per status for the tab badges. */
 $counts = [];
 foreach (Database::all('SELECT status, COUNT(*) AS n FROM product_returns GROUP BY status') as $c) {
     $counts[$c['status']] = (int) $c['n'];
@@ -119,4 +109,10 @@ Response::ok(array_map(static fn(array $r): array => [
     'total'  => $total,
     'pages'  => (int) ceil($total / $paging['limit']),
     'counts' => $counts,
+    /* Large-refund info for the screen (threshold, whether this user can act on large refunds or change the limit); advance.php enforces it. */
+    'largeRefund' => [
+        'threshold'    => Returns::largeThreshold(),
+        'canHandle'    => Returns::canHandleLarge($user),
+        'canSetLimit'  => (int) ($user['is_system'] ?? 0) === 1,
+    ],
 ]);

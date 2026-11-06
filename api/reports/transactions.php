@@ -1,41 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/reports/transactions.php?from=&to=&page=1&limit=10
- *
- * Requires sales.report.
- *
- * THE LEDGER BEHIND THE SALES REPORT'S REVENUE FIGURE.
- *
- * "Transactions in Period" used to be orders/list.php filtered by order date,
- * which told only half the story once Net 30/60/90 terms existed. Revenue is
- * counted when the money arrives (api/core/Revenue.php), so a retailer paying
- * ₱25,629 against a July order raised September's revenue while September's
- * transaction list showed nothing at all — the takings appeared to come from
- * nowhere, and nobody could point at the row that explained them.
- *
- * So this endpoint returns BOTH kinds of event, on one clock — the date the
- * thing happened:
- *
- *   kind "order"   — an order placed in the range, whatever its status. The
- *                    list is activity, not only revenue: a cancelled order is
- *                    something that happened and the reader has to see it to
- *                    reconcile the day.
- *   kind "payment" — a VERIFIED, non-legacy payment toward a Net account,
- *                    dated by paid_date. The same rows reports/sales.php adds
- *                    to revenue, so the list and the total cannot disagree.
- *
- * Legacy payments are excluded here exactly as they are from dated revenue:
- * when that money arrived was never recorded, so it belongs to no period.
- *
- * PAGED OVER THE UNION, NOT OVER EACH HALF. Merging a page of orders with a
- * list of payments in the browser would repeat the mistake this codebase has
- * made twice already — a filter applied to one page answers for that page
- * only. The union is sorted and paged in SQL, so page 3 means page 3 of the
- * period rather than page 3 of the orders plus whatever payments happened to
- * be loaded.
- */
+/** GET /api/reports/transactions.php (needs sales.report) lists orders placed and verified Net payments received in the range as one ledger, sorted and paged together in SQL so it explains the Sales Report's revenue. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -45,8 +11,7 @@ Rbac::require('sales.report');
 $q      = $_GET;
 $paging = Validate::paging($q, 10, 200);
 
-/* Both halves take the same range, each against its own date column: an order
-   by the day it was placed, a payment by the day it was paid. */
+/* Orders filter by order date, payments by paid date. */
 $orderWhere  = ['1=1'];
 $orderParams = [];
 $payWhere    = [Revenue::creditClause('cp')[0]];
@@ -70,21 +35,13 @@ foreach (['from' => '>=', 'to' => '<='] as $key => $op) {
 $orderSql = implode(' AND ', $orderWhere);
 $paySql   = implode(' AND ', $payWhere);
 
-/* One shape for both halves so they can be UNIONed. `sort_at` is the instant
-   the row is ordered by — an order has a datetime, a payment has only the date
-   it was paid for, so the payment sorts from the start of its day and the
-   id breaks any remaining tie. */
-/* EVERY LITERAL AND CAST CARRIES THE SCHEMA'S COLLATION.
-   The columns are utf8mb4_unicode_ci (db/schema.sql), while a bare literal
-   and a CAST(... AS CHAR) arrive in the CONNECTION's collation — so a UNION of
-   the two is refused outright with "Illegal mix of collations", and the whole
-   report 500s. Spelled out rather than left to the connection, which differs
-   between the PHP client and the command line. */
+/* Both halves share one shape for the UNION; sort_at orders them (payments sort from the start of their day, with id as tie-breaker). */
+/* Every literal and cast uses the schema's collation, otherwise the UNION fails with "Illegal mix of collations". */
 $col = 'COLLATE utf8mb4_unicode_ci';
 
 $union = "
     SELECT 'order' $col AS kind, o.id AS ref, o.date AS d,
-           o.datetime AS sort_at, o.customer_name AS who, o.total AS amount,
+           o.datetime AS sort_at, o.customer_name AS who, " . Payments::dueSql('o') . " AS amount,
            o.method AS method, o.status AS status, o.type AS otype,
            NULL AS scheme, NULL AS order_ref
       FROM orders o
@@ -109,8 +66,7 @@ $rows = Database::all(
     $allParams
 );
 
-/* Line items for the ORDER rows on this page only — the same grouped lookup
-   orders/list.php does, rather than a query per row. */
+/* Line items for this page's orders in one grouped lookup. */
 $orderIds = array_values(array_unique(array_map(
     static fn(array $r): string => (string) $r['ref'],
     array_filter($rows, static fn(array $r): bool => $r['kind'] === 'order')
@@ -129,9 +85,7 @@ if ($orderIds !== []) {
         $itemsByOrder[$it['order_id']][] = ['name' => $it['name'], 'qty' => (int) $it['qty']];
     }
 
-    /* A Net order keeps the "₱X received so far" line it has on every other
-       order screen — which is now also the link between this order row and the
-       payment rows that settle it. */
+    /* Net orders keep their "₱X received so far" line, linking them to their payment rows. */
     $rate = Payments::penaltyRate();
     foreach (Database::all(Payments::accountSelect() . " WHERE pa.order_id IN ($ph)", $orderIds) as $cr) {
         $acct = Payments::describeAccount($cr, $rate);
@@ -143,9 +97,7 @@ $out = array_map(static function (array $r) use ($itemsByOrder, $creditByOrder):
     if ($r['kind'] === 'payment') {
         return [
             'kind'      => 'payment',
-            /* Prefixed so it cannot be mistaken for an order reference in a
-               column headed "TX ID" — and so the two halves of the ledger
-               cannot collide on a bare integer. */
+            /* Prefix payment ids so they cannot be confused with order ids. */
             'id'        => 'PAY-' . str_pad((string) $r['ref'], 4, '0', STR_PAD_LEFT),
             'paymentId' => (int) $r['ref'],
             'customer'  => $r['who'],

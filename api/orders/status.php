@@ -1,23 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/orders/status.php
- * Body: { "id": "ORD-20260617-001", "status": "accepted", "note": "optional" }
- *
- * Requires orders.status, or orders.accept for the accept/hold/cancel moves
- * that the Order Queue makes.
- *
- * THE TRANSITION TABLE IS ENFORCED HERE.
- *
- * STATUS_TRANSITIONS in engine.js decides which options the status modal
- * offers. That is a dropdown — it shapes what a careful user picks, and it
- * stops nobody from posting `{"status":"completed"}` against a cancelled
- * order. An order that jumps from pending straight to completed skips payment
- * verification entirely, which is the sort of thing that only shows up in a
- * reconciliation months later. So the same table lives here, and this copy is
- * the one that counts.
- */
+/** POST /api/orders/status.php (needs orders.status, or orders.accept for accept/hold/cancel) enforces the allowed status transitions on the server, mirroring STATUS_TRANSITIONS in engine.js. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -33,41 +17,42 @@ $data = Validate::check($in)
 
 $note = trim((string) ($in['note'] ?? '')) ?: null;
 
-/* COURIER TRACKING NUMBER (Task 6).
-
-   The stated Limitation says the system does not integrate with courier APIs
-   but that "tracking numbers will be issued upon dispatch and will serve as
-   proof of shipment". There was no field for one anywhere, so the limitation
-   promised something the system could not do at all.
-
-   Required when a DELIVERY order moves to shipping, because that is the moment
-   the promise is made and the only moment the number exists. Ignored for a
-   pickup order — nothing is dispatched — and for every other transition, so a
-   value posted alongside an unrelated status change is discarded rather than
-   silently stored against the wrong event. */
-$tracking = trim((string) ($in['tracking_number'] ?? '')) ?: null;
+/* A tracking number is required when a delivery order moves to shipping, and ignored for every other move. */
+$tracking = strtoupper(trim((string) ($in['tracking_number'] ?? ''))) ?: null;
+/* Courier numbers run about 10–17 characters (LBC, J&T, PhilPost); allow 8–25 letters, digits or dashes. */
+if ($tracking !== null && !preg_match('/^(?=.*[0-9])[A-Z0-9-]{8,25}$/', $tracking)) {
+    Response::validation('Check the tracking number.', [
+        'tracking_number' => 'Tracking numbers are 8–25 letters, numbers or dashes.',
+    ]);
+}
 if ($tracking !== null && mb_strlen($tracking) > 60) {
     Response::validation('Check the highlighted fields.', [
         'tracking_number' => 'A tracking number is at most 60 characters.',
     ]);
 }
 
-/* Same map as STATUS_TRANSITIONS in engine.js. completed and cancelled are
-   terminal — an order that has been settled or called off does not move again,
-   and reopening one has to be a deliberate new record rather than a quiet edit. */
+/* Same map as STATUS_TRANSITIONS in engine.js: one straight line, with cancelling only before acceptance; completed and
+   cancelled are final. On Hold was retired, so nothing moves into it; an order already on hold can still be accepted or
+   cancelled so it is never stuck. */
 const TRANSITIONS = [
-    'pending'   => ['accepted', 'on-hold', 'cancelled'],
-    'accepted'  => ['shipping', 'on-hold', 'cancelled'],
-    'shipping'  => ['delivered', 'on-hold'],
-    'delivered' => ['completed', 'on-hold'],
+    'pending'   => ['accepted', 'cancelled'],
+    'accepted'  => ['shipping'],
+    'shipping'  => ['delivered'],
+    'delivered' => ['completed'],
     'on-hold'   => ['accepted', 'cancelled'],
     'completed' => [],
     'cancelled' => [],
 ];
 
-/* Moves that need a reason. Putting an order on hold or cancelling it without
-   recording why leaves the next person with no way to act on it. */
-const REASON_REQUIRED = ['on-hold', 'cancelled'];
+/* Online pickup orders have nothing to ship, so staff only complete them at handover or cancel them; mirrors PICKUP_TRANSITIONS in engine.js. */
+const PICKUP_TRANSITIONS = [
+    'pending'  => ['completed', 'cancelled'],
+    'on-hold'  => ['completed', 'cancelled'],
+    'accepted' => ['completed'],
+];
+
+/* Cancelling an order requires a reason. */
+const REASON_REQUIRED = ['cancelled'];
 
 $order = Database::one(
     'SELECT id, status, type, order_type, pay_verified, total, customer_name, tracking_number, method
@@ -78,6 +63,21 @@ if ($order === null) {
     Response::notFound('That order does not exist.');
 }
 
+/* One tracking number per order: refuse one already on another order (dashes and spaces ignored; old rows are only compared, never changed). */
+if ($tracking !== null) {
+    $usedBy = Database::scalar(
+        "SELECT id FROM orders
+          WHERE id <> ? AND REPLACE(REPLACE(UPPER(tracking_number), ' ', ''), '-', '') = ?
+          LIMIT 1",
+        [$order['id'], str_replace(['-', ' '], '', $tracking)]
+    );
+    if ($usedBy) {
+        Response::validation('Check the tracking number.', [
+            'tracking_number' => sprintf('This tracking number is already used on order %s.', $usedBy),
+        ]);
+    }
+}
+
 $from = $order['status'];
 $to   = $data['status'];
 
@@ -85,7 +85,8 @@ if ($from === $to) {
     Response::conflict("That order is already {$to}.");
 }
 
-$allowed = TRANSITIONS[$from] ?? [];
+$isPickup = $order['type'] === 'online' && $order['order_type'] === 'pickup';
+$allowed  = $isPickup ? (PICKUP_TRANSITIONS[$from] ?? []) : (TRANSITIONS[$from] ?? []);
 if (!in_array($to, $allowed, true)) {
     Response::conflict($allowed === []
         ? "This order is {$from} and cannot be changed further."
@@ -101,56 +102,21 @@ if (in_array($to, REASON_REQUIRED, true) && $note === null) {
     ]);
 }
 
-/* Accepting an order with unverified payment is how unpaid goods ship. The
-   Payment Verification screen exists precisely to clear this first.
-
-   EXCEPT an order on Net 30/60/90 terms. Nothing is paid at the time, by
-   design, so there is nothing to verify: its payments arrive later and are
-   checked one by one in Payment Schemes. Holding it here was a dead end —
-   Payment Verification lists only orders with a proof uploaded, which a
-   credit order never has — so an online Net order could never be accepted. */
-/* ALSO EXCEPT CASH, and for the same reason turned the other way up: there is
-   nothing to verify. A cash order carries no reference number and no
-   screenshot, so `proof_uploaded` is 0 — and Payment Verification asks for
-   `proof_uploaded = 1`, so a cash order is not on that screen to be cleared.
-   The gate could therefore never be satisfied, and every cash order sat in the
-   queue refusing to be accepted. Cash is counted when it is handed over, which
-   is what completing the order records.
-
-   `method` is the order's, not the customer's claim: pos/checkout.php marks a
-   walk-in cash sale pay_verified = 1 at the till, so this path is only ever
-   the online case. */
+/* Payment must be verified before accepting, except Net orders, whose payments are checked later in Payment Schemes. */
+/* Cash orders are also exempt, since there is no proof to verify; the cash is counted when handed over. */
 $onTerms = Payments::isCredit((string) $order['method']);
 $isCash  = (string) $order['method'] === 'cash';
-if ($to === 'accepted' && !$onTerms && !$isCash && (int) $order['pay_verified'] !== 1) {
-    Response::conflict('Verify the payment before accepting this order.');
+$committedStates = ['accepted', 'shipping', 'delivered', 'completed'];
+/* Completing a pickup straight from pending or on hold is its acceptance too, so the same checks and stock commit apply. */
+$commitsStock = in_array($to, ['accepted', 'completed'], true) && !in_array($from, $committedStates, true);
+if ($commitsStock && !$onTerms && !$isCash && (int) $order['pay_verified'] !== 1) {
+    Response::conflict($to === 'completed'
+        ? 'Verify the payment before completing this order.'
+        : 'Verify the payment before accepting this order.');
 }
 
-/* CASH ON PICKUP IS FINISHED BY ACCEPTING IT.
- *
- * The three states between accepted and completed describe a parcel:
- * shipping, delivered, then settled. A pickup has no parcel — the customer
- * walks in, pays at the counter and leaves with the jars — so walking one
- * through Shipping and Delivered is three clicks spent recording a courier
- * that does not exist, and the sale does not appear in the Sales Report until
- * the last of them.
- *
- * So accepting one commits the stock and completes it in the same move, and
- * `pay_verified` goes to 1 because the cash is taken at that counter, exactly
- * as pos/checkout.php marks a walk-in sale paid at the till.
- *
- * ONLY cash, and ONLY pickup. A delivery on cash cannot reach this line —
- * shop/checkout.php refuses the combination — and any other method has money
- * to verify first, which the gate above still demands.
- *
- * WHAT THIS COSTS: `completed` is terminal, by the same design that stops an
- * order being quietly reopened. If the customer never collects, the way back
- * is a return/refund, not an edit — which is the honest record of a sale that
- * was booked and then undone. */
-$autoComplete = $order['type'] === 'online'
-    && $isCash
-    && $order['order_type'] === 'pickup'
-    && $to === 'accepted';
+/* A cash pickup is paid at handover, so completing it is what marks it paid and counts it in sales. */
+$cashPaidNow = $isPickup && $isCash && $to === 'completed';
 
 /* A delivery cannot be dispatched without the number that proves it was. */
 $needsTracking = $to === 'shipping' && $order['order_type'] === 'delivery';
@@ -159,112 +125,80 @@ if ($needsTracking && $tracking === null && ($order['tracking_number'] ?? null) 
         'tracking_number' => 'Enter the courier tracking number before marking this order shipped.',
     ]);
 }
-/* Keep whatever is already stored if this move does not carry a new one — a
-   later delivered/completed transition must not wipe the number. */
+/* Keep the stored tracking number when this move does not bring a new one. */
 $trackingToStore = $needsTracking ? ($tracking ?? $order['tracking_number']) : ($order['tracking_number'] ?? null);
 
 $pdo = Database::pdo();
 try {
     $pdo->beginTransaction();
 
-    /* delivered_at is stamped and cleared in the same statement that moves the
-       status, so the two can never disagree.
-
-       A column on `orders` rather than a lookup into order_status_history: that
-       table is optional and every writer guards on hasTable(), so the one-hour
-       auto-complete would silently stop running on a base install if it
-       depended on it.
-
-       Cleared when the order leaves `delivered` — otherwise an order sent back
-       to shipping keeps an old timestamp and the sweep completes it an hour
-       later regardless of where it actually is. */
+    /* delivered_at is set and cleared in the same statement as the status, so the one-hour auto-complete always measures from the real delivery. */
     Database::run(
         'UPDATE orders
             SET status = ?,
                 delivered_at = CASE WHEN ? = 1 THEN NOW() ELSE NULL END,
-                tracking_number = ?
+                tracking_number = ?,
+                cashier = COALESCE(cashier, ?)
           WHERE id = ? AND status = ?',
-        /* NOW() rather than a PHP timestamp: the due dates, the overdue
-           calculation and this all have to be measured against one clock, and
-           the database is the one they already share (D1). */
-        [$to, $to === 'delivered' ? 1 : 0, $trackingToStore, $order['id'], $from]
+        /* Use the database's NOW() so all date rules share one clock. */
+        /* The first staff member to process an online order signs its invoice; COALESCE keeps a walk-in's till cashier. */
+        [$to, $to === 'delivered' ? 1 : 0, $trackingToStore, $user['id'], $order['id'], $from]
     );
 
-    /* Guard against two staff moving the same order at once: the UPDATE above
-       is conditional on the status we read, so if somebody else changed it in
-       between, no row matches and we stop rather than overwrite their move. */
+    /* The update is conditional on the status we read, so if another staff member changed it meanwhile we stop instead of overwriting. */
     if (Database::pdo()->query('SELECT ROW_COUNT()')->fetchColumn() < 1) {
         $pdo->rollBack();
         Response::conflict('Somebody else just changed this order. Reload and try again.');
+    }
+    /* Handed to the courier: the arrival window restarts from today (Shipping::markShipped). */
+    if ($to === 'shipping') {
+        Shipping::markShipped($order['id']);
     }
     if ($to === 'completed') {
         Returns::stampCompleted($order['id']);   /* starts the 24h return window */
     }
 
-    /* ------------------------------------------------------------------
-       Stock moves with the order, for online orders only.
-
-       A walk-in sale already decremented stock at the till (pos/checkout.php)
-       because the goods left the counter. An online order is a claim: stock is
-       committed when staff ACCEPT it, and returned if it is later cancelled.
-
-       Doing it at order time instead would let anyone zero the inventory by
-       placing orders nobody accepts. Doing it never — which is what happened
-       before — means the shop can sell the same jar indefinitely.
-
-       `accepted` is the only route into shipping/delivered/completed, so a
-       cancellation from any of those means stock was committed and must come
-       back.
-       ------------------------------------------------------------------ */
-    $committedStates = ['accepted', 'shipping', 'delivered', 'completed'];
+    /* Online orders commit stock when accepted (or a pickup when completed) and return it if cancelled after that (walk-ins already took stock at the till). */
     $isOnline = $order['type'] === 'online';
 
-    if ($isOnline && $to === 'accepted' && !in_array($from, $committedStates, true)) {
+    if ($isOnline && $commitsStock) {
         $items = Database::all('SELECT product_id, qty FROM order_items WHERE order_id = ?', [$order['id']]);
         foreach ($items as $it) {
             $affected = Stock::sell($it['product_id'], (int) $it['qty']);
-            /* Stock can have been sold out between the customer ordering and
-               staff accepting. Refusing here, with the product named, beats
-               driving stock negative or silently shipping nothing. */
+            /* Refuse acceptance and name the product if stock ran out since the order was placed. */
             if ($affected < 1) {
                 $name = Database::scalar('SELECT name FROM products WHERE id = ?', [$it['product_id']]);
                 $have = Database::scalar('SELECT stock FROM products WHERE id = ?', [$it['product_id']]);
                 $pdo->rollBack();
                 Response::conflict(sprintf(
-                    'Not enough stock to accept this order — %s needs %d but only %d remain. Restock first, or put the order on hold.',
+                    'Not enough stock to accept this order — %s needs %d but only %d remain. Restock first, or cancel the order.',
                     $name, $it['qty'], $have
                 ));
             }
+            /* Record which lots the units came from (earliest expiry first). */
+            Stock::allocateLots($order['id'], $it['product_id'], (int) $it['qty']);
         }
     }
 
-    /* A WALK-IN order took its stock at the till (pos/checkout.php), before it
-       had any status to move through — so whatever state a walk-in delivery
-       is cancelled from, its jars are already off the shelf and must come
-       back. A walk-in pickup is completed at the till and cannot be cancelled,
-       so this only ever meets a delivery. */
+    /* A cancelled walk-in delivery already took its stock at the till, so always put it back. */
     $stockOut = $isOnline ? in_array($from, $committedStates, true) : true;
     if ($to === 'cancelled' && $stockOut) {
         $items = Database::all('SELECT product_id, qty FROM order_items WHERE order_id = ?', [$order['id']]);
         foreach ($items as $it) {
             Stock::reverseSale($it['product_id'], (int) $it['qty']);
         }
+        /* The units go back into the same lots they were taken from. */
+        Stock::releaseLots($order['id']);
+    }
+    /* A cancelled Net order owes nothing: close its account so Payment Schemes stops billing it. */
+    if ($to === 'cancelled' && $onTerms) {
+        Payments::closeForCancelledOrder($order['id']);
     }
 
-    /* Completed in the same transaction as the stock commit above, so the two
-       cannot come apart: an order that took stock but stayed accepted would be
-       a sale missing from the report, and one completed without taking stock
-       would be jars sold twice. Conditional on the status this request just
-       wrote, for the same reason as the UPDATE above — nobody else may have
-       moved it in between. */
-    $finalStatus = $to;
-    if ($autoComplete) {
-        Database::run(
-            'UPDATE orders SET status = ?, pay_verified = 1 WHERE id = ? AND status = ?',
-            ['completed', $order['id'], $to]
-        );
-        $finalStatus = 'completed';
+    if ($cashPaidNow) {
+        Database::run('UPDATE orders SET pay_verified = 1 WHERE id = ?', [$order['id']]);
     }
+    $finalStatus = $to;
 
     if (Database::hasTable('order_status_history')) {
         Database::run(
@@ -272,16 +206,6 @@ try {
              VALUES (?, ?, ?, ?, ?)',
             [$order['id'], $from, $to, $user['id'], $note]
         );
-        /* Its own row rather than one rewritten line. The order really did pass
-           through accepted, and a history that shows pending → completed would
-           hide the step that committed the stock. */
-        if ($autoComplete) {
-            Database::run(
-                'INSERT INTO order_status_history (order_id, from_status, to_status, changed_by, note)
-                 VALUES (?, ?, ?, ?, ?)',
-                [$order['id'], $to, 'completed', $user['id'], 'Cash on pickup — completed on acceptance.']
-            );
-        }
     }
 
     Database::run(
@@ -289,13 +213,8 @@ try {
          VALUES (NOW(), ?, ?, ?, ?)',
         [$user['name'], $user['id'], 'order',
          sprintf('Order %s: %s → %s.%s%s%s', $order['id'], $from, $finalStatus,
-             /* Named in the audit line because the operator pressed "Accept"
-                and the order finished: the log has to say why it moved further
-                than the button did. */
-             $autoComplete ? ' Cash on pickup, completed on acceptance and counted in sales.' : '',
-             /* The tracking number goes in the audit line because it is the
-                proof-of-dispatch the Limitation promises — a shipment recorded
-                without it is exactly the gap this field exists to close. */
+              $cashPaidNow ? ' Cash paid on pickup and counted in sales.' : '',
+             /* Include the tracking number in the audit line as proof of dispatch. */
              $needsTracking && $trackingToStore ? ' Tracking: ' . $trackingToStore . '.' : '',
              $note ? ' Reason: ' . $note : '')]
     );
@@ -306,20 +225,15 @@ try {
     throw $e;
 }
 
-/* Tell the customer (their bell in the storefront header). After the commit:
-   a notification that fails must never undo the change itself. */
+/* Notify the customer after the commit, so a failed notification never undoes the change. */
 CustomerNotify::orderStatus($order['id'], $to, $note);
 
 Response::ok([
     'id'      => $order['id'],
     'from'    => $from,
-    /* The status it ENDED on, which is not always the one that was asked for —
-       a cash pickup order accepts and completes in one move. The client toasts
-       this value rather than the one it sent, so the message cannot claim
-       "Accepted" for an order that is finished. */
     'status'  => $finalStatus,
-    'autoCompleted' => $autoComplete,
+    'autoCompleted' => $cashPaidNow,
     'note'    => $note,
     /* So the client can rebuild the action buttons without a second request. */
-    'allowedNext' => TRANSITIONS[$finalStatus] ?? [],
+    'allowedNext' => $isPickup ? (PICKUP_TRANSITIONS[$finalStatus] ?? []) : (TRANSITIONS[$finalStatus] ?? []),
 ]);

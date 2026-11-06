@@ -1,15 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/categories/save.php   — create when `id` absent, update when present
- * POST /api/categories/archive.php is separate; see that file.
- *
- * Body: { "id": "cat-db" (omit to create), "name": "...", "description": "..." }
- *
- * Requires products.manage — varieties are part of the product catalogue, and
- * the Product Variety screen sits inside Product Maintenance.
- */
+/** POST /api/categories/save.php (needs products.manage) creates a variety when id is missing and updates it otherwise. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -26,8 +18,7 @@ $data = Validate::check($in)
 
 $description = trim((string) ($in['description'] ?? '')) ?: null;
 
-/* Category names appear in filters and on the storefront, so duplicates are
-   confusing rather than merely untidy. Excludes itself on update. */
+/* Variety names must be unique (excluding itself on update), since duplicates confuse filters and the storefront. */
 $clash = Database::scalar(
     'SELECT COUNT(*) FROM categories WHERE name = ? AND id <> ?',
     [$data['name'], $in['id'] ?? '']

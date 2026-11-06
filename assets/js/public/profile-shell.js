@@ -1,41 +1,9 @@
-/* =================================================================
-   PROFILE SHELL — the sidebar and the auth gate, once
-   -----------------------------------------------------------------
-   WHY THIS FILE EXISTS
-
-   Four pages live in public/profile/ and every one of them carried its own
-   copy of the same three things:
-
-     - the account sidebar: avatar, name, role tag, four nav links, sign out.
-       Roughly forty lines of markup, repeated. Adding "Dash Board" to it meant
-       editing it in three places and hoping.
-     - the sign-in gate: show #mp-guard or #mp-content, wire the guard's own
-       Sign In button, re-apply when the session changes.
-     - the Payment Schemes link toggle, which is retailer-only.
-
-   Three copies is how the "revealed link never re-hides" defect existed in
-   three files at once, and it is the same duplicate-implementation drift
-   REMEDIATION.md catalogues for the toast pair. One copy cannot drift.
-
-   WHAT IT DOES NOT DO
-
-   It owns the frame, not the contents. Each page still writes its own main
-   panel: My Orders keeps its filter tabs and order cards, Payment Schemes its
-   account table, My Profile its forms. This renders the sidebar into an empty
-   <aside> and tells the page when it may draw.
-
-   LOADED AS A CLASSIC SCRIPT, AFTER site.js — it uses `state`, `signOut()`
-   and `whenAuthReady()` from there, and publishes EbProfileShell as a global
-   the way core/index.js publishes EbApi and EbFormat. Both tags carry `defer`,
-   which makes them run in document order.
-   ================================================================= */
+/* ===== PROFILE SHELL: the account sidebar, sign-in gate and retailer-only link for the four profile pages, in one place; loaded after site.js ===== */
 "use strict";
 
 (function () {
 
-  /* The nav, in one place. `key` is what a page passes to mount() to say which
-     link is its own; `retailerOnly` is the Payment Schemes rule, which used to
-     be a classList call repeated in three files. */
+  /* The nav links; key marks the current page, retailerOnly marks Payment Schemes. */
   const NAV = [
     {
       key: "dashboard", href: "dashboard.html", label: "Dashboard",
@@ -74,18 +42,11 @@
     if (!host) return;
 
     const isRetailer = state.auth.status === "retailer";
-    /* The tag was hardcoded per page — "CUSTOMER" on My Orders and "Retail
-       Partner" on Payment Schemes — so the same person had two different
-       labels depending on where they were standing. Derived from the status
-       now, which is the thing that decides it. */
+    /* The account tag comes from the customer's status. */
     const tag = isRetailer ? "Retail Partner" : "Customer";
 
     const links = NAV
-      /* The retailer-only link is not rendered at all rather than rendered and
-         hidden. A control that exists in the DOM behind a class is a control
-         somebody can un-hide from the console; not building it is one less
-         thing to be careful about. It is presentation either way —
-         shop/my-payments.php refuses a non-retailer regardless. */
+      /* The retailer-only link is not rendered at all for others (the server refuses them anyway). */
       .filter(item => !item.retailerOnly || isRetailer)
       .map(item => `
         <a href="${item.href}" class="mpas-link${item.key === activeKey ? " active" : ""}"
@@ -94,12 +55,7 @@
         </a>`)
       .join("");
 
-    /* The foot of the rail. Partly useful, partly structural: a sticky column
-       that stops in mid-air reads as something that failed to load, and this
-       is pushed to the bottom with margin-top:auto so the rail has an end.
-
-       What it says depends on who is reading it. A retail partner has a person
-       to call about terms; an ordinary customer wants the shop. */
+    /* Sidebar footer pushed to the bottom, with content depending on retailer or customer. */
     const foot = isRetailer
       ? `<span class="mpas-foot-label">Partner support</span>
          <p class="mpas-foot-body">
@@ -125,9 +81,17 @@
       <div class="mpas-foot">${foot}</div>`;
 
     wireSignout(host);
-    /* Snapshot for the next account page: it paints this at once instead of
-       a blank page while shop/me.php answers (see mount). */
+    centerActive(host);
+    /* Snapshot so the next account page paints immediately. */
     try { sessionStorage.setItem(SNAP_KEY, host.innerHTML); } catch (_) {}
+  }
+
+  /* On phones, scroll the current page's tab into view. */
+  function centerActive(host) {
+    const a = host.querySelector(".mpas-link.active");
+    const row = host.querySelector(".mpas-nav");
+    if (!a || !row || row.scrollWidth <= row.clientWidth) return;
+    row.scrollLeft = a.offsetLeft - (row.clientWidth - a.offsetWidth) / 2;
   }
 
   const SNAP_KEY = "eb-acct-sidebar";
@@ -139,30 +103,16 @@
     });
   }
 
-  /**
-   * Mount the shell on an account page.
-   *
-   * @param {object} opts
-   * @param {string} opts.page      which NAV key is this page
-   * @param {function} opts.onReady called when the server confirms a session,
-   *                                and again if one begins later. The page
-   *                                draws its own content here.
-   * @param {function} [opts.onSignedOut]
-   */
+  /** Mount the shell on an account page; onReady runs when a session is confirmed (and again if one starts later). */
   function mount(opts) {
     const activeKey = opts.page;
     const guard   = () => document.getElementById("mp-guard");
     const content = () => document.getElementById("mp-content");
 
-    /* `applied` stops a repeated announcement of the SAME state re-running the
-       page's fetches. bootstrapCustomer() and the load handler below can both
-       arrive at "signed in" within a few milliseconds of each other. */
+    /* Do not re-run the page's fetches for a repeated identical state. */
     let applied = null;
 
-    /* Optimistic first paint. If the previous account page was signed in,
-       show the page and its sidebar now (active link moved to this page),
-       and let the server's answer below confirm or take it back. This is
-       what removes the blank-then-pop on every page change. */
+    /* Optimistic first paint from the snapshot, confirmed or undone by the server's answer. */
     try {
       const snap = sessionStorage.getItem(SNAP_KEY);
       const host = document.getElementById("mp-sidebar");
@@ -177,6 +127,7 @@
         wireSignout(host);
         if (guard()) guard().style.display = "none";
         content().style.display = "block";
+        centerActive(host);
       }
     } catch (_) {}
 
@@ -186,10 +137,7 @@
       if (content()) { content().style.display = loggedIn ? "block" : "none"; }
 
       if (applied === loggedIn) {
-        /* Same state, but the sidebar may still need redrawing: a status that
-           arrived after the first paint changes the tag and the Payment
-           Schemes link. Cheap, and it is the fix for the link that was
-           revealed once and never re-hidden. */
+        /* Redraw the sidebar if the status changed after first paint. */
         if (loggedIn) render(activeKey);
         return;
       }
@@ -203,11 +151,7 @@
       }
     };
 
-    /* Waits for the SERVER's answer, never for a flag.
-
-       state.auth.loggedIn is fail-closed `false` until shop/me.php replies
-       (D8), and sampling it once at load is the defect that showed a signed-in
-       customer the "please sign in" panel over their own order history. */
+    /* Wait for the server's answer, never a one-time flag check. */
     const check = async () => {
       if (typeof state === "undefined" || typeof whenAuthReady !== "function") {
         setTimeout(check, 50);
@@ -217,9 +161,7 @@
     };
     check();
 
-    /* And again whenever it changes. eb:auth-ready fires once per page load;
-       this is what makes the guard panel's own Sign In button work, and what
-       clears the page when somebody signs out without navigating. */
+    /* Re-apply whenever the auth state changes (sign in from the guard, or sign out). */
     window.addEventListener("eb:auth-changed", e => apply(e.detail.loggedIn));
 
     document.getElementById("guard-login-btn")

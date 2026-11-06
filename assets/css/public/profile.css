@@ -1,28 +1,15 @@
-/* =================================================================
-   MyProfile shared styles — layered on ../styles.css
-   ================================================================= */
+/* ===== My Profile shared styles (layered on ../styles.css) ===== */
 
-/* (The old full-width nav bar and its gold hairline were removed: the nav
-   is two floating pills now — styles.css, "two floating pills".) */
+/* The old full-width nav bar was removed; the nav is two floating pills (styles.css). */
 
 .mp-page {
-  min-height: 100vh;
+  min-height: 100vh; min-height: 100dvh;
   background: var(--bg);
   padding-top: calc(var(--nav-h) + clamp(28px,3.5vw,46px));
   padding-bottom: clamp(60px,8vw,100px);
 }
 
-/* The account area gets its own width, wider than the marketing pages.
-   -------------------------------------------------------------------
-   .container caps at --maxw (1200px), which is right for a landing page —
-   prose has a comfortable measure and a hero does not want to be 1800px wide.
-   It is wrong for this: an account area is a DATA surface, and at 1200px on a
-   1920px screen it left roughly 360px of empty parchment down each side while
-   the order-tracking panel wrapped its own step labels.
-
-   Capped rather than full-bleed. Somewhere past ~1600px the sidebar and the
-   right-hand panel stop being scannable together, and a dashboard the eye has
-   to travel across is not more usable for being bigger. */
+/* The account area is wider than marketing pages (it is a data screen), but still capped. */
 .mp-page > .container {
   max-width: 1560px;
   padding-inline: clamp(18px,3vw,40px);
@@ -44,10 +31,7 @@
 .mp-breadcrumb a { color: var(--text-muted); transition: color var(--t); }
 .mp-breadcrumb a:hover { color: var(--gold); }
 .mp-breadcrumb .sep { opacity: .4; }
-/* Down from clamp(2rem, 4.5vw, 3.4rem). At 3.4rem the title was taller than
-   the three stat tiles beside it were deep, and a page heading that outweighs
-   the data it introduces is decoration. It still reads as the page's title —
-   it is the only serif on the screen. */
+/* Smaller page title so it does not outweigh the stat tiles. */
 .mp-title {
   font-family: "Playfair Display SC","Cormorant Garamond",Georgia,serif;
   font-size: clamp(1.75rem,2.6vw,2.5rem);
@@ -120,10 +104,7 @@
   font-size: var(--fs-3xs); font-weight: 700;
   letter-spacing: .08em; text-transform: uppercase;
 }
-/* Driven off the status tokens, so the fill is derived from the same colour as
-   the text rather than being a second hardcoded rgba() that has to be kept in
-   step by hand — which is how .status-pending ended up with a gold background
-   and a colour that was not the gold token. */
+/* Status pill fill is derived from the same colour token as its text. */
 .status-pending    { --st: var(--st-pending); }
 .status-accepted   { --st: var(--st-accepted); }
 .status-shipping   { --st: var(--st-shipping); }
@@ -353,21 +334,7 @@
   align-items: start;
 }
 
-/* A RAIL, not a floating card.
-   ---------------------------
-   It was a white card that wrapped its own content, so it stopped about a
-   third of the way down and left a tall empty column beside the panels — the
-   thing the layout sketch bracketed. Three changes fix that:
-
-     - a min-height, so it reads as a column rather than a stub;
-     - a footer block pushed down with margin-top:auto (see profile-shell.js),
-       which gives the bottom of the rail a reason to be there;
-     - its own SURFACE. White-on-cream made the rail and the panels the same
-       material, so the eye had no edge to separate navigation from content.
-       It is now the tinted surface with a gold hairline down its inner edge.
-
-   Still sticky. A dashboard is scrolled, and navigation that scrolls away is
-   navigation you have to go back for. */
+/* The sidebar is a full-height sticky rail with its own tinted surface, gold inner edge and a footer pushed to the bottom (see profile-shell.js). */
 .mp-account-sidebar {
   background: linear-gradient(180deg, var(--surface-2), var(--bg-soft));
   border: 1px solid var(--border);
@@ -378,6 +345,7 @@
   text-align: center;
   position: sticky; top: calc(var(--nav-h) + 16px);
   min-height: min(600px, calc(100vh - var(--nav-h) - 48px));
+  min-height: min(600px, calc(100dvh - var(--nav-h) - 48px));
   box-shadow: var(--shadow-sm);
 }
 .mpas-avatar {
@@ -387,8 +355,7 @@
   font-family: "Playfair Display SC",serif;
   font-size: 1.7rem; font-weight: 700;
   color: #1e1a0e; margin-bottom: 13px;
-  /* Ring rather than a drop shadow — the rail is tinted now, and a soft glow
-     on a warm ground just muddies the edge. */
+  /* Ring instead of a drop shadow on the tinted rail. */
   box-shadow: 0 0 0 4px var(--surface), 0 0 0 5px var(--gold-line);
   flex-shrink: 0;
 }
@@ -429,9 +396,7 @@
 }
 .mpas-link svg { width: 17px; height: 17px; flex-shrink: 0; }
 .mpas-link:hover { background: var(--surface); color: var(--text); }
-/* The active page gets a filled chip AND a bar on its leading edge. Colour
-   alone was doing the work, which is a poor signal on a page where gold also
-   means "this is a link" and "this figure is money". */
+/* The active page gets a filled chip and a leading bar, not colour alone. */
 .mpas-link.active {
   background: var(--surface);
   color: var(--gold);
@@ -447,9 +412,7 @@
 .mpas-signout { color: var(--red) !important; margin-top: 4px; }
 .mpas-signout:hover { background: color-mix(in srgb, var(--red) 9%, transparent) !important; }
 
-/* Pushed to the bottom of the rail. Its job is partly to be useful and partly
-   to give the column an end — a sticky rail that stops in mid-air reads as
-   something that failed to load. */
+/* Footer block pushed to the bottom so the rail has a clear end. */
 .mpas-foot {
   margin-top: auto; padding-top: 20px; width: 100%;
   border-top: 1px solid var(--border);
@@ -469,25 +432,24 @@
 
 /* ── Responsive ── */
 @media (max-width: 860px) {
-  .mp-account-layout { grid-template-columns: 1fr; }
+  /* minmax(0, …) so account pages fit a 360px phone. */
+  .mp-account-layout { grid-template-columns: minmax(0, 1fr); }
+  /* Phones and tablets: the sidebar becomes one swipeable row of tabs, with the current tab scrolled into view (profile-shell.js). */
   .mp-account-sidebar {
-    flex-direction: row; align-items: center; text-align: left;
-    gap: 16px; position: static;
-    /* The rail becomes a horizontal strip here, and a 600px min-height on a
-       strip is 500px of empty parchment above the content. It is a column
-       rule; it belongs to the column layout only. */
-    min-height: 0;
-    padding: 16px 18px;
-    border-right-width: 1px; border-right-color: var(--border);
-    border-top: 2px solid var(--gold-line);
+    flex-direction: row; align-items: center; position: static; min-height: 0;
+    padding: 6px; gap: 0; border-radius: var(--r-lg);
+    border-right-width: 1px; border-right-color: var(--border); border-top-width: 1px;
   }
-  .mpas-avatar { margin-bottom: 0; width: 54px; height: 54px; font-size: var(--fs-xl); box-shadow: 0 0 0 3px var(--surface); }
-  .mpas-name { margin-bottom: 2px; }
-  .mpas-tag { margin-bottom: 0; }
-  .mpas-nav { flex-direction: row; flex-wrap: wrap; border-top: none; border-left: 1px solid var(--border); padding-top: 0; padding-left: 16px; margin-left: auto; }
+  .mp-account-sidebar > :not(.mpas-nav) { display: none; }
+  .mpas-nav {
+    flex-direction: row; margin: 0; padding: 0; border: 0; width: 100%;
+    flex-wrap: nowrap; overflow-x: auto; gap: 4px;
+    scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .mpas-nav::-webkit-scrollbar { display: none; }
+  .mpas-link { width: auto; flex: none; min-height: 44px; padding: 0 14px; white-space: nowrap; scroll-snap-align: center; }
   .mpas-link.active::before { display: none; }
-  /* Nothing to anchor to the bottom of a strip. */
-  .mpas-foot { display: none; }
+  .mpas-signout { margin-top: 0; }
 }
 @media (max-width: 600px) {
   .profile-form-grid { grid-template-columns: 1fr; }
@@ -498,9 +460,7 @@
 }
 
 
-/* A short server-supplied note on an order card — a cancellation reason, or a
-   courier tracking number. Set apart from the item list because it is about the
-   order rather than about what was bought. */
+/* A short note on an order card (cancellation reason or tracking number), set apart from the items. */
 .order-note {
   margin-top: 12px;
   padding: 10px 12px;
@@ -513,14 +473,7 @@
 .order-note small { color: var(--text-muted); display: inline-block; margin-top: 3px; }
 .order-note .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .02em; }
 
-/* ============================================================
-   PAYMENT SCHEMES (my-payments.html)
-   ------------------------------------------------------------
-   The retailer's view of what they owe. Deliberately uses the same
-   status-pill vocabulary as the order cards above — a customer who has
-   learned what an amber pill means on My Orders should not have to
-   learn it again here.
-   ============================================================ */
+/* ===== PAYMENT SCHEMES (my-payments.html), using the same status pills as order cards ===== */
 .pay-banner {
   padding: 14px 16px;
   border-radius: 10px;
@@ -550,8 +503,7 @@
 .pay-stat-val.is-overdue { color: #c43d2a; }
 .pay-stat small { font-size: var(--fs-xs); color: var(--text-muted); }
 
-/* Wide on a phone: scrolls inside its own box rather than pushing the page
-   sideways. */
+/* Wide tables scroll inside their own box on phones. */
 .table-wrap { overflow-x: auto; }
 .pay-table { width: 100%; border-collapse: collapse; font-size: var(--fs-base); min-width: 640px; }
 .pay-table th {
@@ -570,18 +522,7 @@
 .order-status.status-paid      { background: rgba(63, 143, 79, .12);  color: #3f8f4f; }
 
 
-/* =================================================================
-   DASHBOARD
-   -----------------------------------------------------------------
-   The account area's landing page. Four stat tiles across the top, then a
-   two-column grid: tracking and recent orders on the left, payment history
-   running full height on the right.
-
-   The right column is deliberately TALL rather than split into two short
-   cards. A payment history is a list that wants length, and the wireframe's
-   proportions say the same thing — it spans both rows beside the two panels
-   on the left.
-   ================================================================= */
+/* ===== DASHBOARD: stat tiles on top, then tracking and recent orders on the left with a full-height payment history on the right ===== */
 
 /* ── Stat tiles ── */
 .db-stats {
@@ -590,39 +531,11 @@
   margin-bottom: 16px;
 }
 
-/* ONE TILE COMPONENT, ONE ROW, BOTH ACCOUNT TYPES.
-   ------------------------------------------------
-   The retailer's row used to be two full-height tiles beside a stacked pair —
-   an honest reading of the layout sketch, and wrong once the two dashboards
-   were seen side by side. It made the same component 208px tall on one account
-   and 104px on the other, content centred in one and top-aligned in the other,
-   so "Active Orders" looked like a different control depending on who was
-   signed in.
-
-   Same tile, same height, same internal alignment. The only difference is how
-   many: a retailer has four things worth knowing, an ordinary customer three. */
+/* One tile style and height for both account types; retailers just get four tiles instead of three. */
 .db-stats-plain  { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .db-stats-credit { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
-/* A TILE'S COLOUR IS ITS IDENTITY, NOT ITS CURRENT VALUE.
-   -------------------------------------------------------
-   The tone used to be derived from the number in the tile: a pending count of
-   zero went grey, one went amber; an overdue count of zero went GREEN. Two
-   things were wrong with that.
-
-   Green for "Overdue" is a lie of association. The tile is the overdue tile
-   whatever it currently says, and a reader who has learned that red means
-   money-past-due has to unlearn it every time the figure hits zero.
-
-   And it made the two dashboards look unrelated. The same Pending Orders tile
-   was cream on an account with one waiting and grey on an account with none,
-   so nothing in the row could be recognised by colour — which is the only job
-   colour has here.
-
-   Each tile now owns a hue permanently, taken from the SAME status palette the
-   order pills use, so the blue on Active Orders is the blue of the Accepted
-   pill in the panel below it. The value changes only the WEIGHT: a tile at
-   zero is quieted, never recoloured. */
+/* Each tile has a permanent colour (from the order status palette); the value only changes its weight, never its colour. */
 .db-stat {
   --db-tone: var(--text-muted);
   --db-wash: 7%;
@@ -638,8 +551,7 @@
 }
 .db-stat:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
 
-/* Nothing to report. The hue stays — this is still the overdue tile — but it
-   steps back, so a row of zeroes does not read as four alarms. */
+/* A zero tile keeps its colour but is quieted. */
 .db-stat-quiet { --db-wash: 3%; --db-edge: 15%; --db-chip: 8%; }
 .db-stat-quiet .db-stat-value { color: var(--text-muted); }
 .db-stat-quiet .db-stat-ic { color: color-mix(in srgb, var(--db-tone) 55%, var(--text-muted)); }
@@ -665,23 +577,19 @@
   font-size: 1.75rem; font-weight: 700; line-height: 1.05;
   letter-spacing: -.02em;
   color: var(--db-tone);
-  /* Tabular, so a column of figures lines up and a number that changes on
-     refresh does not shift the label under it. */
+  /* Tabular numbers so figures line up. */
   font-variant-numeric: tabular-nums;
 }
 .db-stat-hint { font-size: var(--fs-2xs); color: var(--text-muted); line-height: 1.45; }
 
-/* The five identities. Four come straight from the status palette, so a tile
-   and its matching pill are the same colour; Total Outstanding is gold because
-   money on the account is the brand's own colour rather than a state. */
+/* Tile colours: four from the status palette, gold for Total Outstanding. */
 .db-stat-active  { --db-tone: var(--st-accepted); }
 .db-stat-pending { --db-tone: var(--st-pending); }
 .db-stat-total   { --db-tone: var(--st-completed); }
 .db-stat-overdue { --db-tone: var(--st-cancelled); }
 .db-stat-owed    { --db-tone: var(--gold); }
 
-/* Holds the row's height before the request lands, so the panels below do not
-   jump down the page when it does. */
+/* Reserve the row's height before data loads so panels do not jump. */
 .db-stat-skeleton {
   min-height: 82px;
   background: linear-gradient(90deg, var(--surface), var(--bg-tint), var(--surface));
@@ -697,17 +605,13 @@
   grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
   grid-template-areas: "recent pay";
   gap: 16px;
-  /* stretch, not start. Payment History spans both rows, and with `start` it
-     shrank to its contents — a 166px card floating at the top of a 730px
-     column, which is most of the empty space on the right of the page. It now
-     fills the column it was given. */
+  /* Payment History stretches to fill its column. */
   align-items: stretch;
 }
 /* So the body grows with the panel rather than leaving the gap under it. */
 .db-panel-pay { display: flex; flex-direction: column; }
 .db-panel-pay .db-panel-body { flex: 1; }
-/* An empty right-hand column is now tall, so its placeholder centres in it
-   instead of sitting at the top with a drop below. */
+/* Empty placeholders centre in the tall column. */
 .db-panel-pay .db-empty { justify-content: center; height: 100%; }
 .db-panel-track  { grid-area: track; }
 .db-panel-pay    { grid-area: pay; }
@@ -723,11 +627,7 @@
 }
 .db-panel:hover { box-shadow: var(--shadow-md); }
 
-/* A tinted header BAR, not a title floating above a rule.
-   The panels are white and the page is cream; a plain heading inside a white
-   box left each panel a featureless slab with words at the top of it. The bar
-   gives the panel a top edge, and the gold hairline under it ties the three
-   panels to the rail on the other side of the page. */
+/* Tinted header bar with a gold hairline on each panel. */
 .db-panel-head {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 14px 20px;
@@ -741,8 +641,7 @@
   color: var(--text); margin: 0;
   display: flex; align-items: center; gap: 9px;
 }
-/* A short gold tick before the title. One mark, repeated on three panels, is
-   what makes them read as a set. */
+/* A short gold tick before each panel title. */
 .db-panel-title::before {
   content: ""; width: 3px; height: 13px;
   background: var(--gold); border-radius: 2px; flex: none;
@@ -770,10 +669,7 @@
 .db-track-id:hover { text-decoration: underline; }
 .db-track-meta { font-size: var(--fs-sm); color: var(--text-muted); margin-top: 3px; }
 
-/* The step track. A row of dots joined by the line that runs BEHIND them —
-   drawn on the <li> as a left border on the connector pseudo-element rather
-   than as a separate element, so the number of steps is decided entirely by
-   how many <li> the server's sequence produced. */
+/* Tracking steps: dots joined by a line, with as many steps as the server sends. */
 .db-steps {
   display: grid;
   grid-auto-flow: column;
@@ -785,8 +681,7 @@
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   text-align: center;
 }
-/* The connector to the PREVIOUS step. On the step itself, so the first one has
-   nothing to its left and the line can never overshoot the row. */
+/* Each step draws the connector to the previous one. */
 .db-step + .db-step::before {
   content: ""; position: absolute;
   top: 6px; right: 50%; left: -50%;
@@ -834,8 +729,7 @@
 .db-list-row {
   display: flex; align-items: center; justify-content: space-between;
   gap: 14px; padding: 11px 12px;
-  /* Negative inline margin so the hover fill reaches the panel's edges rather
-     than stopping short of its padding, which reads as a misaligned box. */
+  /* Negative margin so the hover fill reaches the panel edges. */
   margin-inline: -12px;
   border-radius: var(--r-md);
   transition: background var(--t) var(--ease);
@@ -871,10 +765,7 @@
 .db-pill-warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
 .db-pill-bad  { background: color-mix(in srgb, var(--out) 12%, transparent);  color: var(--out); }
 
-/* ── Empty / loading states ──
-   A single grey sentence floating in the middle of a tall white box is how the
-   Payment History panel read as broken rather than as empty. A mark, a
-   statement and a reason give it the same structure as a filled panel. */
+/* Empty/loading states with an icon, a statement and a reason. */
 .db-empty {
   display: flex; flex-direction: column; align-items: center;
   padding: 30px 10px; text-align: center;
@@ -895,8 +786,7 @@
 }
 .db-empty-ic svg { width: 20px; height: 20px; display: block; }
 
-/* Retailer tag on the shared sidebar, so a partner is visibly a partner
-   rather than reading the same as everybody else. */
+/* Retailer tag on the sidebar. */
 .mpas-tag-retailer {
   background: var(--gold-dim);
   border-color: var(--gold-line);
@@ -905,10 +795,8 @@
 
 /* ── Responsive ── */
 @media (max-width: 1080px) {
-  /* Two across, and the retailer's stacked pair unstacks — a third column
-     inside a narrowed main column puts "₱13,056.00" in a 90px box. */
-  /* Two across. Four tiles in a narrowed main column puts "₱13,056.00" in a
-     90px box. */
+  /* Two tiles across at this width so amounts fit. */
+  /* Two tiles across at this width so amounts fit. */
   .db-stats-plain,
   .db-stats-credit { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .db-stat-value { font-size: var(--fs-3xl); }
@@ -917,9 +805,7 @@
 @media (max-width: 560px) {
   .db-stats-plain,
   .db-stats-credit { grid-template-columns: minmax(0, 1fr); }
-  /* The step labels do not fit side by side at this width. The dots still
-     carry the sequence, and the status pill above spells out where the order
-     actually is — so the row stays readable without them. */
+  /* Hide step labels at this width; the dots and status pill still show progress. */
   .db-step-label { display: none; }
   .db-steps { padding: 4px 0 2px; }
   .db-list-row { align-items: flex-start; }
@@ -929,15 +815,7 @@
   .db-stat-skeleton { animation: none; }
 }
 
-/* =================================================================
-   RATE A PRODUCT — the control on a completed order line, and the
-   star input in its modal
-   -----------------------------------------------------------------
-   The control sits on its own row inside .order-item rather than
-   squeezed after the price: at 52px of thumbnail plus a name, a qty
-   and a price there is no horizontal room left, and a button that
-   wraps unpredictably beside a price reads as part of it.
-   ================================================================= */
+/* ===== RATE A PRODUCT: the button on a completed order line and the star input in its modal ===== */
 .order-item { flex-wrap: wrap; }
 .order-item-rate {
   flex-basis: 100%;
@@ -947,14 +825,11 @@
   border-top: 1px dashed var(--border);
 }
 
-/* What the customer already said. Outlined stars for the unearned
-   ones — a filled star that means "not chosen" is the same lie as a
-   seeded 4.9. */
+/* The customer's existing rating, with outlined stars for unearned ones. */
 .rate-mine { display: inline-flex; gap: 1px; color: var(--gold); }
 .rate-mine svg { width: 13px; height: 13px; }
 
-/* Held / not published. The WORD carries it; the colour only tints
-   the border, so this survives being read aloud or in greyscale. */
+/* Held/not published: the word carries the meaning; colour only tints the border. */
 .rate-state {
   font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .03em;
   text-transform: uppercase; color: var(--text);
@@ -974,12 +849,7 @@
 .btn-rate:hover { background: var(--surface-2); border-color: var(--gold); }
 .btn-rate:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 
-/* ---- the star input ---------------------------------------------
-   A real fieldset of radio inputs. The input is CLIPPED, never
-   display:none — a hidden input cannot take focus, and the focus
-   ring is the only thing telling a keyboard user where they are in
-   the group. Arrow keys, the single tab stop and the "3 of 5" that
-   a screen reader announces all come from the radios themselves. */
+/* Star input is a fieldset of radios, visually clipped (not display:none) so keyboard focus and screen readers still work. */
 .rate-stars-wrap { border: 0; padding: 0; margin: 0 0 16px; }
 .rate-stars-wrap legend {
   font-size: var(--fs-sm); font-weight: 700; letter-spacing: .04em;
@@ -993,18 +863,14 @@
 .rate-star {
   display: inline-flex; cursor: pointer; padding: 3px;
   border-radius: var(--r-sm);
-  /* EMPTY BY DEFAULT. Filled by JS as the value changes — see the
-     note in openRatingModal() for why this is not a CSS sibling
-     selector. */
+  /* Stars are filled by JS as the value changes (see openRatingModal()). */
   color: var(--text-muted);
   transition: color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
 }
 .rate-star svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 1.5; }
 .rate-star.on svg { fill: var(--gold); stroke: var(--gold); }
 .rate-star:hover { transform: scale(1.06); }
-/* The ring follows the INPUT's focus onto its own label, which is the
-   visible thing. Without this the group is keyboard-operable and
-   invisible, which is worse than not being operable at all. */
+/* Show the focus ring on the visible star label. */
 .rate-radio:focus-visible + .rate-star { outline: 2px solid var(--gold); outline-offset: 1px; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1067,9 +933,7 @@
 .order-status.status-paid    { background: rgba(47, 125, 79, .12); color: #2f7d4f; }
 .order-status.status-partial { background: rgba(47, 125, 79, .08); color: #2f7d4f; }
 
-/* =================================================================
-   RETURNS & REFUNDS (My Orders › Returns & Refunds tab)
-   ================================================================= */
+/* ===== RETURNS & REFUNDS (My Orders tab) ===== */
 .status-rr-submitted { --st: var(--st-pending); }
 .status-rr-review    { --st: var(--st-accepted); }
 .status-rr-approved  { --st: var(--st-shipping); }
@@ -1184,13 +1048,7 @@
 .ot-body .db-note { margin-top: 8px; }
 @media (prefers-reduced-motion: reduce) { .ot-drop, .db-order-link::after, .order-id-link::after { transition: none; } }
 
-/* =================================================================
-   ORDER ACTIONS — colour says what the button does
-   -----------------------------------------------------------------
-   Reorder gold · Return/Refund orange · Invoice/Details blue ·
-   Received/Receipt green · Cancel red. Tinted at rest, filled on
-   hover, each with a small icon.
-   ================================================================= */
+/* ===== ORDER ACTIONS: Reorder gold, Return orange, Invoice/Details blue, Received/Receipt green, Cancel red; tinted at rest, filled on hover ===== */
 .order-actions { flex-wrap: wrap; justify-content: flex-end; }
 .btn-order-action { display: inline-flex; align-items: center; gap: 7px; }
 .btn-order-action svg { width: 14px; height: 14px; flex: none; }
@@ -1268,9 +1126,7 @@
 /* Display-face titles: lining figures, so a number in a title does not bob. */
 .modal-head h3 { font-variant-numeric: lining-nums; }
 
-/* =================================================================
-   REQUEST A RETURN — quantity stepper first
-   ================================================================= */
+/* ===== REQUEST A RETURN: quantity stepper first ===== */
 /* Numbered sections, so the form reads as steps. */
 .rr-form { counter-reset: rr; }
 .rr-form > .field > label:first-child,
@@ -1361,9 +1217,7 @@
 /* Order line photo (my-orders.php sends the product's image). */
 .order-item-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-/* =================================================================
-   HISTORY (profile/history.html) — transactions + all notifications
-   ================================================================= */
+/* ===== HISTORY (profile/history.html): transactions and all notifications ===== */
 .hist-filters { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
 .hist-filters:empty { display: none; }
 .hist-chip {
@@ -1498,10 +1352,7 @@
 .pc-desc { margin-top: 3px; font-size: var(--fs-sm); color: var(--text-muted); }
 @media (max-width: 560px) { .hist-tabs--3 .hist-tab span { font-size: 11px; } .hist-tabs--3 .hist-tab { padding-inline: 8px; } }
 
-/* ---- Account pages: smooth page-to-page change ----
-   Same-origin navigation between the account pages cross-fades instead of
-   flashing white (Chrome/Edge; other browsers just navigate). The header and
-   the sidebar keep their place, only the main column fades. */
+/* Account pages cross-fade the main column between pages (Chrome/Edge), keeping header and sidebar in place. */
 @view-transition { navigation: auto; }
 .nav { view-transition-name: site-nav; }
 .mp-account-sidebar { view-transition-name: acct-side; }
@@ -1584,3 +1435,298 @@ a.db-stat:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 /* Rate popup: the product's own photo in the header tile. */
 .rate-head-ic.has-img { padding: 0; overflow: hidden; width: 56px; height: 56px; }
 .rate-head-ic.has-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* Confirm Order Received dialog: three bands, with equal-size buttons on one baseline. */
+.rcv { display: flex; flex-direction: column; min-width: min(460px, 100%); }
+.rcv-hero {
+  display: flex; align-items: center; gap: 14px;
+  padding-bottom: 16px; margin-bottom: 16px;
+  border-bottom: 1px solid rgba(110,78,28,.16);
+}
+.rcv-ic {
+  width: 48px; height: 48px; flex-shrink: 0; border-radius: 50%;
+  display: grid; place-items: center;
+  background: rgba(24,169,87,.12); color: #18a957;
+  box-shadow: 0 0 0 5px rgba(24,169,87,.06);
+}
+.rcv-ic svg { width: 22px; height: 22px; }
+.rcv-id { font-family: "Montserrat", inherit; font-weight: 700; font-size: 1rem; letter-spacing: .02em; }
+.rcv-sub { margin: 3px 0 0; font-size: .88rem; color: var(--text-muted); }
+
+.rcv-box {
+  border: 1px solid rgba(110,78,28,.22); border-radius: 14px; overflow: hidden;
+  background: rgba(255,255,255,.6);
+}
+.rcv-box-head {
+  display: flex; justify-content: space-between; padding: 10px 16px;
+  font-family: "Montserrat", inherit; font-size: .72rem; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted);
+  background: rgba(184,134,11,.07); border-bottom: 1px solid rgba(110,78,28,.16);
+}
+.rcv-items { list-style: none; margin: 0; padding: 0 16px; max-height: 210px; overflow-y: auto; }
+.rcv-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
+.rcv-item + .rcv-item { border-top: 1px dashed rgba(110,78,28,.2); }
+.rcv-thumb { width: 44px; height: 44px; border-radius: 10px; overflow: hidden; background: var(--gold-dim, #f5ecd6); flex-shrink: 0; border: 1px solid rgba(110,78,28,.14); }
+.rcv-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.rcv-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.rcv-name { font-weight: 600; font-size: .94rem; }
+.rcv-qty { font-size: .82rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.rcv-line { font-weight: 700; font-size: .94rem; font-variant-numeric: tabular-nums; }
+.rcv-total {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; font-size: .9rem; color: var(--text-muted);
+  border-top: 1px solid rgba(110,78,28,.16); background: rgba(184,134,11,.05);
+}
+.rcv-total strong { font-size: 1.2rem; color: var(--text); font-variant-numeric: tabular-nums; }
+
+.rcv-note {
+  display: flex; gap: 10px; align-items: flex-start; margin-top: 16px;
+  padding: 12px 14px; border-radius: 12px; font-size: .86rem; line-height: 1.5;
+  background: rgba(184,134,11,.08); border-left: 3px solid var(--gold, #b8860b);
+}
+.rcv-note svg { width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px; color: var(--gold, #b8860b); }
+
+.rcv-actions {
+  display: grid; grid-template-columns: 1fr 1.4fr; gap: 12px; align-items: center;
+  margin-top: 18px; padding-top: 18px; border-top: 1px solid rgba(110,78,28,.16);
+}
+.rcv-actions .btn {
+  height: 48px; min-height: 48px; padding: 0 20px; margin: 0; width: 100%;
+  font-size: .82rem; line-height: 1; vertical-align: middle;
+}
+.rcv-actions .btn-gold { box-shadow: 0 2px 8px rgba(232,163,23,.28); }
+.rcv-actions .btn-gold:hover { transform: none; box-shadow: 0 4px 14px rgba(232,163,23,.38); }
+.rcv-actions .btn-ghost { border-width: 1.5px; }
+.rcv-actions .btn svg { width: 16px; height: 16px; }
+[data-theme="dark"] .rcv-box { background: rgba(255,255,255,.04); border-color: var(--border-lift); }
+[data-theme="dark"] .rcv-hero, [data-theme="dark"] .rcv-actions,
+[data-theme="dark"] .rcv-box-head, [data-theme="dark"] .rcv-total { border-color: var(--border-lift); }
+@media (max-width: 520px) { .rcv-actions { grid-template-columns: 1fr; } .rcv-actions .btn-gold { order: -1; } }
+
+/* ---- Pay form (my-payments.html): method cards, amount, screenshot ---- */
+.pay-form { padding: 18px; display: flex; flex-direction: column; gap: 4px; }
+.pm-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+.pm-tab {
+  position: relative; display: flex; align-items: center; gap: 12px; text-align: left;
+  padding: 14px 16px; border-radius: 14px; cursor: pointer; font: inherit; color: var(--text);
+  background: var(--surface, #fff); border: 1.5px solid var(--border-lift, #d8d1c4);
+  transition: border-color .18s, background .18s, box-shadow .18s;
+}
+.pm-tab:hover { border-color: var(--gold); }
+.pm-tab:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+.pm-tab.active { border-color: var(--gold); background: var(--gold-dim, #fbf1dc); box-shadow: 0 4px 14px rgba(232,163,23,.18); }
+.pm-ic {
+  width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0; display: grid; place-items: center;
+  background: var(--bg-tint, #f5ecd9); color: var(--text-muted);
+}
+.pm-ic svg { width: 20px; height: 20px; }
+.pm-tab[data-pm="gcash"].active .pm-ic { background: #0a5fe0; color: #fff; }
+.pm-tab[data-pm="bank"].active .pm-ic { background: var(--gold); color: #1e1a0e; }
+.pm-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pm-txt b { font-family: "Montserrat", sans-serif; font-size: .92rem; font-weight: 700; }
+.pm-txt small { font-size: .76rem; color: var(--text-muted); }
+.pm-check {
+  margin-left: auto; width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center; border: 1.5px solid var(--border-lift, #d8d1c4); color: transparent;
+}
+.pm-check svg { width: 12px; height: 12px; }
+.pm-tab.active .pm-check { background: var(--gold); border-color: var(--gold); color: #1e1a0e; }
+@media (max-width: 560px) { .pm-tabs { grid-template-columns: 1fr; } }
+
+.pay-amount { position: relative; }
+.pay-amount-cur {
+  position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
+  font-weight: 700; font-size: 1.05rem; color: var(--text-muted); pointer-events: none;
+}
+.pay-amount .control { padding-left: 36px; font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+
+.proof-drop {
+  display: block; cursor: pointer; border-radius: 14px; margin: 0;
+  border: 2px dashed var(--border-lift, #d8d1c4); background: var(--surface, #fff);
+  transition: border-color .18s, background .18s;
+}
+.proof-drop:hover, .proof-drop.is-over { border-color: var(--gold); background: var(--gold-dim, #fbf1dc); }
+.proof-drop:focus-within { outline: 3px solid var(--gold); outline-offset: 2px; }
+.proof-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center;
+  padding: 24px 16px; font-size: .9rem; color: var(--text-muted);
+}
+.proof-empty b { color: var(--text); }
+.proof-empty small { font-size: .76rem; }
+.proof-ic {
+  width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; margin-bottom: 6px;
+  background: var(--gold-dim, #fbf1dc); color: var(--gold-deep, #9a6b00);
+}
+.proof-ic svg { width: 22px; height: 22px; }
+.proof-filled { display: none; align-items: center; gap: 14px; padding: 12px 14px; }
+.proof-drop.has-file { border-style: solid; }
+.proof-drop.has-file .proof-empty { display: none; }
+.proof-drop.has-file .proof-filled { display: flex; }
+.proof-filled img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border-lift, #d8d1c4); background: #fff; flex-shrink: 0; }
+.proof-meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.proof-meta b { font-size: .88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proof-meta small { font-size: .78rem; color: var(--text-muted); }
+.proof-drop.is-done { border-color: var(--ok, #18a957); }
+.proof-drop.is-done .proof-meta small { color: var(--ok, #18a957); font-weight: 700; }
+.proof-drop.is-busy .proof-meta small { color: var(--gold-deep, #9a6b00); }
+.proof-change {
+  padding: 7px 14px; border-radius: 999px; font: 700 .72rem "Montserrat", sans-serif;
+  letter-spacing: .06em; text-transform: uppercase; border: 1.5px solid var(--border-lift, #d8d1c4); color: var(--text);
+}
+.proof-drop:hover .proof-change { border-color: var(--gold); }
+.pay-form-actions { margin-top: 10px; }
+.field .proof-drop { text-transform: none; letter-spacing: normal; font-weight: 400; font-size: .9rem; color: inherit; }
+
+/* ===== ACCOUNT PAGES ON PHONES (640px and below) ===== */
+@media (max-width: 640px) {
+  /* The sidebar tab row is set in the 860px block above. */
+
+  /* Dashboard figures stay on one line ("₱13,056.00"). */
+  .db-stat-value { white-space: nowrap; font-size: clamp(1.2rem, 6vw, 1.6rem); }
+  .db-stat { min-width: 0; }
+
+  /* My Orders: the main action for the order's status is full width and first, the rest below, all 44px tall. */
+  .order-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; }
+  .order-actions > .btn-order-action { min-height: 44px; justify-content: center; width: 100%; }
+  .order-actions > .btn-order-action:first-child { grid-column: 1 / -1; }
+  .order-actions > .btn-order-action:only-child { grid-column: 1 / -1; }
+  /* An odd one out on the last row fills it rather than sitting at half width. */
+  .order-actions > .btn-order-action:last-child:nth-child(even) { grid-column: 1 / -1; }
+  .order-card-foot { flex-direction: column; align-items: stretch; gap: 12px; }
+
+  /* My Payments: each payment row becomes a stacked card instead of a wide table. */
+  .pay-table { min-width: 0; }
+  .pay-history-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .pay-history-table, .pay-history-table tbody, .pay-history-table tr, .pay-history-table td { display: block; width: 100%; }
+  .pay-history-table tr { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-md); margin-bottom: 10px; background: var(--surface); }
+  .pay-history-table td { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 5px 0; border: 0; text-align: right; overflow-wrap: anywhere; }
+  .pay-history-table td::before { content: attr(data-label); flex: none; text-align: left; font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+  .pay-history-table td + td { border-top: 1px dashed var(--border); }
+
+  /* History / Profile tabs and the pager: fit and finger-sized. */
+  /* minmax(0, …) so the tabs fit a 324px bar. */
+  .hist-tabs { max-width: none; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hist-tabs--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .hist-tab { min-height: 44px; padding: 8px 8px; gap: 6px; letter-spacing: .03em; min-width: 0; }
+  .hist-pager { justify-content: center; }
+  .hist-pg { min-width: 44px; height: 44px; }
+}
+
+@media (max-width: 400px) {
+  .hist-tab svg { display: none; }
+}
+
+/* My Orders/History toolbar on phones: status chips in one swipeable row, selects fill their pills, focus shows on the pill. */
+@media (max-width: 640px) {
+  .hist-toolbar { padding: 10px; gap: 10px; }
+  .hist-toolbar .hist-filters {
+    flex-wrap: nowrap; overflow-x: auto; width: calc(100% + 20px);
+    margin: 0 -10px; padding: 0 10px 2px; scrollbar-width: none;
+    -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain;
+  }
+  .hist-toolbar .hist-filters::-webkit-scrollbar { display: none; }
+  .hist-chip { flex: none; white-space: nowrap; min-height: 36px; }
+  .hist-controls { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; width: 100%; margin: 0; }
+  .hist-ctl { width: 100%; min-width: 0; min-height: 44px; padding-left: 14px; }
+  .hist-ctl-label { flex: none; width: 42px; }
+  .hist-ctl > svg { display: none; }
+  .hist-ctl .ebs { display: flex; }
+  .hist-ctl .ebs-trigger { width: 100%; font-size: 15px; }
+  .hist-ctl .hist-select, .hist-ctl .ebs { flex: 1; min-width: 0; width: 100%; }
+  .hist-ctl .hist-select, .hist-ctl .ebs-trigger { height: 42px; padding-right: 14px; outline: none; }
+  .hist-ctl .hist-select:focus, .hist-ctl .hist-select:focus-visible { outline: none; }
+  .hist-ctl:focus-within { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-dim); }
+}
+
+/* Wide screens: chips and Sort/Show on one row when it fits (slimmer chips, labels hidden but aria-labels kept); narrower screens wrap. */
+@media (min-width: 641px) {
+  /* One row always: the chips take the free space (scrolling sideways if it runs out) and Sort/Show stay pinned on the right. */
+  .hist-toolbar { gap: 8px; flex-wrap: nowrap; }
+  .hist-toolbar .hist-filters {
+    gap: 5px; flex: 1 1 auto; min-width: 0; flex-wrap: nowrap;
+    overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
+  }
+  .hist-toolbar .hist-filters::-webkit-scrollbar { display: none; }
+  .hist-toolbar .hist-chip { padding-inline: 8px; gap: 4px; letter-spacing: .03em; flex: none; white-space: nowrap; }
+  .hist-toolbar .hist-ctl > svg { display: none; }
+  .hist-toolbar .hist-controls { gap: 6px; flex: none; flex-wrap: nowrap; }
+  .hist-toolbar .hist-ctl-label { display: none; }
+  .hist-toolbar .hist-ctl { padding-left: 10px; gap: 4px; }
+  .hist-toolbar .hist-ctl:not(:has(> svg)) { padding-left: 6px; }
+  .hist-toolbar .hist-ctl .hist-select, .hist-toolbar .hist-ctl .ebs-trigger { padding-right: 22px; }
+}
+
+/* Return form: the product's photo in place of the bag icon. */
+.rr-item-ic.has-img { width: 52px; height: 52px; padding: 0; overflow: hidden; background: var(--surface-2, #f3ead8); }
+.rr-item-ic.has-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* My Payments: tier and Net credit budget. */
+.pay-credit { padding: 16px 18px; margin-bottom: 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.pay-credit-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.pay-credit-left { font-size: .9rem; color: var(--text-muted); }
+.pay-credit-left strong { color: var(--text); font-size: 1.05rem; }
+.pay-credit-bar { height: 8px; border-radius: 99px; background: var(--bg-tint, rgba(0,0,0,.06)); overflow: hidden; margin-bottom: 8px; }
+.pay-credit-bar span { display: block; height: 100%; border-radius: inherit; background: var(--gold, #E8A317); }
+.pay-credit small { font-size: .78rem; color: var(--text-muted); }
+.pay-tier { font-size: .7rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; padding: 4px 10px; border-radius: 99px; }
+.pay-tier-gold   { background: rgba(232,163,23,.16); color: #9A6B0C; }
+.pay-tier-silver { background: rgba(120,135,155,.16); color: #55606E; }
+.pay-tier-bronze { background: rgba(180,95,45,.16);  color: #8A4A22; }
+[data-theme="dark"] .pay-tier-gold   { color: #F0C060; }
+[data-theme="dark"] .pay-tier-silver { color: #C4CCD6; }
+[data-theme="dark"] .pay-tier-bronze { color: #E0A070; }
+
+/* History: transactions as a table (no row icons). */
+.hist-table-wrap { overflow-x: auto; }
+.hist-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.hist-table th { text-align: left; padding: 12px 16px; font-size: var(--fs-xs); font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-muted); background: var(--surface-2); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.hist-table td { padding: 14px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; color: var(--text); }
+.hist-table tbody tr:last-child td { border-bottom: 0; }
+.hist-table tbody tr { cursor: pointer; transition: background .15s; }
+.hist-table tbody tr:hover, .hist-table tbody tr:focus-visible { background: var(--surface-2); outline: none; }
+.hist-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hist-ref { display: block; font-weight: 700; white-space: nowrap; }
+.hist-type { display: block; margin-top: 2px; font-size: var(--fs-xs); color: var(--text-muted); }
+.hist-date { white-space: nowrap; color: var(--text-muted); }
+.hist-plus { color: var(--st-completed); }
+.hist-row { padding-left: 20px; }
+@media (max-width: 640px) { .hist-table th:nth-child(3), .hist-table td:nth-child(3) { display: none; } }
+
+/* My Orders: batch (lot) codes of the units bought, under the quantity. */
+.order-item-lots { margin-top: 4px; display: flex; flex-direction: column; gap: 2px; max-width: 320px; font-size: .74rem; color: var(--text-muted); }
+.order-lot-row { display: grid; grid-template-columns: 1fr auto 76px; gap: 10px; padding: 2px 0; border-top: 1px dashed var(--border, rgba(0,0,0,.08)); }
+.order-lot-row span:first-child { font-family: var(--font-mono, ui-monospace, monospace); }
+.order-lot-row span:last-child { text-align: right; }
+
+/* Return form: the batch a row's units came from. */
+.rr-lot { display: inline-block; margin: 2px 0 1px; padding: 1px 8px; border-radius: 99px; font-size: .68rem; font-weight: 700; letter-spacing: .02em; color: var(--gold-ink, #9A6B0C); background: rgba(232,163,23,.14); }
+
+/* My Payments: a field the server refused. */
+.control.is-invalid { border-color: var(--red); box-shadow: 0 0 0 3px rgba(220, 38, 38, .12); }
+
+/* My Orders: cancel dialog (shares the .rcv layout of "Confirm order received"). */
+.cxl-ic { background: rgba(214,40,40,.1); color: var(--red, #d62828); box-shadow: 0 0 0 5px rgba(214,40,40,.05); }
+.cxl-label { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 8px; font-weight: 700; font-size: .9rem; }
+.cxl-label span { font-size: .7rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+.cxl-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.cxl-chip {
+  padding: 6px 12px; border-radius: 99px; font: inherit; font-size: .8rem; font-weight: 600; cursor: pointer;
+  border: 1.5px solid rgba(110,78,28,.22); background: rgba(255,255,255,.6); color: var(--text, inherit);
+  transition: border-color .15s, background .15s, color .15s;
+}
+.cxl-chip:hover { border-color: var(--gold, #e8a317); }
+.cxl-chip.on { border-color: var(--red, #d62828); background: rgba(214,40,40,.08); color: var(--red, #d62828); }
+.cxl-text {
+  width: 100%; box-sizing: border-box; resize: vertical; min-height: 76px; padding: 10px 12px; border-radius: 12px;
+  font: inherit; font-size: .9rem; border: 1.5px solid rgba(110,78,28,.22); background: rgba(255,255,255,.8); color: inherit;
+}
+.cxl-text:focus { outline: none; border-color: var(--gold, #e8a317); box-shadow: 0 0 0 3px rgba(232,163,23,.18); }
+.cxl-err { min-height: 1.1em; margin: 6px 0 4px; font-size: .82rem; font-weight: 600; color: var(--red, #d62828); }
+.cxl .rcv-actions .btn-red:hover { transform: none; }
+.cxl .rcv-actions .btn-red svg { width: 15px; height: 15px; }
+[data-theme="dark"] .cxl-chip, [data-theme="dark"] .cxl-text { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.14); }
+@media (max-width: 520px) { .cxl .rcv-actions .btn-red { order: -1; } }
+
+/* Confirm order received: delivery fee and retailer discount between the items and the amount due. */
+.rcv-adj { padding: 8px 16px; border-top: 1px dashed rgba(110,78,28,.2); font-size: .84rem; color: var(--text-muted); }
+.rcv-adj > div { display: flex; justify-content: space-between; padding: 2px 0; font-variant-numeric: tabular-nums; }

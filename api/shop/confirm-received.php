@@ -1,43 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/shop/confirm-received.php
- * Body: { "order_id": "ORD-…" }
- *
- * Requires a customer session. Moves the customer's own delivered order to
- * completed.
- *
- * WHAT THIS REPLACES
- * ------------------
- * The Scope says the customer "confirms receipt by pressing the received
- * button", which completes the order. That button existed on
- * public/profile/my-orders.html for delivered orders and was a stub — a toast
- * and nothing else. A delivered order had no route to `completed` except a
- * staff member doing it by hand, which is the opposite of what the Scope
- * describes.
- *
- * WHY THIS IS NOT A FLAG ON cancel-order.php
- * ------------------------------------------
- * They are both "customer changes their own order's status" and it is tempting
- * to write one endpoint with a `to` parameter. This repo deliberately keeps one
- * endpoint to one job — the reasoning is in the header of api/shop/password.php:
- * merging two operations means the safer one inherits the other's rules, or,
- * far more likely, the riskier one inherits the absence of them.
- *
- * Concretely: cancellation requires a reason and refuses anything but
- * `pending`; confirmation requires no reason and refuses anything but
- * `delivered`. A shared endpoint would carry both sets of branches and a `to`
- * value that decides which apply, which is how a customer eventually cancels a
- * delivered order.
- *
- * NO STOCK MOVEMENT
- * -----------------
- * Stock was committed when staff accepted this order (see api/orders/status.php).
- * Completing it moves nothing — the goods have already left. `completed` is what
- * makes the order count as revenue (Revenue::STATUSES), and that is the whole
- * effect of this endpoint.
- */
+/** POST /api/shop/confirm-received.php lets a customer mark their own shipped or delivered order as completed (no stock change), kept separate from cancel-order.php on purpose. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -51,18 +15,16 @@ $data = Validate::check($in)
     ->required('order_id', 'Order')
     ->values();
 
-/* Scoped by session. A missing order and somebody else's order give the same
-   answer — see the same note in cancel-order.php. */
+/* Look up by session, with the same answer for missing and someone else's order. */
 $order = Database::one(
-    'SELECT id, status, total FROM orders WHERE id = ? AND customer_id = ?',
+    'SELECT id, status, ' . Payments::dueSql('orders') . ' AS total FROM orders WHERE id = ? AND customer_id = ?',
     [$data['order_id'], $customer['id']]
 );
 if ($order === null) {
     Response::notFound('Not found.');
 }
 
-/* Shipping or delivered: the parcel can reach the customer before staff have
-   marked it delivered, and the customer is the one who knows it arrived. */
+/* Allowed from shipping or delivered, since the parcel may arrive before staff mark it delivered. */
 if (!in_array($order['status'], ['shipping', 'delivered'], true)) {
     $advice = [
         'pending'   => 'This order has not been accepted yet, so there is nothing to confirm.',
@@ -84,10 +46,7 @@ try {
         [$order['id'], $order['status']]
     );
 
-    /* Conditional on the status we read. The one-hour sweep
-       (Orders::autoCompleteDelivered) can move this same order, so the race is
-       real rather than theoretical — and either outcome is correct, so the
-       customer is simply told to reload. */
+    /* Conditional on the status read, since the one-hour sweep may complete it at the same time. */
     if (Database::pdo()->query('SELECT ROW_COUNT()')->fetchColumn() < 1) {
         $pdo->rollBack();
         Response::conflict('Somebody else just changed this order. Reload and try again.');
@@ -102,11 +61,7 @@ try {
         );
     }
 
-    /* Staff should see the confirmation without watching the order list. Same
-       mechanism as the new-order notification in api/shop/checkout.php.
-
-       Info, not Warning: this is the good outcome arriving, and there is
-       nothing left for anybody to do about it. */
+    /* Notify staff (Info level) that the customer confirmed receipt. */
     Notify::create(
         'completed',
         sprintf('%s confirmed receipt of order %s.', $customer['name'], $order['id']),

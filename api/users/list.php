@@ -1,26 +1,12 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/users/list.php
- *
- * Query: ?page=1&limit=25&search=&status=active|archived|all
- *
- * Requires users.manage. This is the endpoint that demonstrates the rule the
- * whole API depends on: a Cashier's browser never shows the User Management
- * nav item, but hiding a button is not access control — so the permission is
- * checked here, server-side, and a direct request with a Cashier session gets
- * 403 regardless of what the client did or did not render.
- *
- * Password hashes are never selected. There is no reason for a hash to leave
- * the database, so it does not appear in the query at all rather than being
- * fetched and then unset.
- */
+/** GET /api/users/list.php (needs employees.manage) lists staff accounts, checked on the server, and never selects password hashes. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
 Response::requireMethod('GET');
-Rbac::require('users.manage');
+Rbac::require('employees.manage');
 
 $q      = $_GET;
 $paging = Validate::paging($q, 25, 200);
@@ -50,7 +36,7 @@ $total = (int) Database::scalar("SELECT COUNT(*) $sql", $params);
 
 $rows = Database::all(
     "SELECT u.id, u.name, u.email, u.avatar, u.status, u.created_at,
-            r.id AS role_id, r.name AS role
+            r.id AS role_id, r.name AS role, COALESCE(r.is_system, 0) AS is_system
      $sql
      ORDER BY u.id ASC
      LIMIT {$paging['limit']} OFFSET {$paging['offset']}",

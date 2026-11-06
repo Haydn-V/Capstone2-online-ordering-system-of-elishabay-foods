@@ -1,37 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/shop/credit-pay.php — a retailer pays toward one of their Net accounts.
- *
- * Body: { "account_id": "pay-05", "amount": 5000, "method": "gcash"|"bank",
- *         "ref_num": "…", "proof_image": "/uploads/references/<32 hex>.webp" }
- *
- * Requires a customer session, and the customer must be a retailer.
- *
- * WHAT THIS REPLACES
- * ------------------
- * Nothing. A retailer could see what they owed on Payment Schemes and had no way
- * to pay any of it from the site — settling a Net balance meant a phone call,
- * and a cashier pressing "Mark Paid" on an account with no record of how much
- * had arrived or when.
- *
- * WHAT IT DOES
- * ------------
- * Records ONE payment as `pending`. Nothing about the balance changes until
- * staff verify it in Payment Schemes (payments/decide.php) — a screenshot is a
- * claim, exactly as it is at checkout. A part payment is normal: any amount up
- * to what is still payable (Payments::amountProblem), so ₱13,330 can arrive as
- * three transfers.
- *
- * The screenshot must be one api/uploads/image.php issued to THIS session under
- * `references`. Matching the path's shape alone would let a retailer attach any
- * file whose name they could guess; matching the issued list proves it is
- * theirs.
- *
- * `paid_date` is today — the day they paid, which is the day it counts as
- * revenue once verified.
- */
+/** POST /api/shop/credit-pay.php lets a retailer submit a payment toward their own Net account as pending until staff verify it, with a screenshot that must have been uploaded by this session. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -69,14 +39,16 @@ if (!preg_match('#^/uploads/references/[a-f0-9]{32}\.webp$#', $proof)
 }
 
 $amount = (float) $data['amount'];
-$ref    = trim((string) $data['ref_num']);
+[$ref, $refErr] = Payments::checkRef($data['method'], trim((string) $data['ref_num']));
+if ($refErr !== null) {
+    Response::validation('Check the reference number.', ['ref_num' => $refErr]);
+}
 
 $pdo = Database::pdo();
 try {
     $pdo->beginTransaction();
 
-    /* Same answer for "no such account" and "not yours": telling the two apart
-       would let anyone enumerate account ids. */
+    /* Same answer for a missing or someone else's account. */
     $acct = Payments::lockAccount((string) $data['account_id']);
     if ($acct === null || (string) $acct['customerId'] !== (string) $customer['id']) {
         $pdo->rollBack();
@@ -91,8 +63,7 @@ try {
 
     $paymentId = Payments::addPayment($acct, $amount, $data['method'], $ref, $proof, 'customer', null);
 
-    /* `payment` notifications open Payment Schemes in the portal. Linked to
-       the order when the account has one, so the bell can name it. */
+    /* Payment notifications open Payment Schemes, linked to the order when there is one. */
     Notify::create(
         'payment',
         sprintf('%s sent ₱%s by %s toward %s (%s) — waiting for review.',
@@ -102,8 +73,7 @@ try {
         $acct['orderId'] ? ['order' => $acct['orderId']] : []
     );
 
-    /* Actor is the customer, so actor_user_id stays NULL — the same shape
-       shop/checkout.php uses for a customer-initiated write. */
+    /* actor_user_id stays NULL because the actor is a customer. */
     Database::run(
         'INSERT INTO audit_logs (ts, actor, actor_user_id, type, description)
          VALUES (NOW(), ?, NULL, ?, ?)',
@@ -120,8 +90,7 @@ try {
     throw $e;
 }
 
-/* Attached to a payment now, so it stops being discardable — the same step
-   shop/checkout.php takes for an order's screenshot. */
+/* Remove the screenshot from the discardable list now that it is attached to a payment. */
 $_SESSION['eb_issued_uploads'] = array_values(array_filter(
     $_SESSION['eb_issued_uploads'] ?? [],
     static fn($p) => $p !== $proof

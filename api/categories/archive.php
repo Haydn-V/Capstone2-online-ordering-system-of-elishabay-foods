@@ -1,18 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/categories/archive.php
- * Body: { "id": "cat-bg", "archived": true }
- *
- * Requires products.manage.
- *
- * Refuses to archive a variety that still has active products in it. The
- * schema's ON DELETE RESTRICT on products.category_id prevents deletion, but
- * archiving is not deletion and would otherwise leave products filed under a
- * variety that no longer appears in any filter — visible in some screens,
- * missing from others, for no reason the operator can see.
- */
+/** POST /api/categories/archive.php (needs products.manage) refuses to archive a variety that still has active products, so no product ends up in a hidden category. */
 
 require __DIR__ . '/../core/bootstrap.php';
 

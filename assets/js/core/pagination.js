@@ -1,27 +1,9 @@
-/* ============================================================
- PAGINATION — server-side, driven by the API's meta block
- ------------------------------------------------------------
- The existing Paginate (assets/js/portal/pagination.js) slices an
- array the browser already holds. That works only while the whole
- dataset is in memory, which stops being true the moment lists come
- from the API — 42 orders is fine, 4,200 is not.
-
- This one never sees the rows. It reads the `meta` the server
- returns ({page, limit, total, pages}) and renders controls that
- ask for the next page. The markup contract is identical to the
- old engine, so the existing
-     <span id="x-showing">, <div id="x-pagination">, <select id="x-page-size">
- markup keeps working untouched.
-
- Both exist during Phase 5: a module switches from Paginate to
- EbPaginate when it is converted to load from the API.
- ============================================================ */
+/* EbPaginate: server-side pagination driven by the API's meta block, using the same markup ids as the old array-based Paginate. */
 
 
 const $ = id => document.getElementById(id);
 
-/* Windowed page numbers. Rendering 200 buttons for 200 pages is unusable;
-   this keeps first, last, current and its neighbours, with gaps marked. */
+/* Windowed page numbers (first, last, current and neighbours, with gaps). */
 function pageWindow(page, pages, span = 2) {
   const out = [];
   const push = v => { if (out[out.length - 1] !== v) out.push(v); };
@@ -32,13 +14,7 @@ function pageWindow(page, pages, span = 2) {
   return out;
 }
 
-/**
- * Render controls for one list.
- *
- * @param prefix  id prefix — "orders" finds #orders-showing, #orders-pagination
- * @param meta    the API's meta block
- * @param onGo    called with the requested page number
- */
+/** Render pagination controls for one list (prefix finds #prefix-showing and #prefix-pagination). */
 function render(prefix, meta, onGo) {
   const showing = $(`${prefix}-showing`);
   const total   = Number(meta?.total ?? 0);
@@ -82,10 +58,7 @@ function render(prefix, meta, onGo) {
   });
 }
 
-/**
- * Wire the page-size select. Changing the size returns to page 1 —
- * staying on page 9 of a list that now has 3 pages shows nothing.
- */
+/** Changing the page size returns to page 1. */
 function wirePageSize(prefix, state, reload) {
   const sel = $(`${prefix}-page-size`);
   if (!sel || sel.dataset.wired) return;
@@ -101,26 +74,7 @@ function wirePageSize(prefix, state, reload) {
 /** Fresh paging state for a module. */
 const state = (limit = 25) => ({ page: 1, limit });
 
-/**
- * Drive one server-paged list end to end.
- *
- * Fifteen screens needed the same six steps — show a loading row, fetch a page,
- * handle the error, handle empty, draw the rows, wire the controls — and
- * writing that out fifteen times is fifteen chances to forget the error case.
- * This is that sequence once.
- *
- * @param prefix   id prefix: "audit" finds #audit-showing, #audit-pagination
- * @param state    { page, pageSize } — the module's own pager object
- * @param mount    () => Element        where rows go (a tbody)
- * @param fetchPage (page, limit) => Promise<{data, meta}>
- * @param rowHtml  (row, index) => string
- * @param opts     { colspan, empty:{title,hint}, after(rows, meta), asTable }
- *
- * `asTable` defaults true. Set false when the mount is a plain container of
- * cards rather than a tbody — a <tr> state row inside a <div> is dropped by the
- * parser, so the screen would show nothing at all while loading and nothing on
- * error, which is worse than the blank table this helper exists to replace.
- */
+/** Run one server-paged list end to end (loading, fetch, error, empty, rows, controls); set asTable false when mounting cards instead of table rows. */
 async function list(prefix, state, mount, fetchPage, rowHtml, opts = {}) {
   const colspan = opts.colspan || 6;
   const tbody = typeof mount === "function" ? mount() : mount;
@@ -130,7 +84,7 @@ async function list(prefix, state, mount, fetchPage, rowHtml, opts = {}) {
   const stateHtml = {
     loading: () => asTable
       ? (window.EbUI ? EbUI.loadingRow(colspan) : "")
-      : `<div class="state-cell"><span class="spinner" aria-hidden="true"></span> Loading…</div>`,
+      : (window.EbUI ? EbUI.skeletonBlock(5) : ""),
     empty: (t, h) => asTable
       ? (window.EbUI ? EbUI.emptyRow(colspan, t, h) : "")
       : `<div class="state-cell"><strong>${t}</strong>${h ? `<br><small>${h}</small>` : ""}</div>`,
@@ -139,16 +93,12 @@ async function list(prefix, state, mount, fetchPage, rowHtml, opts = {}) {
       : `<div class="state-cell state-error"><strong>Could not load this.</strong><br><small>${m}</small></div>`,
   };
 
-  /* A loading state rather than an empty container: empty is indistinguishable
-     from "there is no data", which is exactly the ambiguity that makes a silent
-     failure look like a working screen. */
+  /* Show a loading row so loading never looks like an empty list. */
   tbody.innerHTML = stateHtml.loading();
 
   let res;
   try {
-    /* Named fetchPage, not fetch. As `fetch` it shadowed the global inside
-       this function, so a grep for raw fetch() calls flagged this line and a
-       reader had to check the signature to see it was a callback. */
+    /* Named fetchPage so it does not shadow the global fetch. */
     res = await fetchPage(state.page || 1, state.pageSize || state.limit || 10);
   } catch (err) {
     tbody.innerHTML = stateHtml.error(err.message);
@@ -168,8 +118,7 @@ async function list(prefix, state, mount, fetchPage, rowHtml, opts = {}) {
     list(prefix, state, mount, fetchPage, rowHtml, opts);
   });
 
-  /* The page-size select reports `limit`; the portal's pagers historically
-     call it `pageSize`. Bridged here so neither has to change. */
+  /* Map the select's limit to the pager's pageSize. */
   wirePageSize(prefix, {
     get limit()  { return state.pageSize || state.limit || 10; },
     set limit(v) { state.pageSize = v; state.limit = v; },

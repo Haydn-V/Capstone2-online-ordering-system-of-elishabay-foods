@@ -1,40 +1,8 @@
 import { EbFormat } from "./format.js";
 
-/* ============================================================
-   SALES INVOICE — one renderer for every receipt the system shows
-   ------------------------------------------------------------
-   Laid out to match the client's own pre-printed BIR Sales Invoice
-   booklet, line for line: the seller block, SALES INVOICE with its
-   number, Cash/Charge Sales, Date, the SOLD TO box, the four-column
-   item table, the VAT breakdown in two stacks, and the cashier's
-   signature line.
+/* Sales Invoice: one renderer for every receipt, laid out like the client's BIR booklet (without the printer's accreditation block or serial range, so it never poses as a booklet page), printed alone via a hidden iframe. */
 
-   ONE FILE, FOUR CALLERS. The POS receipt, Receipt Generation, the
-   storefront's order confirmation and My Orders all render through
-   render() below. They used to be four hand-written layouts that had
-   already drifted apart — two different spellings of the address, one
-   of them pricing past orders at today's price.
-
-   WHAT IS DELIBERATELY NOT COPIED FROM THE PAPER
-   ----------------------------------------------
-   The printer's block at the foot of each booklet page ("CACAI
-   PRINTING PRESS", the BIR Authority to Print / OCN, the Printers
-   Accreditation No., the serial range 2501–5000). Those certify that
-   the PAPER was printed under that authority. Reproducing them on a
-   page this system prints would present every printout as a genuine
-   booklet page, and a number from that serial range would collide
-   with the real booklet. For the same reason the invoice number is
-   the order's own id, never a continuation of the booklet's series.
-
-   PRINTING
-   --------
-   print() renders the invoice alone into a hidden iframe sized to the
-   booklet page and prints that. window.print() on the page — what the
-   receipts used before — printed the whole portal behind the modal:
-   sidebar, theme background and all.
-   ============================================================ */
-
-/* The seller, exactly as the booklet prints it. One place to change it. */
+/* Seller details as printed on the booklet. */
 const SELLER = {
   name:    "ELISHA BAY",
   owner:   "JURIS BAY FOODS, INC.",
@@ -42,32 +10,23 @@ const SELLER = {
   address: "148 Mangin, Dagupan City, Pangasinan",
 };
 
-/* Philippine VAT. The seller is VAT-registered (VAT REG. TIN above) and
-   shelf prices are VAT-inclusive, which is what the booklet's
-   "Total Sales (VAT Inclusive)" line assumes. */
+/* Philippine VAT: the seller is VAT-registered and shelf prices include VAT. */
 const VAT_RATE = 0.12;
 
-/* The booklet's item rows — six, measured off the client's page. Fewer
-   items still draw six ruled rows, so a one-line sale looks like the paper
-   rather than a stub; more items simply add rows. */
+/* Always draw at least six item rows, like the booklet. */
 const MIN_ITEM_ROWS = 6;
 
-/* Charge Sales is a sale on terms. Everything paid at the time — cash,
-   GCash, bank transfer — is Cash Sales in BIR terms: "cash" means paid
-   now, not paid in notes and coins. */
+/* Charge Sales means a credit sale; anything paid now (cash, GCash, bank) is Cash Sales. */
 const CHARGE_METHODS = new Set(["net30", "net60", "net90"]);
 
 const esc = s => EbFormat.escHtml(s == null ? "" : s);
 const r2  = n => Math.round((Number(n) || 0) * 100 + Number.EPSILON * 100) / 100;
 const num = n => r2(n).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/* "2026-09-16", "2026-09-16 13:06:27" or an ISO string, as "September 16, 2026".
-   A bare date is pinned to local midnight — parsed as UTC it renders as the
-   previous day in Manila. */
+/* Format a date like "September 16, 2026", pinning bare dates to local midnight. */
 function longDate(value){
   if(!value) return "";
-  /* A Date is formatted as it stands, in local time — never round-tripped
-     through toISOString(), which is UTC and a day early before 8am here. */
+  /* Format Date objects in local time, never via toISOString(). */
   if(value instanceof Date){
     return isNaN(value) ? "" : value.toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" });
   }
@@ -79,14 +38,7 @@ function longDate(value){
   return d.toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" });
 }
 
-/**
- * The VAT breakdown for a VAT-inclusive total.
- *
- * VAT is worked out as the REMAINDER, not as total × 12/112 rounded on its
- * own. Rounding both halves separately can leave VATable Sales + VAT a
- * centavo away from the total, which on a tax document is the one kind of
- * error nobody forgives.
- */
+/** VAT breakdown for a VAT-inclusive total, with VAT as the remainder so the figures always add up. */
 function figures(total, withholding = 0){
   const gross   = r2(total);
   const vatable = r2(gross / (1 + VAT_RATE));
@@ -104,18 +56,7 @@ function figures(total, withholding = 0){
   };
 }
 
-/**
- * The figures an invoice prints.
- *
- * STORED, WHENEVER THE ORDER HAS THEM. Since migration 014 every order carries
- * the breakdown api/core/Tax.php decided at the moment of sale — VAT-exempt
- * lines, the senior/PWD discount and withholding tax included — and the
- * invoice prints exactly those figures. A rule changed later in VAT
- * Maintenance cannot move them, which is the point.
- *
- * figures() above is only the fallback for an order object with no stored
- * breakdown: everything VATable at 12%, as the invoice always assumed before.
- */
+/** Invoice figures: use the breakdown stored with the order (migration 014) when present, falling back to 12% VAT on everything. */
 function breakdown(inv){
   const t = inv.tax;
   if(t && t.grossTotal != null){
@@ -130,6 +71,10 @@ function breakdown(inv){
       zeroRated:     0,
       vatExempt:     r2(t.vatExemptSales),
       withholding:   r2(t.withholdingTax),
+      shipping:      r2(t.shippingFee || 0),
+      /* Interest for buying on Net terms (Payments::applyInterest). */
+      interest:      r2(t.termInterest || 0),
+      interestRate:  t.termInterestRate,
       due:           r2(t.amountDue),
     };
   }
@@ -137,18 +82,7 @@ function breakdown(inv){
   return { ...f, lessVat: f.vat, addVat: f.vat, scPwdDiscount: 0 };
 }
 
-/**
- * Any order shape the system has into invoice data.
- *
- * Four callers, four shapes: an ORDERS row in the portal, the POS checkout
- * response, the storefront's checkout response and a My Orders card. The
- * names differ (customer / customerName / name, datetime / date / placedAt);
- * the meaning does not, so the translation lives here once.
- *
- * Line amounts use the price AT PURCHASE carried on each line. Re-pricing a
- * past order at today's shelf price — which Receipt Generation used to do —
- * rewrites what the customer was charged.
- */
+/** Convert any order shape (portal row, POS response, storefront response, My Orders card) into invoice data, using the price at purchase. */
 function fromOrder(o){
   const items = (o.items || []).map(i => {
     const qty  = Number(i.qty) || 0;
@@ -156,31 +90,23 @@ function fromOrder(o){
     return { description: i.name || i.id || "", qty, unit, amount: r2(qty * unit) };
   });
   const total = o.total != null ? Number(o.total) : items.reduce((n, i) => n + i.amount, 0);
-  /* The stored breakdown (see breakdown()), and the senior/PWD details it
-     carries when the sale was one. */
+  /* The stored breakdown plus Senior/PWD details when applicable. */
   const tax   = o.tax || null;
   const scPwd = (tax && tax.scPwd) || null;
   return {
     number:  o.id || "",
     date:    o.datetime || o.date || o.placedAt || "",
     charge:  CHARGE_METHODS.has(o.payMethod),
+    /* Which box to tick: cash, gcash or bank. */
+    method:  String(o.payMethod || "").toLowerCase(),
     tax,
     scPwd,
     soldTo: {
-      /* On a senior/PWD sale the name is the one on their ID: the BIR requires
-         the discount holder's own name on the invoice, and the POS name field
-         usually still reads "Walk-In Customer". */
+      /* On a Senior/PWD sale, print the name from their ID. */
       name:    (scPwd && scPwd.name) || o.customerName || o.customer || o.name || "",
-      /* A retailer's own BIR TIN, as they entered it on their partner
-         application — the servers send it only for retailers
-         (Orders::buyerTinSql). A regular customer's line stays blank. */
+      /* Retailer's BIR TIN (sent only for retailers); blank for regular customers. */
       tin:     o.tin || "",
-      /* BUSINESS ADDRESS IS FOR ORDERS THAT TRAVEL. An online order carries
-         the address it ships to or was placed from. A walk-in sale happens at
-         the counter, so its line stays blank — unless it was rung up as a
-         DELIVERY, which is the only time a walk-in has an address at all (the
-         POS asks for one only then). An order whose type is unknown is
-         treated as online rather than silently losing its address. */
+      /* Business address prints only for online orders and walk-in deliveries; unknown types are treated as online. */
       address: (o.type === "walk-in" && o.orderType !== "delivery") ? "" : (o.address || ""),
     },
     items,
@@ -194,7 +120,7 @@ function box(checked){
   return `<span class="ebi-box" aria-hidden="true">${checked ? "&#10003;" : ""}</span>`;
 }
 
-/** The invoice as markup. Scoped under .eb-invoice; see CSS below. */
+/** The invoice markup, scoped under .eb-invoice. */
 function render(inv){
   const f  = breakdown(inv);
   const sc = inv.scPwd;
@@ -207,45 +133,36 @@ function render(inv){
         <td class="ebi-num">${num(i.unit)}</td>
         <td class="ebi-num">${num(i.amount)}</td>
       </tr>`).join("");
-  /* Six ruled rows on every invoice, senior/PWD included. That invoice's extra
-     lines are made to fit instead of eating the item rows: the ID shares the
-     TIN row and the signatures sit closer. Measured against the 5.5 × 8.5in
-     page with six items, taking rows away instead still spilled onto a second
-     sheet. */
+  /* Six item rows even on Senior/PWD invoices; their extra lines are squeezed to fit one page. */
   const minRows = MIN_ITEM_ROWS;
   const blanks = Array.from({ length: Math.max(0, minRows - inv.items.length) }, () => `
       <tr class="ebi-item"><td>&nbsp;</td><td></td><td></td><td></td></tr>`).join("");
 
-  /* The two stacks under the items, as the booklet has them: the VAT
-     analysis on the left under the description column, the reconciliation
-     to the amount due on the right across Quantity and Unit Cost. */
-  const leftStack = [
-    ["VATable Sales",    num(f.vatable)],
-    ["VAT",              num(f.vat)],
-    ["Zero-Rated Sales", num(f.zeroRated)],
-    ["VAT-Exempt Sales", num(f.vatExempt)],
-  ];
-  /* "Less: VAT" is the VAT inside the shelf prices; "Add: VAT" is the VAT
-     charged. They are the same figure on an ordinary sale and differ only when
-     a discount or an exemption sits between them — which is why the booklet
-     prints both. The discount line appears only on a senior/PWD sale, where
-     the BIR requires it. */
+  /* Two stacks under the items: VAT analysis on the left, totals on the right. */
+  const leftStack = [["<i>Prices already include VAT.</i>", ""]];
+  /* VATable Sales + VAT = total so the column adds straight down; exempt, SC/PWD and withholding lines appear only when they apply. */
   const right = [
-    ["Total Sales(VAT Inclusive)", num(f.totalSales)],
-    ["Less: VAT",                  num(f.lessVat)],
-    ["Amount: Net of VAT",         num(f.netOfVat)],
+    ["VATable Sales", num(f.vatable)],
+    ["VAT (12%)",     num(f.vat)],
+    ...(f.vatExempt > 0 ? [["VAT-Exempt Sales", num(f.vatExempt)]] : []),
     ...(f.scPwdDiscount > 0 || sc ? [[`Less: ${scShort || "SC/PWD"} Discount`, num(f.scPwdDiscount)]] : []),
-    ["Add: VAT",                   num(f.addVat)],
-    ["Less: Withholding Tax",      num(f.withholding)],
-    ["TOTAL AMOUNT DUE",           `${EbFormat.CURRENCY}${num(f.due)}`],
+    /* Estimated delivery fee, added on top of the goods outside the VAT analysis. */
+    ...(f.shipping > 0 ? [["Add: Delivery Fee", num(f.shipping)]] : []),
+    ...(f.withholding > 0 ? [["Less: Retailer Discount", num(f.withholding)]] : []),
+    ...(f.interest > 0 ? [[`Add: Interest (${+f.interestRate}%)`, num(f.interest)]] : []),
+    ["TOTAL AMOUNT DUE", `${EbFormat.CURRENCY}${num(f.due)}`],
   ];
   const left = right.map((_, k) => leftStack[k] || ["", ""]);
-  const summaryRows = right.map(([label, value], k) => `
+  /* TOTAL AMOUNT DUE spans the empty left cell so it fits when phones lack Arial Narrow. */
+  const summaryRows = right.map(([label, value], k) => {
+    const due = k === right.length - 1 && !left[k][0] && !left[k][1];
+    return `
       <tr class="ebi-sum${k === right.length - 1 ? " ebi-due" : ""}">
-        <td class="ebi-left"><span>${left[k][0]}</span><span class="ebi-num">${left[k][1]}</span></td>
-        <td colspan="2" class="ebi-right">${label}</td>
+        ${due ? "" : `<td class="ebi-left"><span>${left[k][0]}</span><span class="ebi-num">${left[k][1]}</span></td>`}
+        <td colspan="${due ? 3 : 2}" class="ebi-right">${label}</td>
         <td class="ebi-num">${value}</td>
-      </tr>`).join("");
+      </tr>`;
+  }).join("");
 
   return `<div class="eb-invoice">
   <header class="ebi-seller">
@@ -262,8 +179,10 @@ function render(inv){
 
   <div class="ebi-typebar">
     <div class="ebi-types">
-      <span class="ebi-check">${box(!inv.charge)} CASH SALES</span>
-      <span class="ebi-check">${box(inv.charge)} CHARGE SALES</span>
+      <span class="ebi-check">${box(inv.method === "cash")} CASH</span>
+      <span class="ebi-check">${box(inv.method === "gcash")} GCASH</span>
+      <span class="ebi-check">${box(inv.method.startsWith("bank"))} BANK TRANSFER</span>
+      ${inv.charge ? `<span class="ebi-check">${box(true)} CHARGE (${esc(inv.method.replace("net", "NET "))})</span>` : ""}
     </div>
     <div class="ebi-date">Date: <span class="ebi-fill">${esc(longDate(inv.date))}</span></div>
   </div>
@@ -302,10 +221,7 @@ function render(inv){
 </div>`;
 }
 
-/* Styles. A document, not a themed panel: black on white in every theme,
-   because it is what gets printed and what a BIR examiner would read.
-   Condensed sans for the form, a serif for the signature label and a red
-   numbering-machine face for the invoice number — as on the booklet. */
+/* Invoice styles: black on white in every theme, matching the booklet's fonts. */
 const CSS = `
 .eb-invoice{
   --ebi-ink:#111; --ebi-rule:#222; --ebi-red:#c8102e;
@@ -326,7 +242,7 @@ const CSS = `
   font-size:19px; letter-spacing:.12em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:62%;
 }
 .eb-invoice .ebi-typebar{ display:flex; justify-content:space-between; align-items:flex-end; gap:12px; margin:10px 0 8px; }
-.eb-invoice .ebi-types{ display:flex; gap:14px; font-size:14px; white-space:nowrap; }
+.eb-invoice .ebi-types{ display:flex; gap:10px; font-size:12.5px; white-space:nowrap; flex-wrap:wrap; }
 .eb-invoice .ebi-check{ display:inline-flex; align-items:center; gap:5px; }
 .eb-invoice .ebi-box{
   display:inline-flex; align-items:center; justify-content:center;
@@ -391,13 +307,7 @@ function ensureStyles(doc = document){
   doc.head.appendChild(style);
 }
 
-/**
- * Print the invoice on its own page.
- *
- * A hidden iframe rather than a popup window: popups are blocked unless they
- * open inside the click, and a print that silently does nothing is the worst
- * outcome for a cashier with a customer waiting.
- */
+/** Print the invoice alone via a hidden iframe (popups get blocked). */
 function print(inv){
   const frame = document.createElement("iframe");
   frame.setAttribute("aria-hidden", "true");
@@ -414,8 +324,7 @@ function print(inv){
     w.addEventListener("afterprint", cleanup);
     w.focus();
     w.print();
-    /* Some browsers never fire afterprint for an iframe; do not leave it
-       behind for the rest of the session. */
+    /* Remove the iframe later even if afterprint never fires. */
     setTimeout(cleanup, 60000);
   };
   document.body.appendChild(frame);

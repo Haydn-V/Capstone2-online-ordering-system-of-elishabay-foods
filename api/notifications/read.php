@@ -1,17 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/notifications/read.php
- * Body: { "id": "n01" }  or  { "all": true }
- *
- * Requires any signed-in staff member.
- *
- * Read state is shared, not per-user: this is one operations team working one
- * queue, and a notification another member has already dealt with should not
- * still be shouting at everyone else. Per-user read state would need its own
- * table and is a different product decision.
- */
+/** POST /api/notifications/read.php (any signed-in staff) marks one or all notifications read for the whole team, since read state is shared. */
 
 require __DIR__ . '/../core/bootstrap.php';
 

@@ -1,26 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/payments/record.php — staff record a payment received at the counter.
- *
- * Body: { "account_id": "pay-01", "amount": 2000, "method": "cash"|"gcash"|"bank",
- *         "ref_num"?: "…", "note"?: "…", "paid_date"?: "YYYY-MM-DD" }
- *
- * Requires payments.manage.
- *
- * Replaces "Mark Paid". A retailer who walks in with ₱2,000 toward a ₱4,250
- * balance is recorded as exactly that: ₱2,000 paid, ₱2,250 left. The payment is
- * `verified` at once, by the person recording it — they are holding the money,
- * or watched the transfer arrive.
- *
- * `paid_date` is when the money arrived and is the revenue date. It defaults to
- * today; a back-dated entry (money received yesterday, entered this morning) is
- * allowed but never in the future or before the account was opened.
- *
- * A reference number is required for GCash and bank, as it is everywhere else
- * in the system: it is the only thing that ties the entry to a real transfer.
- */
+/** POST /api/payments/record.php (needs payments.manage) records a payment received at the counter as verified, with paid_date as the revenue date (no future dates) and a reference required for GCash/bank. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -41,6 +22,10 @@ if ($data['method'] !== 'cash' && $ref === null) {
     Response::validation('Add the reference number.', [
         'ref_num' => 'GCash and bank payments need the transfer reference number.',
     ]);
+}
+[$ref, $refErr] = Payments::checkRef($data['method'], $ref);
+if ($refErr !== null) {
+    Response::validation('Check the reference number.', ['ref_num' => $refErr]);
 }
 if ($ref !== null && mb_strlen($ref) > 100) {
     Response::validation('Check the reference.', ['ref_num' => 'Keep it under 100 characters.']);

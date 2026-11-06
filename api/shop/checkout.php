@@ -1,37 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/shop/checkout.php
- *
- * PUBLIC — a shopper places an order without an account.
- *
- * THIS IS THE FLOW THAT DID NOT EXIST.
- *
- * The storefront's checkout validated the form, rendered a receipt and threw
- * the order away. A customer saw "Order Placed!", and nothing ever reached the
- * staff portal — no queue entry, no payment to verify, no record at all. This
- * endpoint is the missing half.
- *
- * Body: {
- *   "items": [ { "id": "bg-pesto", "qty": 2 }, … ],
- *   "name", "contact", "email?", "address?", "notes?",
- *   "order_type": "pickup" | "delivery",
- *   "pay_method": "cash" | "gcash" | "bank",
- *   "ref_num": "..."   // gcash / bank
- * }
- *
- * DIFFERENCES FROM pos/checkout.php, all deliberate:
- *
- *   - The order lands as `pending` with pay_verified = 0. A walk-in sale is
- *     money in the drawer; an online order is a claim that has to be checked
- *     by a human before anything ships.
- *   - Stock is NOT decremented here. It moves when staff accept the order (see
- *     orders/status.php). An unverified stranger must not be able to zero the
- *     inventory by placing orders nobody accepts.
- *   - Availability IS checked, so a shopper is told immediately rather than
- *     after a staff member has to chase them.
- */
+/** POST /api/shop/checkout.php places a signed-in customer's online order as pending and unverified, reserving its items (Stock::reservedSql) so shoppers see them as taken; stock itself moves when staff accept it. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -61,31 +31,13 @@ foreach ($cart as $line) {
     $wanted[$id] = ($wanted[$id] ?? 0) + $qty;
 }
 
-/* ---- who is buying ----------------------------------------------------
-   D6: checkout requires a signed-in customer. There is no guest checkout.
-
-   This used to accept anyone and file the order against whichever customer row
-   matched the posted email, which meant a stranger could write an order into
-   someone else's history — inflating their spend and appearing in their My
-   Orders list. Scoping attribution to the session closed the write; requiring
-   the session closes the hole, rather than guarding it.
-
-   The rest of the system already assumes accounts: My Orders, lifetime spend,
-   retailer tiers and B2B applications are all keyed to a customer row. A guest
-   order was a row those features could never see.
-
-   Checked before validation so an unauthenticated caller learns nothing about
-   which fields exist. */
+/* Checkout requires a signed-in customer (no guest checkout), checked before validation. */
 $buyer = Auth::requireCustomer('Sign in to place your order.');
 
-/* Auth::customer() SELECTs the customers row on every request — it is not a
-   cached copy of what the session said at sign-in — so this is a live read of
-   the account's current standing, which is exactly what a credit decision
-   needs. Named here because it is used three times below. */
+/* Auth::customer() re-reads the account every request, so retailer status here is current. */
 $isRetailer = ($buyer['status'] ?? null) === 'retailer';
 
-/* An identity in the body is refused, not ignored. Silently overriding it
-   would leave a caller believing they had set the buyer. */
+/* Refuse (not ignore) any buyer identity in the body. */
 foreach (['customer_id', 'customerId', 'email'] as $forbidden) {
     if (array_key_exists($forbidden, $in) && trim((string) $in[$forbidden]) !== ''
         && strcasecmp(trim((string) $in[$forbidden]), (string) $buyer['email']) !== 0) {
@@ -101,47 +53,14 @@ $data = Validate::check($in)
     ->maxLen('name', 100, 'Your name')
     ->required('contact', 'Contact number')
     ->in('order_type', ['pickup', 'delivery'], 'Order type')
-    /* Credit terms are offered to a retailer and to nobody else.
-       ------------------------------------------------------------------
-       This passed `false` unconditionally, with a comment saying "the
-       storefront has no retailer selection and no cashier to authorise terms".
-       The first half of that stopped being true: D6 made checkout require a
-       customer session, so the storefront now knows exactly who is buying and
-       whether their account is a retail partnership.
-
-       The second half was never the point. A Net-30 order is not authorised by
-       a cashier at the POS either — it is authorised by the partnership, which
-       staff granted through b2b/decide.php after reviewing the business. The
-       cashier only types it in.
-
-       $isRetailer is re-derived from the DATABASE, inside this request.
-       Auth::customer() re-reads the customers row every request rather than
-       trusting anything cached, so a partnership ended five minutes ago is not
-       a partnership here. Nothing about the client's opinion is consulted: the
-       storefront renders the Net tiles from state.auth.status, which is
-       presentation, and this line is the enforcement. A regular customer who
-       hand-crafts `pay_method: "net30"` gets a validation failure naming the
-       methods they may actually use.
-
-       Taken from Payments::methods() rather than written out here, which is how
-       the POS list and the storefront list came to disagree in the first
-       place. */
+    /* Credit terms are offered only to a current retailer, checked from the database each request, using the list from Payments::methods(). */
     ->in('pay_method', Payments::methods($isRetailer), 'Payment method')
     ->values();
 
-/* Always the session's EMAIL address. Never read from the request. (The
-   DELIVERY address below is the customer's to give — a gift, an office — which
-   is why it is read from the request, and why it is checked so hard.) */
+/* The account email always comes from the session; only the delivery address comes from the request. */
 $email   = (string) $buyer['email'];
 
-/* THE DELIVERY ADDRESS, from the picker's codes — see api/core/Address.php.
-   Names are looked up from the codes, never taken from the request, and each
-   level is checked to belong to the one above.
-
-   Pickup orders store NO address. The field is hidden for pickup, but its value
-   used to be sent and saved anyway, so a pickup order could carry an address it
-   was never shipped to — and the receipt would print it. check(), not
-   resolve(): its errors join the others below so they are reported together. */
+/* Delivery address is resolved from picker codes (see api/core/Address.php); pickup orders store no address. */
 [$ship, $addressErrors] = $data['order_type'] === 'delivery'
     ? Address::check(is_array($in['address'] ?? null) ? $in['address'] : null, true)
     : [null, []];
@@ -149,14 +68,7 @@ $address = $ship['line'] ?? null;
 $refNum  = trim((string) ($in['ref_num'] ?? '')) ?: null;
 $notes   = trim((string) ($in['notes'] ?? '')) ?: null;
 
-/* The payment reference image, as a path from api/uploads/image.php. The
-   checkout "upload" used to be a div that set a boolean and printed
-   "✓ payment-proof.jpg attached (mock)" — no file input existed anywhere on the
-   storefront, and there was no column to put one in.
-
-   Validated the same way products/save.php validates its path: exact shape,
-   and the file must exist. A shopper-supplied string reaches this, so it is
-   never trusted to be what it claims. */
+/* The payment screenshot path must match the upload format and exist on disk. */
 $proofPath = trim((string) ($in['proof_image'] ?? '')) ?: null;
 if ($proofPath !== null && !preg_match('#^/uploads/references/[a-f0-9]{32}\.webp$#', $proofPath)) {
     Response::validation('Please check the highlighted fields.', [
@@ -175,29 +87,18 @@ if (!preg_match('/^[0-9 +\-()]{7,20}$/', $data['contact'])) {
 }
 /* Keyed addr_region, addr_barangay, … — the picker lays them on its own fields. */
 $fieldErrors += $addressErrors;
-/* CASH IS COLLECTED AT THE COUNTER, so it is a pickup method only.
-   On a delivery it would mean handing goods to a courier against money nobody
-   has taken — the shop carries the loss on a refusal at the door, and there is
-   no counter at which to settle it.
-
-   The storefront already hides the tile for a delivery; this is the control.
-   A client can send whatever it likes, and this endpoint is reachable without
-   one. */
+/* Cash is pickup-only, since there is no one to collect it on delivery. */
 if ($data['pay_method'] === 'cash' && $data['order_type'] === 'delivery') {
     $fieldErrors['pay_method'] = 'Cash is available on pickup only. Choose GCash or bank transfer for a delivery.';
 }
-/* Only the transfer methods carry a reference. A credit order has nothing to
-   reference yet — nothing has been paid — and Payments::orderFields() already
-   returns null for both proof columns and 0 for proof_amount when the method is
-   credit, so a reference number sent anyway is dropped rather than stored
-   against a debt that has not been settled. The list is spelled out rather than
-   written as `!== 'cash'` precisely so that adding net30 to the offered methods
-   could not silently start demanding a screenshot for it. */
+/* Only GCash and bank carry a reference; credit orders have nothing to reference yet. */
 if (in_array($data['pay_method'], ['gcash', 'bank'], true) && $refNum === null) {
     $fieldErrors['ref_num'] = 'Enter the reference number of your payment.';
+} else {
+    [$refNum, $refErr] = Payments::checkRef($data['pay_method'], $refNum);
+    if ($refErr !== null) { $fieldErrors['ref_num'] = $refErr; }
 }
-/* Senior citizen and PWD discounts are given at the counter, where the ID can
-   be seen. A discount claimed from a browser is a discount anyone can claim. */
+/* No Senior/PWD discount online, since the ID must be seen at the counter. */
 if (!empty($in['sc_pwd'])) {
     $fieldErrors['sc_pwd'] = 'Senior citizen and PWD discounts are applied at the counter, where your ID can be checked.';
 }
@@ -212,8 +113,11 @@ try {
 
     $ids = array_keys($wanted);
     $ph  = implode(',', array_fill(0, count($ids), '?'));
+    /* Lock the rows first so two checkouts cannot both claim the last units, then read what is left after other customers' reservations. */
+    Database::all("SELECT id FROM products WHERE id IN ($ph) FOR UPDATE", $ids);
     $products = Database::all(
-        "SELECT id, name, price, tax_type, stock, archived FROM products WHERE id IN ($ph)",
+        "SELECT p.id, p.name, p.price, p.tax_type, " . Stock::availableSql('p') . " AS stock, p.archived
+           FROM products p WHERE p.id IN ($ph)",
         $ids
     );
     $byId = [];
@@ -232,8 +136,7 @@ try {
             Response::conflict("We only have {$p['stock']} of {$p['name']} left. Please adjust your order.");
         }
 
-        /* Priced from the database. The storefront's own JS knows a price, but
-           that copy is editable by anyone with a console open. */
+        /* Prices come from the database, never from the browser. */
         $unit = (float) $p['price'];
         $lineTotal = round($unit * $qty, 2);
         $total += $lineTotal;
@@ -241,59 +144,35 @@ try {
                     'lineTotal' => $lineTotal, 'taxType' => $p['tax_type']];
     }
 
-    /* The VAT breakdown, stored with the order (api/core/Tax.php). No senior or
-       PWD discount online; a retailer registered as a withholding agent keeps
-       its tax, which lowers what it transfers — `amountDue` — not the sale. */
+    /* Store the VAT breakdown; a withholding retailer pays a lower amountDue, but the sale total is unchanged. */
     $tax = Tax::compute(
         array_map(static fn(array $l): array => ['gross' => $l['lineTotal'], 'tax_type' => $l['taxType']], $lines),
         null,
-        Tax::withholdingRateFor((string) $buyer['id'])
+        Tax::withholdingRateFor((string) $buyer['id'], (int) array_sum(array_column($lines, 'qty')))
     );
+    /* Add the estimated delivery fee for deliveries (api/core/Shipping.php). */
+    $shipQuote = null;
+    if ($data['order_type'] === 'delivery' && Shipping::ready()) {
+        $shipQuote = Shipping::quote($wanted, Shipping::destinationFromAddress($ship));
+        /* Deliveries to an island/remote area that is paused (e.g. a typhoon) are refused before anything is saved. */
+        if (!empty($shipQuote['paused'])) {
+            $pdo->rollBack();
+            Shipping::refuseIfPaused($shipQuote);
+        }
+        $tax = Shipping::applyTo($tax, $shipQuote);
+    }
+    /* Buying on Net terms adds the term's interest to what is owed (Payments::applyInterest). */
+    $tax   = Payments::applyInterest($tax, $data['pay_method']);
     $total = $tax['total'];
     $due   = $tax['amountDue'];
 
-    /* Who this order belongs to.
-
-       The signed-in customer decides it, and nothing else does. This used to
-       read the posted email and file the order under whichever customer row
-       matched — which meant anyone could post a checkout carrying somebody
-       else's address and write an order into that person's history, inflating
-       their spend and appearing in their My Orders list. No password, no
-       session, no account of their own required.
-
-       Guest checkout no longer exists (D6), so customer_id is never NULL on a
-       storefront order. Registering with an address that already has orders
-       still claims that customer row, so history from before this change
-       follows the account. */
+    /* The order always belongs to the signed-in customer, never to an email in the request. */
     /* Always set: the endpoint refused the request otherwise. */
     $customerId = $buyer['id'];
 
-    /* ---- Credit is refused while an earlier one is overdue -------------
-       A DECISION, recorded because it is a business rule and not an obvious
-       one: a retailer with an unpaid account past its due date cannot open a
-       second credit line. They can still buy — on cash, GCash or bank
-       transfer — so this refuses the terms, not the order.
-
-       The alternative is an unbounded credit line, which nobody asked for.
-       Juris Bay's partnership grants terms; it does not grant a limit, and
-       with no limit in the schema the only bound available is "settle the last
-       one first". That is a stricter rule than a credit ceiling and a much
-       simpler one to explain at the counter, which is where it will be argued
-       about.
-
-       The amount and the date are named. "You have an overdue balance" sends
-       the retailer to a screen to find out which; naming it lets them act.
-       Penalty included via Payments::describeAccount(), because the figure that quietly
-       excludes it is the one that causes the argument.
-
-       Inside the transaction, so the check and the INSERT that follows read the
-       same snapshot. Rolled back explicitly first — Response::conflict() ends
-       the request, and an open transaction at that point would be abandoned
-       rather than closed. Same shape as the stock conflicts above. */
+    /* A retailer with an overdue Net balance cannot open new credit (they can still pay by cash/GCash/bank), and the message names the amount and date. */
     if (Payments::isCredit($data['pay_method'])) {
-        /* Measured with Payments::describeAccount(), so a retailer who has paid
-           part of a late balance is held to what is actually left — the same
-           figure their Payment Schemes page shows them. */
+        /* Use Payments::describeAccount() so part-paid late balances count only what is left. */
         $rate    = Payments::penaltyRate();
         $overdue = array_values(array_filter(
             array_map(
@@ -318,19 +197,20 @@ try {
                 date('j M Y', strtotime((string) $oldest))
             ));
         }
+
+        /* Tier credit budget: lock the customer row so two Net orders at once cannot both slip under the budget. */
+        Database::scalar('SELECT id FROM customers WHERE id = ? FOR UPDATE', [$customerId]);
+        $overBudget = Payments::creditProblem($customerId, (float) $tax['amountDue']);
+        if ($overBudget !== null) {
+            $pdo->rollBack();
+            Response::conflict($overBudget);
+        }
     }
 
     $orderId = 'ORD-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
 
-    /* Same shared decision as the POS (I8). `atTill: false` — nobody watched
-       this payment happen, so a GCash or bank order arrives unverified no
-       matter what the shopper typed, and staff verify it from the reference
-       number and the uploaded image.
-
-       This line and its counterpart in pos/checkout.php were the same
-       copy-pasted expression, `$refNum !== null ? 1 : 0`, in two files. */
-    /* The amount DUE: what a withholding retailer actually transfers, and so
-       what Payment Verification should find on the screenshot. */
+    /* Payment columns via Payments::orderFields() with atTill: false, so online GCash/bank orders always start unverified. */
+    /* The amount due (what a withholding retailer actually transfers), for Payment Verification. */
     $pay = Payments::orderFields($data['pay_method'], $refNum, $proofPath, $due, false);
 
     Database::run(
@@ -348,11 +228,7 @@ try {
                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         array_merge([
             $orderId, $customerId, $data['name'], $email ?: null, $data['contact'], $address,
-            /* THE NAMES AS THEY WERE AT THE SALE, beside the codes. An order is a
-               historical record: if a barangay is renamed or recoded in a later
-               PSGC release, this invoice must still print what the parcel was
-               actually shipped to. `address` holds the composed line every
-               receipt and label already prints. */
+            /* Store the address names as they were at the sale, so later PSGC changes never alter the invoice. */
             $ship['street'] ?? null, $ship['barangay'] ?? null, $ship['city'] ?? null,
             $ship['province'] ?? null, $ship['region'] ?? null, $ship['zip'] ?? null,
             $ship['region_code'] ?? null, $ship['province_code'] ?? null,
@@ -370,33 +246,20 @@ try {
             [$orderId, $l['id'], $l['qty'], $l['price'], $l['taxType']]
         );
     }
+    Shipping::saveOnOrder($orderId, $shipQuote);
+    Payments::saveInterestOnOrder($orderId, $tax);
 
-    /* The receivable, in the SAME transaction as the order (decision I8).
-
-       Payments::openCreditAccount() says it must be, and the reason is worth
-       repeating where it is called: a sale recorded without its receivable is
-       money the business cannot see it is owed, and a receivable without its
-       sale is a debt nobody can explain. Either half alone is worse than
-       neither, so they commit together or not at all.
-
-       The due date is computed by the database with DATE_ADD(CURDATE(), …),
-       not in PHP and certainly not in the browser (D1). */
+    /* Open the receivable in the same transaction as the order, with the due date computed by the database. */
     $credit = null;
     if (Payments::isCredit($data['pay_method'])) {
-        $credit = Payments::openCreditAccount($orderId, $buyer, $data['pay_method'], $total);
-        Payments::recordWithholding($credit['id'], (string) $buyer['id'], $tax['withholdingTax'],
-            (float) $tax['withholdingRate'], null);
+        /* The account bills what the retailer owes: the total less their discount (never a "payment" of the discount). */
+        $credit = Payments::openCreditAccount($orderId, $buyer, $data['pay_method'], $due);
     }
 
-    /* Notify the staff. The Order Queue reads the orders table directly, but a
-       notification row is what makes the bell light up without a refresh.
-
-       Through Notify so the urgency level comes from the one type→level table
-       rather than from this file's opinion of it. A new order is a Warning:
-       it needs accepting today, but nothing is at risk until it ages. */
+    /* Notify staff of the new order (Warning level from Notify's table). */
     Notify::create(
         'new-order',
-        sprintf('New online order from %s — ₱%s', $data['name'], number_format($total, 2)),
+        sprintf('New online order from %s — ₱%s', $data['name'], number_format((float) $due, 2)),
         ['order' => $orderId]
     );
 
@@ -406,39 +269,20 @@ try {
          VALUES (NOW(), ?, NULL, ?, ?)',
         [$data['name'], 'order',
          sprintf('Online order %s placed via storefront — ₱%s (%s, %s), %d line(s).%s',
-             $orderId, number_format($total, 2), $data['pay_method'], $data['order_type'], count($lines),
-             /* A credit sale is the one an auditor will come looking for, so
-                the receivable it opened is named in the same line rather than
-                left to be joined up from payment_accounts by timestamp. */
+             $orderId, number_format((float) $due, 2), $data['pay_method'], $data['order_type'], count($lines),
+             /* Name the opened receivable in the credit sale's audit line. */
              $credit !== null
                  ? sprintf(' Credit account %s opened on %s terms, due %s.',
                      $credit['id'], $credit['scheme'], $credit['dueDate'])
                  : '')]
     );
 
-    /* The cart is emptied HERE, inside the same transaction that wrote the
-       order — not by the browser afterwards.
-
-       site.js used to do `state.cart = []` inline once the response came back,
-       which was the only thing emptying anything because the cart lived in
-       memory. Now that it lives in cart_items (migration 007), where the
-       delete happens decides what a failure costs. Deleting from the client
-       means a checkout that fails after the order is written leaves a cart the
-       shopper has already paid attention to; deleting in a second request
-       after the commit means a dropped connection empties nothing or empties
-       everything, at random. Inside the transaction, an order that does not
-       commit does not touch the cart at all.
-
-       Scoped to $customerId, which is the session's — never the request's. */
+    /* Empty the saved cart inside the same transaction, so a failed order never clears it. */
     Database::run('DELETE FROM cart_items WHERE customer_id = ?', [$customerId]);
 
     $pdo->commit();
 
-    /* The proof is now attached to an order, so it stops being discardable.
-       api/uploads/discard.php deletes screenshots the shopper removed before
-       checking out, and it authorises on the list of paths this session was
-       issued. Leaving a used path on that list would let a customer place an
-       order and then delete the payment evidence staff have to verify. */
+    /* Remove the proof path from the discardable list so the customer cannot delete it after ordering. */
     if ($proofPath !== null && !empty($_SESSION['eb_issued_uploads'])) {
         $_SESSION['eb_issued_uploads'] = array_values(array_filter(
             $_SESSION['eb_issued_uploads'],
@@ -467,12 +311,9 @@ Response::created([
     'total'     => $total,
     'tax'       => $tax,
     'amountDue' => $due,
+    'shipping'  => $shipQuote,
     'placedAt'  => date('Y-m-d H:i'),
-    /* Null for an immediate sale. For a credit sale: the account id, the scheme
-       as payment_accounts stores it, the balance and the due date the DATABASE
-       computed — so the receipt prints the same date the retailer's Payment
-       Schemes page and the cashier's screen will show, rather than one the
-       browser worked out from its own clock. */
+    /* Null for an immediate sale; for a credit sale, the account details and database-computed due date for the receipt. */
     'credit'    => $credit,
     'message'   => $credit !== null
         ? sprintf('Your order has been received on %s terms. The balance is due %s.',

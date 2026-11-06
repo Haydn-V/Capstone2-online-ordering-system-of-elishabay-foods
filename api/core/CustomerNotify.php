@@ -1,14 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * The customer's own notification feed (migration 018) — the bell in the
- * storefront header. Separate from Notify, which is the staff bell.
- *
- * Every write is best-effort: a notification that fails to save must never
- * roll back the order change that caused it, so callers use these AFTER their
- * transaction commits and errors are logged, not thrown.
- */
+/** The customer's own bell notifications (migration 018), saved best-effort after the order change commits so a failed notification never undoes the order change. */
 final class CustomerNotify
 {
     private static ?bool $ready = null;
@@ -66,6 +59,51 @@ final class CustomerNotify
             $verified ? "We received your payment for order #$orderId. Thank you!"
                       : "We could not verify the payment for order #$orderId. Please check your reference or contact us.",
             'profile/dashboard.html', $orderId);
+    }
+
+    /** Retailer payment reminders (3 days before, day before, due day, overdue), created when the customer's bell loads and sent at most once per stage per account. */
+    public static function dueReminders(string $customerId): void
+    {
+        if (!self::ready() || $customerId === '' || !Database::hasTable('payment_accounts')) return;
+        try {
+            $rows = Database::all(
+                Payments::accountSelect() . ' WHERE pa.customer_id = ? AND pa.paid = 0
+                   AND pa.due_date <= DATE_ADD(CURDATE(), INTERVAL 3 DAY)',
+                [$customerId]
+            );
+            foreach ($rows as $r) {
+                $f = Payments::figures((float) $r['balance'], (float) $r['paid_amt'],
+                    (float) $r['paid_by_due'], (float) $r['pending_amt'], (int) $r['days_past_due']);
+                if ($f['settled'] || $f['payable'] <= 0) continue;   /* paid, or proof awaiting review */
+
+                $d = $f['daysUntilDue'];
+                $title = match (true) {
+                    $d < 0   => 'Payment overdue',
+                    $d === 0 => 'Payment due today',
+                    $d === 1 => 'Payment due tomorrow',
+                    default  => 'Payment due in 3 days',
+                };
+                $orderId = (string) ($r['order_id'] ?? '');
+                $link = 'profile/my-payments.html#' . $r['id'];
+                $sent = Database::scalar(
+                    'SELECT 1 FROM customer_notifications
+                      WHERE customer_id = ? AND type = ? AND title = ? AND link = ?',
+                    [$customerId, 'payment', $title, $link]
+                );
+                if ($sent) continue;
+
+                $amt  = '₱' . number_format($f['payable'], 2);
+                $due  = date('j M Y', strtotime((string) $r['due_date']));
+                $ref  = $orderId !== '' ? " for order #$orderId" : '';
+                $msg  = $d < 0
+                    ? "Your {$r['scheme']} balance of $amt$ref was due on $due. Please pay now to avoid further penalties."
+                    : "Your {$r['scheme']} balance of $amt$ref is due on $due. Pay on time to avoid a late penalty.";
+                self::push($customerId, 'payment', $title, $msg, $link,
+                    $orderId !== '' ? $orderId : null);
+            }
+        } catch (Throwable $e) {
+            error_log('[CustomerNotify] dueReminders ' . $e->getMessage());
+        }
     }
 
     /** A return request moved through the staff pipeline. */

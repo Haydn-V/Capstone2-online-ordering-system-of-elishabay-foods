@@ -1,64 +1,13 @@
 "use strict";
-/* ============================================================
-   ONLINE ORDERS — Notifications, Transactions, Queue, Payment
-   Verification, Order Status, History, Receipts, Returns.
-   Ported from the former OrdersModule. Reuses engine.js's shared helpers
-   ($, $$, peso, escHtml, fmtDate, fmtDateTime, toast, openModal,
-   closeModal, getProduct, payMethodLabel, addAuditEntry, dAgo,
-   PRODUCTS, ORDERS, RETURNS, NOTIFICATIONS, STATUS_TRANSITIONS,
-   STATUS_LABEL, RETURN_STEPS, RETURN_STATUS_STEP, adminState).
-   ============================================================ */
+/* ===== ONLINE ORDERS: Notifications, Transactions, Queue, Payment Verification, Order Status, History, Receipts, Returns (uses engine.js helpers and globals) ===== */
 
-/* orderTotal() lived here too, and it was BROKEN AND WINNING.
+/* The duplicate orderTotal() was removed (it recursed forever); engine.js's version is used. */
 
-       function orderTotal(o){
-         if(o && typeof o.total === "number" && isFinite(o.total)) return o.total;
-         if(typeof orderTotal === "function") return orderTotal(o);   // itself
-         return 0;
-       }
-
-   The guard `typeof orderTotal === "function"` is always true, so the fallback
-   branch called itself for ever. It was plainly meant to delegate somewhere
-   else. Worse, this file loads AFTER engine.js, so this copy shadowed the
-   correct one in engine.js:504 for the whole portal — both files.
-
-   Reproduced in the running portal before removal:
-
-       orderTotal({total: 123.45})   -> 123.45
-       orderTotal({total: null})     -> RangeError: Maximum call stack size exceeded
-       orderTotal({total: "245.00"}) -> RangeError: Maximum call stack size exceeded
-
-   The only thing standing between that and a portal-wide crash was every
-   endpoint remembering to cast (float) before returning — and a string is
-   exactly what PDO hands back for a DECIMAL column when a cast is missed.
-
-   Deleted rather than repaired. engine.js's implementation is strictly better:
-   it handles a null order, coerces a numeric string, and falls back to
-   txTotal(o.items) with a console.warn instead of silently returning 0. */
-
-/* Put a screen's "rows per page" control into its merged toolbar row.
-
-   THESE WERE A THIRD BAND. Six render functions each opened their content with
-   a right-aligned .table-toolbar holding nothing but a page-size select, which
-   landed BELOW the tabs-and-filters row as another strip of chrome above the
-   table — the stacking Task 2 exists to remove, rebuilt from JavaScript where
-   the markup change could not reach it.
-
-   The select cannot simply be moved into the view's HTML: which page sizes are
-   offered and which is current are decided at render time. So the render keeps
-   owning it and this mounts it into the row instead of into the content.
-
-   Idempotent — a render replaces its own slot rather than appending a second
-   one, and creates the filter group only if the screen (a tabs-only one, say)
-   has not got one yet. */
+/* Mount a screen's control (like rows per page) into its toolbar row, replacing that screen's previous slot. */
 function mountToolbarControl(modId, slotName, html){
   const row = document.querySelector(`#mod-${modId} .view-toolbar`);
   if(!row){ return null; }                 /* screen has no merged row — leave it be */
-  /* On a screen with tabs the row holds two GROUPS and the control belongs in
-     the right-hand one. On a screen without tabs the row IS that group, and
-     nesting another inside it added a second auto-margin that fought the
-     first — mount straight into the row so the control simply lands after the
-     .vt-spacer the view declares. */
+  /* Mount into the filter group on tabbed screens, or directly into the row otherwise. */
   let group = row.classList.contains("view-toolbar-filters")
     ? row
     : row.querySelector(".view-toolbar-filters");
@@ -67,14 +16,7 @@ function mountToolbarControl(modId, slotName, html){
     group.className = "view-toolbar-filters";
     row.appendChild(group);
   }
-  /* A SCREEN'S TABS DO NOT SHARE A SLOT SET.
-
-     Inventory Management mounts different controls per tab — Stock Overview
-     wants search + level + page size, Adj. Log wants page size alone. Keyed by
-     name only, switching tabs ADDED a slot and left the previous tab's behind,
-     so Adj. Log ended up showing Stock Overview's search box as well as its
-     own control. Any slot other than the one being mounted is this render's
-     responsibility to remove. */
+  /* Remove other tabs' slots so each tab shows only its own controls. */
   group.querySelectorAll("[data-slot]").forEach(el => {
     if(el.dataset.slot !== slotName) el.remove();
   });
@@ -94,12 +36,7 @@ function statusChip(status){
   return `<span class="status-chip status-${status}"><span class="status-dot ${status}"></span>${STATUS_LABEL[status] || status}</span>`;
 }
 
-/* Was a separate flat-badge renderer used only in tables, while cards
-   and modals used statusChip() — same order, two different-looking
-   status pills depending on where you saw it, and the table version
-   collapsed 7 statuses into 4 colors (accepted/shipping both blue,
-   delivered/completed both green). Now delegates to the chip so
-   status looks and reads the same everywhere. */
+/* Table status badges reuse the status chip so status looks the same everywhere. */
 function orderStatusBadge(status){
   return statusChip(status);
 }
@@ -114,29 +51,9 @@ function nowStamp(){
   return dAgo(0) + " " + new Date().toLocaleTimeString("en-PH",{hour:"2-digit",minute:"2-digit",hour12:false});
 }
 
-/* ============================================================
-   NOTIFICATIONS
-   ============================================================ */
+/* ===== NOTIFICATIONS ===== */
 
-/* ============================================================
-   NOTIFICATION SCOPING  —  who sees what
-   ------------------------------------------------------------
-   Every portal used to show the same eleven notifications, which
-   made the bell useless outside Online Orders: filtering them by
-   permission showed Orders 8, Inventory 3 and Cashier ZERO, because
-   nothing in the seed concerned POS, payment schemes or sales.
-
-   Two halves to the fix:
-     1. NOTIF_PERM maps each type to the permission needed to see it,
-        so a role's feed follows from ROLE_PERMISSIONS. Edit a role in
-        Roles & Permissions and its notifications change with it —
-        there is no second list to keep in sync.
-     2. buildDerivedNotifications() generates the alerts Cashier and
-        Inventory actually need from live records (PAYMENT_ACCOUNTS,
-        BATCHES, ORDERS) instead of hand-written seed rows, so they
-        stay true as the data moves. Each becomes a real query once
-        there is a database behind this.
-   ============================================================ */
+/* ===== NOTIFICATION SCOPING: NOTIF_PERM maps each type to the permission needed to see it, and buildDerivedNotifications() creates Cashier/Inventory alerts from live records ===== */
 const NOTIF_PERM = {
   "new-order":     "orders.view",
   "payment":       "orders.accept",
@@ -149,32 +66,11 @@ const NOTIF_PERM = {
   "scheme-due":    "payments.manage",
   "sales-summary": "sales.report",
   "audit":         "audit.view",
-  /* Only the people who can act on it. A low-rating alert names a customer,
-     an order and a complaint, and the one useful response is to open the
-     review — which needs reviews.moderate. */
+  /* Low-rating alerts are only for roles with reviews.moderate. */
   "review":        "reviews.moderate",
 };
 
-/* ============================================================
-   NOTIFICATION URGENCY  —  three levels, one ordering
-   ------------------------------------------------------------
-   Every notification used to be equal: newest-first, and a plain
-   count on the bell. An expired batch sorted underneath an order
-   somebody had completed an hour later, and nothing in the topbar
-   distinguished "three things happened" from "something is on fire".
-
-   THE LEVEL IS NOT DECIDED HERE. Rows from the database carry a
-   stored `priority`, written by api/core/Notify.php at the moment
-   the event happened. The type->level table below is fetched from
-   that same helper (list.php returns it as meta.priorityMap) and is
-   used ONLY for the notifications this file derives client-side
-   from live records, which have no database row to carry a level.
-
-   The constant is a fallback for the window before the first
-   notifications request resolves, and for a load that fails. It is
-   the same table PHP holds; if the two ever disagree, PHP wins,
-   because it is what actually reaches the ORDER BY.
-   ============================================================ */
+/* ===== NOTIFICATION URGENCY: stored rows carry their level from api/core/Notify.php; this fallback table only levels browser-derived alerts until the server's map loads (PHP wins if they differ) ===== */
 const NOTIF_LEVELS = ["critical", "warning", "info"];
 
 const NOTIF_PRIORITY_FALLBACK = {
@@ -192,14 +88,10 @@ const NOTIF_PRIORITY_FALLBACK = {
   "sales-summary": "info",
 };
 
-/* Replaced by the server's copy on the first successful load — see
-   loadOpsData() in engine.js. */
+/* Replaced by the server's copy on first load (see loadOpsData()). */
 let NOTIF_PRIORITY_MAP = { ...NOTIF_PRIORITY_FALLBACK };
 
-/* What each level LOOKS LIKE. A label and a glyph as well as a colour,
-   because a coloured dot alone is unreadable to anyone who cannot
-   separate the hues — and, on a small pill against two different theme
-   backgrounds, to plenty of people who can. */
+/* Each level has a label and icon as well as a colour. */
 const NOTIF_LEVEL_META = {
   critical: {
     label: "Critical",
@@ -224,22 +116,11 @@ function notifPriority(n){
 function notifLevelChip(n){
   const level = notifPriority(n);
   const meta  = NOTIF_LEVEL_META[level] || NOTIF_LEVEL_META.info;
-  /* The word is inside the pill, not a title or an aria-label, so it is
-     there for everyone rather than only for a screen reader or a mouse. */
+  /* The level word is visible inside the pill. */
   return `<span class="notif-level notif-level-${level}">${meta.icon}${meta.label}</span>`;
 }
 
-/* THE ONE ORDER. Unread first, then urgency, then newest.
-
-   Mirrors Notify::orderBy() in PHP, and has to: the server already
-   returns rows in this order, but the three lists on screen merge those
-   rows with the client-derived ones, so the merged array has to be
-   re-sorted by the same rule or the derived alerts would land wherever
-   concat() put them.
-
-   Unread outranks urgency deliberately. Read state is shared across the
-   team, so "read" means somebody handled it — a critical alert already
-   dealt with should not sit above the thing that just happened. */
+/* Sort unread first, then urgency, then newest, mirroring Notify::orderBy() so merged lists stay in order. */
 function sortByUrgency(list){
   return [...list].sort((a,b)=>{
     if(a.read !== b.read) return a.read ? 1 : -1;
@@ -249,13 +130,10 @@ function sortByUrgency(list){
   });
 }
 
-/* Built lazily; rebuilt whenever inventory activity adds an audit row.
-   NOTIF_READ remembers which derived alerts have been read, so a rebuild
-   doesn't resurrect them as unread. */
+/* Derived alerts are built lazily and rebuilt on new audit activity; NOTIF_READ remembers which were read. */
 let DERIVED_NOTIFS = null;
 const NOTIF_READ = new Set();
-/* Audit rows raised during this session are unread; the seeded history is
-   not, so the badge counts new activity rather than old records. */
+/* Only audit rows from this session count as unread. */
 const LIVE_AUDIT_IDS = new Set();
 
 function buildDerivedNotifications(){
@@ -269,12 +147,7 @@ function buildDerivedNotifications(){
       const days = Math.round(
         (new Date(acct.dueDate + "T00:00:00") - new Date(TODAY_ISO())) / 86400000);
       if(overdue){
-        /* Explicitly critical, not merely "scheme-due". The level of a
-           derived row depends on its STATE, not only its type: a payment
-           coming due next week and one that is already late are the same
-           type and are not the same problem. Past the due date is money
-           the business is owed and is not getting, which is the Critical
-           definition. */
+        /* An overdue payment is Critical (one coming due is not). */
         out.push({ id:"nd-sch-"+acct.id, type:"scheme-due", priority:"critical",
           accountId:acct.id, read:false,
           time: acct.dueDate + " 08:00",
@@ -296,8 +169,7 @@ function buildDerivedNotifications(){
       const name = prod ? prod.name : b.productId;
 
       if(b.labStatus === "failed"){
-        /* A failed lot is stock that must not be sold and may already have
-           been — the same shape of problem as an expired one. */
+        /* A failed QA lot is Critical. */
         out.push({ id:"nd-qa-"+b.id, type:"batch-qa", priority:"critical", batchId:b.id, read:false,
           time: b.prodDate + " 09:00",
           msg: "Batch " + b.lotCode + " (" + name + ") FAILED lab testing — pulled from sale" });
@@ -307,19 +179,7 @@ function buildDerivedNotifications(){
           msg: "Batch " + b.lotCode + " (" + name + ") is awaiting lab results" });
       }
 
-      /* ALREADY-EXPIRED LOTS ARE NOT DERIVED HERE ANY MORE.
-
-         Stock on the shelf that can no longer be sold is Critical, and a
-         Critical alert has to be a durable row: it must survive a page
-         load, it must be markable as read by whoever deals with it, and
-         it must be orderable by the server. Notify::syncExpiredBatches()
-         materialises those on read — see that method for why it is a lazy
-         insert rather than a scheduler.
-
-         The 30/90-day warning stays here, because it is a countdown that
-         has to be recomputed against today on every render and nothing is
-         actually wrong yet. Excluding d < 0 is what keeps the two from
-         producing the same alert twice. */
+      /* Expired lots are stored server-side (Notify::syncExpiredBatches()); only the upcoming-expiry warning is derived here. */
       if(typeof daysUntilExpiry === "function" && b.remainingQty > 0){
         const d = daysUntilExpiry(b.expiryDate);
         if(d >= 0 && d <= 90){
@@ -332,8 +192,7 @@ function buildDerivedNotifications(){
     });
   }
 
-  /* --- Cashier: yesterday's takings, from the same ledger the Sales
-         Report reads. Walk-in only: that is the till Cashier works. --- */
+  /* Cashier: yesterday's walk-in takings. */
   if(typeof ORDERS !== "undefined"){
     const day = ORDERS.filter(o => o.type === "walk-in" && o.date === TODAY_ISO());
     if(day.length){
@@ -345,9 +204,7 @@ function buildDerivedNotifications(){
     }
   }
 
-  /* --- Inventory: restock, bulk replenish, stock adjustment and
-         archive/restore, read out of the audit log so the Inventory feed
-         mirrors what the Audit Log screen records. --- */
+  /* Inventory: restock, replenish, adjustment and archive activity from the audit log. */
   if(typeof AUDIT_LOG !== "undefined"){
     AUDIT_LOG.forEach(function(entry){
       if(auditIsInventoryActivity(entry)){
@@ -360,17 +217,7 @@ function buildDerivedNotifications(){
 }
 
 
-/* ------------------------------------------------------------
-   INVENTORY ACTIVITY IN THE AUDIT FEED
-
-   Restock, bulk replenish, stock adjustment and archive/restore all
-   funnel through addAuditEntry(), so one hook there covers the four
-   rather than patching each call site in admin-inventory.js.
-
-   They are matched by audit `type` plus the wording the inventory
-   functions already write, so no existing audit types had to be
-   renamed — the Audit Log screen keeps working untouched.
-   ------------------------------------------------------------ */
+/* All inventory activity goes through addAuditEntry(), so one hook matches it by audit type and wording. */
 const AUDIT_NOTIF_RULES = [
   { type:"restock",   match:/^Replenish \(bulk\)/i,          kind:"replenish" },
   { type:"restock",   match:null,                            kind:"restock"   },
@@ -379,9 +226,7 @@ const AUDIT_NOTIF_RULES = [
   { type:"inventory", match:null,                            kind:"inventory" },
 ];
 
-/* `kind` drives only the icon and its colour. The notification `type`
-   stays "audit", so permission scoping and the Audit Log tab are
-   unaffected — twelve identical slate shields just read as noise. */
+/* kind only changes the icon; the type stays "audit". */
 function auditKind(entry){
   const rule = AUDIT_NOTIF_RULES.find(function(r){
     return r.type === entry.type && (!r.match || r.match.test(entry.desc || ""));
@@ -404,18 +249,14 @@ function auditToNotification(entry, unread){
   };
 }
 
-/* Wrap addAuditEntry so inventory activity raises a notification the
-   moment it happens, without the four callers needing to know. */
+/* Wrap addAuditEntry so inventory activity raises a notification immediately. */
 if(typeof addAuditEntry === "function"){
   const _addAuditEntry = addAuditEntry;
   addAuditEntry = function(type, desc){
-    /* Reads the transient object returned by addAuditEntry rather than
-       AUDIT_LOG[0]. It used to take the head of AUDIT_LOG, which only worked
-       because addAuditEntry had just pushed a fake row there. */
+    /* Read the object returned by addAuditEntry, not AUDIT_LOG[0]. */
     const entry = _addAuditEntry(type, desc);
     if(auditIsInventoryActivity(entry)){
-      /* Force a rebuild so the new row is picked up by the same derivation
-         path as the historical ones — one source of truth, no duplicates. */
+      /* Force a rebuild so the new row goes through the normal derivation. */
       DERIVED_NOTIFS = null;
       LIVE_AUDIT_IDS.add(entry.id);
       if(typeof initNotifBadge === "function") initNotifBadge();
@@ -425,21 +266,7 @@ if(typeof addAuditEntry === "function"){
   };
 }
 
-/* Throw away the derived cache so the next read rebuilds it.
-
-   THE CACHE IS BUILT ON FIRST READ, AND THE FIRST READ IS TOO EARLY.
-   applySignedInUser() calls initNotifBadge() the moment a session is
-   confirmed, which reads the list — at which point PAYMENT_ACCOUNTS,
-   BATCHES and ORDERS are still empty, because loadOpsData() has not run.
-   DERIVED_NOTIFS was then cached as [] and nothing ever cleared it, so a
-   Cashier's overdue-payment alerts and an Inventory user's expiry alerts
-   were built from nothing and stayed that way for the whole session.
-
-   That went unnoticed while the dashboard's System Notifications panel
-   built its own separate list at render time, after the data had landed —
-   it hid the fault by not using this path at all. Now that all three
-   readers share one list, the cache has to be invalidated when the records
-   it is derived FROM arrive. */
+/* Invalidate the derived cache once the data loads, since the first read happens before the records arrive. */
 function refreshDerivedNotifications(){
   DERIVED_NOTIFS = null;
   if(typeof initNotifBadge === "function") initNotifBadge();
@@ -457,8 +284,7 @@ function allNotifications(){
   return NOTIFICATIONS.concat(DERIVED_NOTIFS);
 }
 
-/* What the signed-in role is allowed to see. Types with no permission
-   mapped are visible to everyone. */
+/* Notifications the signed-in role may see (unmapped types are visible to all). */
 function visibleNotifications(){
   return allNotifications().filter(function(n){
     const perm = NOTIF_PERM[n.type];
@@ -466,9 +292,7 @@ function visibleNotifications(){
   });
 }
 
-/* Today, as the seed data understands it. INV_TODAY lives in
-   admin-inventory.js, which loads after this file — resolved at call
-   time, not parse time, so the reference is safe. */
+/* Today's date, from INV_TODAY in inventory.js (resolved at call time). */
 function TODAY_ISO(){
   return (typeof INV_TODAY !== "undefined" && INV_TODAY) ? INV_TODAY : "2026-06-17";
 }
@@ -481,17 +305,7 @@ function initNotifBadge(){
   const badge = $("#sidebar-notif-badge");
   if(badge) badge.textContent = count > 0 ? count : "";
 
-  /* TWO FACTS, ONE BADGE. The number answers "how many things happened";
-     the alert styling answers "is any of it on fire". Someone glancing at
-     the topbar needs the second without opening anything, and the count
-     alone never gave it — nine completed orders and one out-of-stock
-     product both read as a number in a red circle.
-
-     The count stays visible in both states rather than being replaced by
-     the critical count, because "1" when nine things are waiting would be
-     a worse lie than the one being fixed. The title and aria-label spell
-     the split out, since a border colour is not a fact anyone should have
-     to infer. */
+  /* The badge shows the unread count, with a separate critical style; the exact split is in the title and aria-label. */
   const topBadge = $("#notif-badge");
   if(topBadge){
     topBadge.textContent = count > 9 ? "9+" : (count > 0 ? count : "");
@@ -517,11 +331,9 @@ function initNotifBadge(){
 function renderNotifDropdown(){
   const list = $("#nd-list");
   if(!list) return;
-  /* Same order as the module and the dashboard panel, from the same
-     function — the dropdown used to sort by time alone, which put a
-     completed order above an out-of-stock product in the one list that is
-     only six rows long. */
-  const recent = sortByUrgency(visibleNotifications()).slice(0,6);
+  /* Same sort as the Notifications module and dashboard panel. */
+  /* Unread only: read rows leave the bell (full history stays in the Notifications module). */
+  const recent = sortByUrgency(visibleNotifications().filter(n => !n.read)).slice(0,6);
   list.innerHTML = recent.map(n => `
     <div class="nd-item ${n.read ? "" : "unread"}" data-ndnotif="${n.id}" role="button" tabindex="0">
       <div class="nd-item-icon type-${n.kind || n.type}">${NOTIF_ICONS[n.kind] || NOTIF_ICONS[n.type] || ""}</div>
@@ -545,8 +357,7 @@ function renderNotifDropdown(){
       navigate("notifications");
     };
     el.addEventListener("click", go);
-    /* The row is a div acting as a button, so it has to answer Enter and Space
-       itself — the browser only does that for real buttons. */
+    /* The row is a div acting as a button, so it handles Enter and Space itself. */
     el.addEventListener("keydown", e=>{
       if(e.key === "Enter" || e.key === " "){ e.preventDefault(); go(); }
     });
@@ -558,9 +369,7 @@ function initNotifBell(){
   const btn  = $("#notif-btn");
   if(!wrap || !btn) return;
 
-  /* aria-expanded has to move with the class, or the panel is open for
-     sighted users and closed for everybody else. One setter so the two
-     cannot drift — same shape as initUserDropdown(). */
+  /* Keep aria-expanded in step with the open class. */
   const setOpen = open => {
     wrap.classList.toggle("open", open);
     btn.setAttribute("aria-expanded", open ? "true" : "false");
@@ -575,10 +384,7 @@ function initNotifBell(){
   });
   document.addEventListener("click", ()=> setOpen(false));
 
-  /* Escape closes and RETURNS FOCUS to the bell. Neither existed: the panel
-     could only be dismissed by clicking somewhere else, so a keyboard user who
-     opened it had no way back out — focus stayed where it was while the panel
-     vanished under a click they had no reason to make. */
+  /* Escape closes the panel and returns focus to the bell. */
   document.addEventListener("keydown", (e)=>{
     if(e.key !== "Escape" || !wrap.classList.contains("open")) return;
     setOpen(false);
@@ -592,16 +398,9 @@ function initNotifBell(){
   });
   renderNotifDropdown();
 }
-/* NOT registered on DOMContentLoaded.
+/* Called by init() after the shell is injected, not on DOMContentLoaded (the bell does not exist yet then). */
 
-   #topbar-notif and #notif-btn live in portal/shell.html, which
-   Core/module-loader.js injects AFTER DOMContentLoaded has already fired.
-   Binding here meant the guard above found no bell, returned quietly, and
-   the notification dropdown never opened — with no error to show for it.
-   init() in admin.js calls this once the shell is in the DOM. */
-
-/* Groups the raw per-event notification `type` values into the
-   broader categories shown as filter tabs. */
+/* Group notification types into filter-tab categories. */
 const NOTIF_CATEGORY = {
   "new-order": "orders", "payment":"payments", "inventory":"inventory",
   "hold":"status", "completed":"status", "return":"returns", "audit":"audit",
@@ -651,21 +450,12 @@ function renderNotifications(){
     const scoped = visibleNotifications();
     tabsEl.innerHTML = NOTIF_TABS.map(t=>{
       const inTab = t.id==="all" ? scoped : scoped.filter(n=>NOTIF_CATEGORY[n.type]===t.id);
-      /* Hide a tab this role can never fill — an Inventory user has no
-         use for an empty "Refunds & Returns" filter. Presence is decided by
-         the TOTAL; the badge is decided by the unread count below. */
+      /* Hide tabs this role can never fill. */
       if(t.id !== "all" && inTab.length === 0) return "";
-      /* UNREAD, not total. Read notifications are a record and a tab reading
-         "Audit Log 14" said only that fourteen things had ever happened. It
-         also reconciles the two places this number appears: these badges are
-         the same unread rows the topbar bell counts, split by category, so
-         the tabs and the bell can no longer disagree. */
+      /* Tab badges count unread notifications, matching the bell. */
       const unread = inTab.filter(n=>!n.read).length;
       const active = (adminState.notifFilter||"all")===t.id;
-      /* Every tab here gets the unread rule, "All" included: elsewhere All is a
-         record tab, but this whole screen is a queue and its unread total is
-         the one number a reader wants. Hence tabBadgeAlways rather than the
-         WORK_TABS gate. */
+      /* Every tab here, including All, shows its unread count (tabBadgeAlways). */
       const b = tabBadgeAlways(t.label, unread, "unread");
       return `<button class="return-tab-btn ${active?"active":""}" data-notiftab="${t.id}"
                       role="tab" aria-selected="${active}"
@@ -682,11 +472,7 @@ function renderNotifications(){
   }
 
   const filter = adminState.notifFilter || "all";
-  /* Urgency is the default, and it is the order the bell and the dashboard
-     panel are fixed at, so the three agree unless somebody deliberately
-     asks this screen for something else. The other options stay: this is
-     the one screen where "show me everything oldest-first" is a reasonable
-     thing to want. */
+  /* Urgency is the default sort, matching the bell and dashboard. */
   const sort   = adminState.notifSort || "urgency";
   let list = visibleNotifications().filter(n=> filter==="all" || NOTIF_CATEGORY[n.type]===filter);
   list = sort === "urgency" ? sortByUrgency(list) : [...list].sort((a,b)=>{
@@ -729,22 +515,12 @@ function renderNotifications(){
   if(markAllBtn) markAllBtn.onclick = markAllRead;
 }
 
-/* Read state is stored server-side now. It used to live in an in-memory Set,
-   so marking something read survived exactly until the next page load — and
-   every staff member carried their own private idea of what was unread. */
+/* Read state is stored on the server, shared by the team. */
 async function markRead(id){
   const n = allNotifications().find(n=>n.id===id);
   if(!n) return;
 
-  /* D11: the server first, then the badge.
-
-     This marked it read locally and fired the request afterwards, swallowing
-     any error — so a failed write showed as read and silently came back unread
-     on the next load. Read state is shared across the team, which makes a
-     wrong answer here worse than a slow one.
-
-     A derived notification (built from an audit row) has no database row of its
-     own, so NOT_FOUND is expected and means "nothing to persist", not failure. */
+  /* Mark read on the server first, then update the badge; derived notifications return NOT_FOUND, which is fine. */
   try {
     await EbApi.post("notifications/read.php", { id });
   } catch(err){
@@ -759,9 +535,7 @@ async function markRead(id){
 }
 
 async function markAllRead(){
-  /* D11: server first. The success toast used to fire regardless of whether
-     the request had worked, so "All notifications marked read" appeared even
-     when nothing had been. */
+  /* Server first, then the success toast. */
   try {
     await EbApi.post("notifications/read.php", { all: true });
   } catch(err){
@@ -769,43 +543,15 @@ async function markAllRead(){
     toast("Could not mark notifications read.", "err");
     return;
   }
-  /* Only what this role can see — marking another department's alerts
-     read on their behalf would be wrong. */
+  /* Only mark what this role can see. */
   visibleNotifications().forEach(function(n){ n.read = true; NOTIF_READ.add(n.id); });
   initNotifBadge();
   renderNotifications();
   toast("All notifications marked read", "ok");
 }
 
-/* ============================================================
-   ONLINE TRANSACTIONS
-   ============================================================ */
-/* ============================================================
-   WHAT A NUMBER ON A TAB MEANS
-   ------------------------------------------------------------
-   One rule, portal-wide: a badge counts THINGS WAITING FOR YOU, and a
-   tab with nothing waiting shows no badge.
-
-   Every tab used to carry one, All and Completed and Cancelled
-   included, which made the number a row count — "how many of these
-   exist". That tells a staff member nothing about what to do next, and
-   it means the same digit signifies work on one tab and history on the
-   one beside it.
-
-   WHICH TABS QUALIFY. A queue is a state something is stuck in until a
-   person acts; a record is a state it has finished in.
-
-     pending / on-hold   an order waiting to be accepted or released
-     received…approved   a return still moving through its pipeline —
-                         approved included, because an approved refund
-                         is not a paid one
-     unread              a notification nobody has read
-
-   Everything else — All, Accepted, Shipping, Delivered, Completed,
-   Cancelled, Rejected, Processed — is a record and carries no badge.
-
-   NOT A SET OF SCREEN-LOCAL LISTS. One table here, consumed by all five
-   rows, so a sixth screen cannot quietly invent a seventh meaning. */
+/* ===== ONLINE TRANSACTIONS ===== */
+/* ===== TAB BADGES count only things waiting for you (pending/on-hold orders, in-progress returns, unread notifications), with one shared table for every screen ===== */
 const WORK_TABS = new Set([
   /* Orders: Online Transactions, Order Queue, Payment Verification. */
   "pending", "on-hold",
@@ -813,33 +559,11 @@ const WORK_TABS = new Set([
   "received", "validated", "eligible", "approved",
 ]);
 
-/* Two digits is all the row can hold without the pills reflowing; past
-   that the exact figure stops being the useful part anyway. */
+/* Cap the badge at two digits. */
 const BADGE_MAX = 99;
 
-/**
- * The inner HTML of one tab, and the aria-label that explains it.
- *
- * THE LABEL MATTERS AS MUCH AS THE BADGE. A bare number in a span is
- * announced as a stray digit after the tab name — "Pending, 7" could be a
- * quantity, a page number or a code. The tab gets an explicit
- * "Pending, 7 awaiting action" instead, so it is understandable without
- * seeing the badge at all.
- *
- * @param {string} id     tab id, matched against WORK_TABS
- * @param {string} label  visible text
- * @param {number} count  how many are waiting
- * @param {string} noun   what is being counted, for the spoken label
- *
- * `aria` is interpolated into a double-quoted attribute by the callers and is
- * escaped with escHtml() there — which escapes `"` as well as the angle
- * brackets, so it is safe for an attribute value. There is no escAttr() in the
- * portal; site.js has one, but that is the storefront's own bundle.
- */
-/* Every tab on the Notifications screen is a queue — the screen exists to be
-   cleared — so unread is meaningful on all of them, including All. This skips
-   the WORK_TABS gate and keeps everything else: nothing at zero, the same cap,
-   the same spoken label. */
+/** Tab inner HTML plus an aria-label like "Pending, 7 awaiting action" (escape aria with escHtml() when used in an attribute). */
+/* Notification tabs always show unread counts (skipping the WORK_TABS gate). */
 function tabBadgeAlways(label, count, noun){
   const n = Number(count) || 0;
   if(n <= 0) return { html: escHtml(label), aria: label };
@@ -862,23 +586,28 @@ function tabBadge(id, label, count, noun = "awaiting action"){
   };
 }
 
-const TXN_TABS = ["all","pending","accepted","shipping","delivered","completed","on-hold","cancelled"];
+const TXN_TABS = ["all","pending","accepted","shipping","delivered","completed","cancelled"];
 
 function onlineOrders(){
   return ORDERS.filter(o=>o.type==="online");
 }
 
-/* Online Transactions — server-paged.
+/* Online Transactions is server-paged, with search and status filtering in the query. */
+/* Payment note under the method on Online Transactions and Order Queue: cash pickup, credit terms and walk-in deliveries never need a proof upload. */
+function paymentNote(o){
+  const note = (text, style) => `<span style="font-weight:${style ? 700 : 600};font-size:.78rem;${style || "color:var(--text-muted)"}">${text}</span>`;
+  if(o.proof?.uploaded) return note("✓ Proof uploaded", "color:var(--ok-ink)");
+  if(o.type === "walk-in") return note("Paid at the counter");
+  if(o.payMethod === "cash" && o.orderType === "pickup") return note("Pay on pickup");
+  if(isCreditOrder(o)) return note("Not yet paid for this term");
+  return note("⚠ No proof yet", "color:var(--out-ink)");
+}
 
-   Search and status filtering both moved into the query. The search box used to
-   match only whatever rows happened to be loaded, so searching for an older
-   order found nothing while insisting there were no matches. */
 function renderOnlineTxns(){
   const tabsEl = $("#txn-status-tabs");
   const filter = adminState.onlineTxnFilter;
 
-  /* Rows-per-page belongs in the merged toolbar row, not in a band of its
-     own above the table — see mountToolbarControl(). */
+  /* Rows per page goes in the toolbar row (see mountToolbarControl()). */
   mountToolbarControl("online-txns", "page-size", `
     <select class="filter-select" id="online-txn-page-size" aria-label="Rows per page">
     <option value="10">10 per page</option>
@@ -888,8 +617,8 @@ function renderOnlineTxns(){
 
   $("#txn-content").innerHTML = `
     <div class="table-wrap viewport-bound">
-      <table class="data-table">
-        <thead><tr><th>Order ID</th><th>Customer</th><th>Date</th><th>Payment</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
+      <table class="data-table otx-table">
+        <thead><tr><th>Order</th><th>Customer</th><th>Placed</th><th>Payment</th><th class="num">Total</th><th>Status</th><th class="otx-act-h">Actions</th></tr></thead>
         <tbody id="online-txn-tbody"></tbody>
       </table>
     </div>
@@ -903,20 +632,34 @@ function renderOnlineTxns(){
     adminState.onlineTxnPager,
     () => $("#online-txn-tbody"),
     (page, limit) => EbApi.get("orders/list.php", {
-      page, limit, type: "online", with_deliveries: 1, sort: "newest",
+      /* Most recently updated or processed first (latest status change, delivery or completion). */
+      page, limit, type: "online", with_deliveries: 1, sort: "activity",
       status: filter === "all" ? null : filter,
       search: $("#txn-search")?.value || null,
     }),
     o => `<tr>
-      <td class="mono-sm">${escHtml(o.id)}${o.type === "walk-in" ? ` <span class="badge badge-warn" title="Rung up at the POS as a delivery. Paid at the counter; shipped and tracked here like an online order.">Walk-in delivery</span>` : ""}</td>
-      <td>${escHtml(o.customer)}</td>
-      <td class="muted">${fmtDateTime(o.datetime)}</td>
-      <td>${escHtml(payMethodLabel(o.payMethod))}</td>
-      <td style="font-weight:700">${peso(o.total)}</td>
+      <td>
+        <div class="otx-id">${escHtml(o.id)}</div>
+        <div class="otx-tags">
+          <span class="otx-tag">${o.orderType === "delivery" ? "Delivery" : "Pickup"}</span>
+          ${o.itemCount ? `<span class="otx-tag">${o.itemCount} item${o.itemCount === 1 ? "" : "s"}</span>` : ""}
+          ${o.type === "walk-in" ? `<span class="badge badge-warn" title="Rung up at the POS as a delivery. Paid at the counter; shipped and tracked here like an online order.">Walk-in delivery</span>` : ""}
+        </div>
+      </td>
+      <td><div class="otx-cust">
+        <span class="otx-avatar" aria-hidden="true">${escHtml(String(o.customer || "?").trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase())}</span>
+        <div><div class="otx-name">${escHtml(o.customer)}</div>${o.customerType === "retailer" ? `<div class="otx-sub">Retail partner</div>` : ""}</div>
+      </div></td>
+      <td>
+        <div class="otx-date">${fmtDateTime(o.datetime)}</div>
+        ${o.lastActivity && fmtDateTime(o.lastActivity) !== fmtDateTime(o.datetime) ? `<div class="otx-sub">Updated ${fmtDateTime(o.lastActivity)}</div>` : ""}
+      </td>
+      <td><div class="otx-pay">${escHtml(payMethodLabel(o.payMethod))}</div>${paymentNote(o)}</td>
+      <td class="num"><span class="otx-total">${orderDueHtml(o)}</span></td>
       <td>${orderStatusBadge(o.status)}</td>
-      <td><div class="td-actions">
+      <td><div class="td-actions otx-actions">
         <button class="btn btn-ghost btn-sm" data-view-order="${o.id}">View</button>
-        ${STATUS_TRANSITIONS[o.status]?.length ? `<button class="btn btn-gold btn-sm" data-status-order="${o.id}">Update</button>` : ""}
+        ${nextStatuses(o).length ? `<button class="btn btn-gold btn-sm" data-status-order="${o.id}">Update</button>` : ""}
       </div></td>
     </tr>`,
     {
@@ -970,27 +713,16 @@ function wireOrderRowActions(scopeSel){
   });
 }
 
-/* ============================================================
-   ORDER QUEUE
-   ============================================================ */
-/* Queue triage covers everything still short of shipping — statuses
-   past that point belong to Order Status / History instead. "All"
-   lets staff see the full pre-fulfillment picture in one tab. */
-const QUEUE_TABS = ["all","pending","accepted","on-hold"];
+/* ===== ORDER QUEUE ===== */
+/* Queue covers everything before shipping; All shows that whole picture. */
+const QUEUE_TABS = ["all","pending","accepted"];
 
-/* Order Queue — server-paged.
-
-   The tab counts come from meta.counts, which the endpoint computes across the
-   whole set with the status filter removed. Deriving them from the page would
-   have shown at most `limit` on every badge — a queue of 400 pending orders
-   reading "Pending 10". */
+/* Order Queue is server-paged, with tab counts from meta.counts across the whole set. */
 function renderQueue(){
   const tabsEl = $("#queue-status-tabs");
 
-  /* Shell first: the tabs and the paging chrome exist before rows arrive, so
-     the loading state has somewhere to live. */
-  /* Rows-per-page belongs in the merged toolbar row, not in a band of its
-     own above the table — see mountToolbarControl(). */
+  /* Draw the tabs and pager first so the loading state has a place. */
+  /* Rows per page goes in the toolbar row (see mountToolbarControl()). */
   mountToolbarControl("ordersqueue", "page-size", `
     <select class="filter-select" id="queue-page-size" aria-label="Rows per page">
     <option value="10">10 per page</option>
@@ -1011,9 +743,7 @@ function renderQueue(){
     </div>`;
 
   const filter = adminState.queueFilter;
-  /* "All" means everything short of shipping — statuses past that belong to
-     Order Status and History. Sent as a comma list rather than filtered after
-     the fact. */
+  /* All means every status before shipping, sent as a comma list. */
   const statuses = filter === "all" ? QUEUE_TABS.slice(1).join(",") : filter;
 
   EbPaginate.list(
@@ -1027,8 +757,7 @@ function renderQueue(){
       const hasProof = o.proof.uploaded;
       /* One line in the table; the full list and address are in Details. */
       const itemText = o.items.map(it => `${it.name || it.id} ×${it.qty}`).join(", ");
-      /* Numbered by position on this page, and labelled as such — a bare "#1"
-         on page 3 reads as "first in the queue". */
+      /* Row numbers continue across pages. */
       const seq = ((adminState.queuePager.page || 1) - 1) * (adminState.queuePager.pageSize || 10) + i + 1;
       return `<tr>
       <td class="muted" style="font-weight:700">${seq}</td>
@@ -1036,10 +765,8 @@ function renderQueue(){
       <td>${escHtml(o.customer)}</td>
       <td class="muted" style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(itemText)}">${escHtml(itemText)}</td>
       <td class="muted">${fmtDateTime(o.datetime)}</td>
-      <td>${escHtml(payMethodLabel(o.payMethod))}<br>${hasProof
-        ? `<span style="color:var(--ok-ink);font-weight:700;font-size:.78rem">✓ Proof uploaded</span>`
-        : `<span style="color:var(--out-ink);font-weight:700;font-size:.78rem">⚠ No proof yet</span>`}</td>
-      <td style="font-weight:700">${peso(o.total)}</td>
+      <td>${escHtml(payMethodLabel(o.payMethod))}<br>${paymentNote(o)}</td>
+      <td style="font-weight:700">${orderDueHtml(o)}</td>
       <td>${orderStatusBadge(o.status)}</td>
       <td><div class="td-actions">
         <button class="btn btn-ghost btn-sm" data-view-order="${o.id}">Details</button>
@@ -1085,30 +812,8 @@ function renderQueue(){
   );
 }
 
-/* ============================================================
-   PAYMENT VERIFICATION
-   ============================================================ */
-/* The customer's payment screenshot, for the two screens that verify payments.
-
-   AN UPLOADED REFERENCE NOBODY CAN OPEN HAS NOT FIXED THE WORKFLOW.
-   That is why defect 3.4 is not closed by making the checkout upload work: the
-   whole point of the file is that a member of staff looks at it before
-   approving money.
-
-   Three states, each said out loud rather than left to inference:
-     - an image        shown, and clickable to open full size in a new tab,
-                       because a GCash screenshot at thumbnail size is not
-                       readable
-     - a reference     "reference number only" — which is what every order
-       number only     placed before this existed looks like. This box used to
-                       render the words "Proof Uploaded" UNCONDITIONALLY, over
-                       nothing, telling staff a file was there when none could
-                       ever have been
-     - nothing         said plainly
-
-   The image goes through imageUrl() like every other image in the system (I6),
-   and a path whose file has gone falls through to the shared placeholder rather
-   than a broken-image icon. */
+/* ===== PAYMENT VERIFICATION ===== */
+/* Payment screenshot box with three clear states: the image (click to open full size), reference number only, or nothing. */
 function proofImageBlock(o){
   const src = o.proof && o.proof.image ? imageUrl(o.proof.image) : "";
   if(src){
@@ -1124,20 +829,14 @@ function proofImageBlock(o){
   return `<div class="proof-status" style="color:var(--text-muted)">No payment proof supplied</div>`;
 }
 
-const PV_TABS = ["all","pending","on-hold"];
+const PV_TABS = ["all","pending"];
 
-/* Payment Verification — server-paged.
-
-   Scoped server-side with pay_verified=0 plus the pending/on-hold statuses,
-   rather than pulling every order and filtering three times in the browser.
-   Line values use price_at_purchase from the API, not the product's current
-   price — a proof is checked against what the customer was actually charged. */
+/* Payment Verification is server-paged (unverified pending/on-hold orders), using price_at_purchase. */
 function renderPaymentVerify(){
   const tabsEl = $("#pv-status-tabs");
   const filter = adminState.pvFilter;
 
-  /* Rows-per-page belongs in the merged toolbar row, not in a band of its
-     own above the table — see mountToolbarControl(). */
+  /* Rows per page goes in the toolbar row (see mountToolbarControl()). */
   mountToolbarControl("paymentverify", "page-size", `
     <select class="filter-select" id="pv-page-size" aria-label="Rows per page">
     <option value="10">10 per page</option>
@@ -1157,8 +856,7 @@ function renderPaymentVerify(){
       <div class="pagination" id="pv-pagination" style="margin-left:auto"></div>
     </div>`;
 
-  /* List first, detail on demand: the full proof card opens in a modal from
-     the row's View button. */
+  /* The full proof card opens in a modal from View. */
   const pvRows = new Map();
 
   EbPaginate.list(
@@ -1219,8 +917,7 @@ function renderPaymentVerify(){
   );
 }
 
-/* The full proof card for one order, with the approve / hold / reject
-   decisions. Hold and reject open their own modal in place of this one. */
+/* Full proof card with the order, where it goes, and approve or reject (reject opens its own modal). */
 function openPaymentVerifyModal(o){
   const total = (o.tax && o.tax.amountDue != null) ? o.tax.amountDue : o.total;
   const withheld = o.tax && o.tax.withholdingTax > 0 ? o.tax.withholdingTax : 0;
@@ -1248,7 +945,15 @@ function openPaymentVerifyModal(o){
               <span class="pv-row-label" style="font-weight:700">Total Due</span>
               <span class="pv-row-val" style="font-size:1.1rem;color:var(--gold-ink)">${EbFormat.pesoExact(total)}</span>
             </div>${withheld ? `
-            <div class="pv-row"><span class="pv-row-label">Withholding tax kept by buyer</span><span class="pv-row-val">${EbFormat.pesoExact(withheld)} of ${EbFormat.pesoExact(o.total)}</span></div>` : ""}
+            <div class="pv-row"><span class="pv-row-label">Retailer discount</span><span class="pv-row-val">${EbFormat.pesoExact(withheld)} of ${EbFormat.pesoExact(o.total)}</span></div>` : ""}
+            <!-- Where the order goes, so staff check the address while verifying the payment. -->
+            <div class="pv-section-label" style="margin-top:16px">${o.orderType === "delivery" ? "Delivery Details" : "Pickup Details"}</div>
+            <div class="pv-row"><span class="pv-row-label">Fulfilment</span><span class="pv-row-val">${o.orderType === "delivery" ? "Delivery" : "Pickup at the store"}</span></div>
+            ${o.orderType === "delivery" ? `
+            <div class="pv-row pv-row-wrap"><span class="pv-row-label">Address</span><span class="pv-row-val">${escHtml(o.address || "No address given")}</span></div>
+            ${o.tax && o.tax.shipping ? `<div class="pv-row"><span class="pv-row-label">Delivery fee</span><span class="pv-row-val">${EbFormat.pesoExact(o.tax.shipping.fee)}${o.tax.shipping.destination ? ` <span class="muted" style="font-weight:500;font-size:.78rem">· ${escHtml(o.tax.shipping.destination)}</span>` : ""}</span></div>` : ""}` : ""}
+            <div class="pv-row"><span class="pv-row-label">Contact</span><span class="pv-row-val">${escHtml(o.contact || o.phone || "—")}</span></div>
+            ${o.email ? `<div class="pv-row pv-row-wrap"><span class="pv-row-label">Email</span><span class="pv-row-val">${escHtml(o.email)}</span></div>` : ""}
           </div>
           <div class="pv-section">
             <div class="pv-section-label">Payment Proof</div>
@@ -1266,14 +971,12 @@ function openPaymentVerifyModal(o){
             <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
             Approve — Move to Accepted
           </button>
-          <button class="btn btn-ghost btn-sm" data-hold-pay="${o.id}">Place On Hold</button>
           <button class="btn btn-ghost-danger btn-sm" data-reject-pay="${o.id}">Reject Payment</button>
         </div>
       </div>`,
     onOpen(){
       const m = $("#modal-body");
       m.querySelector("[data-approve-pay]")?.addEventListener("click", ()=>{ closeModal(); approvePayment(o.id); });
-      m.querySelector("[data-hold-pay]")?.addEventListener("click", ()=> openHoldModal(o.id));
       m.querySelector("[data-reject-pay]")?.addEventListener("click", ()=> cancelOrder(o.id));
     },
   });
@@ -1281,9 +984,7 @@ function openPaymentVerifyModal(o){
 
 async function approvePayment(orderId){
   try {
-    /* Two steps on purpose: verification is its own recorded decision, and the
-       acceptance that follows is refused by the server if verification did not
-       land. Doing it in one call would hide which of the two failed. */
+    /* Verify, then accept, as two calls so it is clear which one failed. */
     const { data } = await EbApi.post("orders/verify-payment.php", { id: orderId, verified: true });
     if(data.mismatch) toast(data.mismatch, "warn");
     await updateOrderStatus(orderId, "accepted", "Payment verified and approved");
@@ -1291,38 +992,35 @@ async function approvePayment(orderId){
     toast(err.message, "err");
   }
   await loadOrders();
-  renderPaymentVerify();
+  /* Re-draw whichever screen the verification was opened from. */
+  const mod = adminState.currentModule;
+  if(mod === "online-txns") renderOnlineTxns();
+  else if(mod === "ordersqueue") renderQueue();
+  else if(mod === "orderstatus") renderOrderStatus();
+  else renderPaymentVerify();
   if(typeof initNotifBadge === "function") initNotifBadge();
 }
 
-function openHoldModal(orderId){
-  openModal({
-    title:"Place Order On Hold",
-    body:`<p style="font-size:.86rem;color:var(--text-muted);margin-bottom:12px">Provide a reason for placing this order on hold:</p>
-      <div class="field"><textarea class="control" id="hold-reason" rows="3" placeholder="e.g. Payment amount mismatch — expected ₱X, received ₱Y"></textarea></div>`,
-    confirmLabel:"Confirm On Hold", confirmClass:"btn-gold",
-    async onConfirm(){
-      const reason = $("#hold-reason").value.trim();
-      if(!reason){ toast("Please enter a reason","err"); return; }
-      /* Modal stays open when the server refuses, so the typed reason is not
-         lost and the operator can see why. */
-      if(await updateOrderStatus(orderId, "on-hold", reason)){
-        closeModal();
-        renderPaymentVerify();
-      }
-    }
-  });
+/* Refund note prefilled from the store's contact details (Landing Page → Contact), editable per order. */
+function defaultRefundNote(){
+  const c = (typeof SITE_CONTENT !== "undefined" && SITE_CONTENT.contact) || {};
+  const ways = [c.phone && `call or text ${c.phone}`, c.email && `email ${c.email}`, c.facebook && `message us on ${c.facebook}`].filter(Boolean);
+  return `If you already paid, contact us to arrange your refund${ways.length ? ": " + ways.join(", ") : ""}. Please include your order number and payment reference.`;
 }
 
 function cancelOrder(orderId){
   openModal({
     title:"Reject & Cancel Order",
-    body:`<p style="font-size:.86rem;color:var(--text-muted);margin-bottom:12px">Reason for rejection/cancellation:</p>
-      <div class="field"><textarea class="control" id="cancel-reason" rows="3" placeholder="e.g. Invalid payment reference number"></textarea></div>`,
+    body:`<div class="field"><label for="cancel-reason">Reason for rejection/cancellation</label>
+        <textarea class="control" id="cancel-reason" rows="2" maxlength="180" placeholder="e.g. Invalid payment reference number"></textarea></div>
+      <div class="field"><label for="cancel-refund">Refund note for the customer</label>
+        <textarea class="control" id="cancel-refund" rows="3" maxlength="280">${escHtml(defaultRefundNote())}</textarea></div>`,
     confirmLabel:"Cancel Order", confirmClass:"btn-red",
     async onConfirm(){
       const reason = $("#cancel-reason").value.trim() || "Payment rejected by staff";
-      if(await updateOrderStatus(orderId, "cancelled", reason)){
+      const refund = $("#cancel-refund").value.trim();
+      const note = refund ? `${reason} — Refund: ${refund}` : reason;
+      if(await updateOrderStatus(orderId, "cancelled", note)){
         closeModal();
         renderPaymentVerify();
       }
@@ -1330,13 +1028,10 @@ function cancelOrder(orderId){
   });
 }
 
-/* ============================================================
-   ORDER STATUS MANAGEMENT
-   ============================================================ */
+/* ===== ORDER STATUS MANAGEMENT ===== */
 /* Order Status — server-paged. */
 function renderOrderStatus(){
-  /* Rows-per-page belongs in the merged toolbar row, not in a band of its
-     own above the table — see mountToolbarControl(). */
+  /* Rows per page goes in the toolbar row (see mountToolbarControl()). */
   mountToolbarControl("orderstatus", "page-size", `
     <select class="filter-select" id="order-status-page-size" aria-label="Rows per page">
     <option value="10">10 per page</option>
@@ -1366,13 +1061,13 @@ function renderOrderStatus(){
       search: $("#status-search")?.value || null,
     }),
     o => {
-      const canUpdate = STATUS_TRANSITIONS[o.status]?.length > 0;
+      const canUpdate = nextStatuses(o).length > 0;
       const notes = o.notes || "";
       return `<tr>
       <td class="mono-sm">${escHtml(o.id)}${o.type === "walk-in" ? ` <span class="badge badge-warn" title="Rung up at the POS as a delivery. Paid at the counter; shipped and tracked here like an online order.">Walk-in delivery</span>` : ""}</td>
       <td>${escHtml(o.customer)}</td>
       <td class="muted">${fmtDateTime(o.datetime)}</td>
-      <td style="font-weight:700">${peso(o.total)}</td>
+      <td style="font-weight:700">${orderDueHtml(o)}</td>
       <td>${orderStatusBadge(o.status)}</td>
       <td class="muted" style="font-size:.8rem;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(notes)}">${escHtml(notes)||"—"}</td>
       <td><div class="td-actions">
@@ -1409,13 +1104,13 @@ function renderOrderStatus(){
 function openStatusModal(orderId){
   const o = ORDERS.find(o=>o.id===orderId);
   if(!o) return;
-  const transitions = STATUS_TRANSITIONS[o.status] || [];
+  const transitions = nextStatuses(o);
   if(!transitions.length){ toast("This order status cannot be changed","err"); return; }
 
   const btns = transitions.map(s=>`
     <button type="button" class="status-transition-btn dest-${s}" data-dest="${s}">
       <span class="status-dot ${s}"></span>
-      ${STATUS_LABEL[s]}
+      <span class="stb-label">${STATUS_LABEL[s]}</span>
     </button>`).join("");
 
   openModal({
@@ -1423,7 +1118,7 @@ function openStatusModal(orderId){
     body:`
       <div class="detail-row"><span class="detail-row-label">Customer</span><span class="detail-row-val">${escHtml(o.customer)}</span></div>
       <div class="detail-row" style="margin-bottom:16px"><span class="detail-row-label">Current Status</span><span class="detail-row-val">${statusChip(o.status)}</span></div>
-      <div style="font-size:.78rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px">Move to</div>
+      <div class="status-move-heading">Move to</div>
       <div class="status-transition-grid" id="status-transition-grid">${btns}</div>
       <!-- Its own field, not the free-text note.
 
@@ -1433,20 +1128,18 @@ function openStatusModal(orderId){
            is "proof of shipment", and proof has to be retrievable. -->
       <div class="field hide" id="tracking-field" style="margin-top:16px">
         <label>Courier Tracking Number <span class="muted" style="font-weight:400;font-size:.78rem">(required to ship a delivery)</span></label>
-        <input class="control" id="status-tracking" type="text" maxlength="60" placeholder="e.g. LBC-8842910337" />
+        <input class="control" id="status-tracking" type="text" maxlength="25" autocomplete="off" placeholder="e.g. LBC-8842910337" />
         <span class="field-error" id="err-tracking"></span>
         <span class="field-hint">Issued by the courier on dispatch. We do not track it for the customer — they use the courier's own site.</span>
       </div>
       <div class="field" style="margin-top:16px">
         <label>Note (optional)</label>
-        <input class="control" id="status-note" type="text" placeholder="e.g. reason for hold, delivery instructions…" />
+        <input class="control" id="status-note" type="text" placeholder="e.g. reason for cancelling, delivery instructions…" />
       </div>`,
     confirmLabel:null, cancelLabel:"Cancel",
   });
   setTimeout(()=>{
-    /* Only a DELIVERY order being dispatched needs one; a pickup is handed
-       over at the counter. Shown on focus/hover so the operator sees the
-       requirement before pressing, rather than after a refusal. */
+    /* Tracking number is needed only when dispatching a delivery order. */
     const needsTracking = dest => dest === "shipping" && o.orderType === "delivery";
     const trackingField = $("#tracking-field");
     $$("#status-transition-grid [data-dest]").forEach(btn=>{
@@ -1454,20 +1147,28 @@ function openStatusModal(orderId){
       btn.addEventListener("mouseenter", reveal);
       btn.addEventListener("focus", reveal);
     });
-    /* Revealed up front when shipping is the only sensible next move, so it is
-       not hidden behind a hover on a touch screen. */
+    /* Show the tracking field up front when shipping is the next step. */
     if(transitions.some(needsTracking)) trackingField?.classList.remove("hide");
 
     $$("#status-transition-grid [data-dest]").forEach(btn=>{
       btn.addEventListener("click", async ()=>{
+        /* Accepting (or completing) a GCash/bank order whose proof is not yet verified opens the proof to verify instead of failing. */
+        if(["accepted", "completed"].includes(btn.dataset.dest) && needsPaymentCheck(o)){
+          if(o.proof?.uploaded){
+            closeModal();
+            openPaymentVerifyModal(o);
+          } else {
+            toast("The customer has not uploaded a proof of payment yet, so this order cannot be accepted yet. Wait for the proof, or cancel the order.", "warn");
+          }
+          return;
+        }
         const note = $("#status-note")?.value.trim() || "";
-        const tracking = $("#status-tracking")?.value.trim() || "";
+        const tracking = ($("#status-tracking")?.value.trim() || "").toUpperCase();
         const errEl = $("#err-tracking");
         if(errEl) errEl.textContent = "";
+        $("#status-tracking")?.classList.remove("is-invalid");
 
-        /* Checked here too so the operator is not made to wait for a round
-           trip to be told a field is empty. The server check is the one that
-           counts — see api/orders/status.php. */
+        /* Quick empty-field check; the server's check is the real one. */
         if(needsTracking(btn.dataset.dest) && !tracking && !o.trackingNumber){
           trackingField?.classList.remove("hide");
           if(errEl) errEl.textContent = "Enter the courier tracking number before marking this order shipped.";
@@ -1475,12 +1176,17 @@ function openStatusModal(orderId){
           return;
         }
 
+        /* 8–25 letters, digits or dashes, matching api/orders/status.php. */
+        if(tracking && !/^(?=.*\d)[A-Z0-9-]{8,25}$/.test(tracking)){
+          trackingField?.classList.remove("hide");
+          if(errEl) errEl.textContent = "Tracking numbers are 8–25 letters, numbers or dashes.";
+          $("#status-tracking")?.focus();
+          return;
+        }
+
         const restore = EbUI.busy(btn, "Moving…");
         try {
-          /* Only close on success. A refusal — an illegal transition, a
-             missing reason, an unverified payment, a missing tracking number —
-             leaves the modal open with the note intact and the reason on
-             screen. */
+          /* Close only on success, keeping the note and showing the reason on refusal. */
           if(await updateOrderStatus(orderId, btn.dataset.dest, note, tracking)){
             closeModal();
             if(adminState.currentModule==="orderstatus") renderOrderStatus();
@@ -1493,55 +1199,50 @@ function openStatusModal(orderId){
   }, 50);
 }
 
-/* Moves an order, server-side.
+/* GCash / bank transfer orders need a verified payment before they are accepted (cash and Net terms do not). */
+function needsPaymentCheck(o){
+  return !o.payVerified && !isCreditOrder(o) && o.payMethod !== "cash" && o.type !== "walk-in";
+}
 
-   This used to set o.status directly and write a local audit line. The
-   transition table in STATUS_TRANSITIONS shaped what the modal offered, but
-   nothing enforced it — and a status set only in memory was gone on refresh.
-   api/orders/status.php now owns both: it re-checks the transition, requires a
-   reason for hold and cancel, refuses to accept an order whose payment is not
-   verified, and records the move in order_status_history with who made it.
-
-   Returns true on success so callers can decide whether to close a modal. */
+/* Move an order via api/orders/status.php, which enforces transitions, reasons and payment verification and records history; returns true on success. */
 async function updateOrderStatus(orderId, newStatus, note, trackingNumber){
   try {
     const { data } = await EbApi.post("orders/status.php", {
       id: orderId, status: newStatus, note: note || null,
-      /* Sent only when there is one. The endpoint ignores it on any transition
-         that is not a delivery being dispatched, so a stray value cannot be
-         recorded against the wrong event. */
+      /* Send the tracking number only when there is one. */
       tracking_number: trackingNumber || null,
     });
     await loadOrders();
-    /* The SERVER's status, not the one requested. Accepting a cash pickup
-       order completes it in the same move, and a toast reading "Accepted" for
-       an order that is done — and already in the Sales Report — sends the
-       operator looking for it in the queue. */
+    /* Toast the status the server actually set. */
     const landed = (data && data.status) || newStatus;
     toast(data && data.autoCompleted
-      ? `Order ${orderId} completed — cash on pickup, added to sales.`
+      ? `Order ${orderId} completed — cash paid on pickup, added to sales.`
       : `Order ${orderId} → ${STATUS_LABEL[landed] || landed}`, "ok");
     if(typeof initNotifBadge === "function") initNotifBadge();
     return true;
   } catch(err){
-    /* The server's refusal is the useful message here — it names the allowed
-       transitions, or says the payment is unverified. Passing it through beats
-       a generic "could not update". */
-    toast(err.message, "err");
+    /* A refused tracking number goes under its box (the Update Status popup stays open); others as a toast. */
+    const trackErr = err.fields && err.fields.tracking_number;
+    if(trackErr && $("#err-tracking")){
+      $("#err-tracking").textContent = trackErr;
+      $("#status-tracking")?.classList.add("is-invalid");
+      $("#status-tracking")?.focus();
+    }
+    toast(trackErr || err.message, "err");
     return false;
   }
 }
 
-/* ============================================================
-   TRANSACTION HISTORY
-   ============================================================ */
-/* Transaction History — paged by the server.
+/* ===== TRANSACTION HISTORY ===== */
+/* Transaction History is server-paged, with count and revenue covering the whole filtered set. */
+/* Channel badge for the mixed-channel pages; a walk-in delivery keeps its delivery note in the tooltip. */
+function channelBadge(o){
+  if(o.type !== "walk-in") return `<span class="badge badge-info">Online</span>`;
+  return o.orderType === "delivery"
+    ? `<span class="badge badge-warn" title="Rung up at the POS as a delivery. Paid at the counter; shipped and tracked like an online order.">Walk-in · Delivery</span>`
+    : `<span class="badge badge-warn">Walk-in</span>`;
+}
 
-   This used to filter and slice the whole ORDERS array in the browser, which
-   only worked while the browser held every order. It asks the database for one
-   page now, and for the count and revenue across the entire filtered set —
-   paging the rows without that would have quietly turned "Total Revenue" into
-   a per-page sum that still looked correct. */
 async function renderHistory(){
   const q    = ($("#history-search")?.value || "").trim();
   const from = $("#history-from")?.value;
@@ -1550,21 +1251,23 @@ async function renderHistory(){
   const pager = adminState.ordHistoryPager;
   const content = $("#history-content");
 
-  content.innerHTML = `<div class="table-wrap"><table class="data-table"><tbody>${EbUI.loadingRow(8, "Loading transactions…")}</tbody></table></div>`;
+  content.innerHTML = `<div class="table-wrap"><table class="data-table"><tbody>${EbUI.loadingRow(9, "Loading transactions…")}</tbody></table></div>`;
 
   let res;
   try {
     res = await EbApi.get("orders/list.php", {
-      type: "online", with_deliveries: 1,
+      /* Every channel unless the Channel filter narrows it (server-side, so paging and the totals follow it). */
+      type: $("#history-channel")?.value || null,
       search: q || null,
       from: from || null,
       to: to || null,
       page: pager.page || 1,
       limit: pager.pageSize || 10,
-      sort: "newest",
+      /* Most recent activity first, so an order completed today tops the list even if placed days ago. */
+      sort: "activity",
     });
   } catch(err){
-    content.innerHTML = `<div class="table-wrap"><table class="data-table"><tbody>${EbUI.errorRow(8, err.message)}</tbody></table></div>`;
+    content.innerHTML = `<div class="table-wrap"><table class="data-table"><tbody>${EbUI.errorRow(9, err.message)}</tbody></table></div>`;
     return;
   }
 
@@ -1583,19 +1286,19 @@ async function renderHistory(){
   const rows = list.map(o=>{
     const total = orderTotal(o);
     return `<tr>
-      <td class="mono-sm">${escHtml(o.id)}${o.type === "walk-in" ? ` <span class="badge badge-warn" title="Rung up at the POS as a delivery. Paid at the counter; shipped and tracked here like an online order.">Walk-in delivery</span>` : ""}</td>
+      <td class="mono-sm">${escHtml(o.id)}</td>
+      <td>${channelBadge(o)}</td>
       <td>${escHtml(o.customer)}</td>
-      <td class="muted">${escHtml(o.email)}</td>
-      <td class="muted">${fmtDateTime(o.datetime)}</td>
+      <td class="muted">${escHtml(o.email || "—")}</td>
+      <td class="muted">${fmtDateTime(o.datetime)}${o.lastActivity && fmtDateTime(o.lastActivity) !== fmtDateTime(o.datetime) ? `<br><span style="font-size:.74rem">Updated ${fmtDateTime(o.lastActivity)}</span>` : ""}</td>
       <td>${escHtml(payMethodLabel(o.payMethod))}</td>
-      <td style="font-weight:700">${peso(total)}</td>
+      <td style="font-weight:700">${orderDueHtml(o)}</td>
       <td>${orderStatusBadge(o.status)}</td>
       <td><button class="btn btn-ghost btn-sm" data-view-order="${o.id}">View</button></td>
     </tr>`;
   }).join("");
 
-  /* Rows-per-page belongs in the merged toolbar row, not in a band of its
-     own above the table — see mountToolbarControl(). */
+  /* Rows per page goes in the toolbar row (see mountToolbarControl()). */
   mountToolbarControl("orderhistory", "page-size", `
     <select class="filter-select" id="ord-history-page-size" aria-label="Rows per page">
     <option value="10">10 per page</option>
@@ -1606,7 +1309,7 @@ async function renderHistory(){
   $("#history-content").innerHTML = `
     <div class="table-wrap viewport-bound">
       <table class="data-table">
-        <thead><tr><th>Order ID</th><th>Customer</th><th>Email</th><th>Date</th><th>Payment</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Order ID</th><th>Channel</th><th>Customer</th><th>Email</th><th>Date</th><th>Payment</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
@@ -1616,8 +1319,7 @@ async function renderHistory(){
     </div>`;
   wireOrderRowActions("#history-content");
 
-  /* EbPaginate drives requests rather than slicing an array — clicking a page
-     asks the server for it. */
+  /* Clicking a page asks the server for it. */
   EbPaginate.render("ord-history", meta, page => {
     adminState.ordHistoryPager.page = page;
     renderHistory();
@@ -1630,14 +1332,10 @@ async function renderHistory(){
     renderHistory);
 }
 
-/* ============================================================
-   RECEIPT GENERATION
-   ============================================================ */
-/* Receipt Generation — server-paged. Scoped to completed orders in the query
-   rather than pulling every order and filtering to the completed ones. */
+/* ===== RECEIPT GENERATION ===== */
+/* Receipt Generation is server-paged and limited to completed orders. */
 function renderReceipts(){
-  /* Rows-per-page belongs in the merged toolbar row, not in a band of its
-     own above the table — see mountToolbarControl(). */
+  /* Rows per page goes in the toolbar row (see mountToolbarControl()). */
   mountToolbarControl("receipts", "page-size", `
     <select class="filter-select" id="receipts-page-size" aria-label="Rows per page">
     <option value="10">10 per page</option>
@@ -1648,7 +1346,7 @@ function renderReceipts(){
   $("#receipts-content").innerHTML = `
     <div class="table-wrap viewport-bound">
       <table class="data-table">
-        <thead><tr><th>Order ID</th><th>Customer</th><th>Completed</th><th>Total</th><th>Payment</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Order ID</th><th>Channel</th><th>Customer</th><th>Completed</th><th>Total</th><th>Payment</th><th>Actions</th></tr></thead>
         <tbody id="receipts-tbody"></tbody>
       </table>
     </div>
@@ -1662,14 +1360,15 @@ function renderReceipts(){
     adminState.receiptsPager,
     () => $("#receipts-tbody"),
     (page, limit) => EbApi.get("orders/list.php", {
-      page, limit, type: "online", with_deliveries: 1, status: "completed", sort: "newest",
+      page, limit, type: $("#receipt-channel")?.value || null, status: "completed", sort: "completed",
       search: $("#receipt-search")?.value || null,
     }),
     o => `<tr>
-      <td class="mono-sm">${escHtml(o.id)}${o.type === "walk-in" ? ` <span class="badge badge-warn" title="Rung up at the POS as a delivery. Paid at the counter; shipped and tracked here like an online order.">Walk-in delivery</span>` : ""}</td>
+      <td class="mono-sm">${escHtml(o.id)}</td>
+      <td>${channelBadge(o)}</td>
       <td>${escHtml(o.customer)}</td>
-      <td class="muted">${fmtDateTime(o.datetime)}</td>
-      <td style="font-weight:700">${peso(o.total)}</td>
+      <td class="muted">${fmtDateTime(o.completedAt || o.datetime)}</td>
+      <td style="font-weight:700">${orderDueHtml(o)}</td>
       <td>${escHtml(payMethodLabel(o.payMethod))}</td>
       <td><div class="td-actions">
         <button class="btn btn-gold btn-sm" data-receipt-order="${o.id}">Generate Receipt</button>
@@ -1677,11 +1376,10 @@ function renderReceipts(){
       </div></td>
     </tr>`,
     {
-      colspan: 6,
+      colspan: 7,
       empty: { title: "No Completed Orders", hint: "Completed orders will appear here" },
       after: (rows) => {
-        /* The receipt modal reads the order out of ORDERS, so the page has to
-           be merged in before those buttons are wired. */
+        /* Merge the page into ORDERS before wiring the receipt buttons. */
         rows.forEach(r => {
           const i = ORDERS.findIndex(o => o.id === r.id);
           if(i > -1) ORDERS[i] = r; else ORDERS.push(r);
@@ -1707,9 +1405,7 @@ function renderReceipts(){
 function openReceipt(orderId){
   const o = ORDERS.find(o=>o.id===orderId);
   if(!o) return;
-  /* Line amounts come from each line's price AT PURCHASE, inside
-     EbInvoice.fromOrder(). This screen used to multiply by the product's
-     CURRENT price, so editing a price quietly rewrote every past receipt. */
+  /* Line amounts use the price at purchase (EbInvoice.fromOrder()). */
   const invoice = EbInvoice.fromOrder(o);
   EbInvoice.ensureStyles();
 
@@ -1730,9 +1426,7 @@ function openReceipt(orderId){
   });
 }
 
-/* ============================================================
-   RETURN MODULE
-   ============================================================ */
+/* ===== RETURN MODULE ===== */
 const RETURN_TABS = [
   {id:"all",       label:"All Requests"},
   {id:"received",  label:"Received"},
@@ -1743,21 +1437,11 @@ const RETURN_TABS = [
   {id:"processed", label:"Processed"},
 ];
 
-/* Advance a return through its pipeline, server-side.
-
-   Every step below used to set r.status directly and push a local audit line.
-   RETURN_STATUS_STEP shaped which buttons appeared, but nothing enforced the
-   order — a return could be marked `processed`, and a refund paid, on a claim
-   nobody had assessed. api/returns/advance.php owns the pipeline, requires a
-   reason for refusals, checks the refund against what was actually paid for
-   that line, and puts the goods back on the shelf when the refund completes.
-
-   Returns true on success so callers only close the modal when it worked. */
+/* Advance a return via api/returns/advance.php, which enforces the pipeline, reasons and refund limits (returned goods are not restocked); returns true on success. */
 async function advanceReturn(id, status, extra = {}){
   try {
     const { data } = await EbApi.post("returns/advance.php", { id, status, ...extra });
     await loadOpsData();
-    if(data.stockReturned) toast(`${data.stockReturned} unit(s) returned to stock.`, "ok");
     return true;
   } catch(err){
     toast(err.message, "err");
@@ -1766,12 +1450,11 @@ async function advanceReturn(id, status, extra = {}){
 }
 
 function renderReturns(){
+  renderLargeRefundBar();
   const tabsEl = $("#return-tabs");
   tabsEl.innerHTML = RETURN_TABS.map(t=>{
     const count = t.id==="all" ? RETURNS.length : RETURNS.filter(r=>r.status===t.id).length;
-    /* Was a parenthesised "(3)" on every tab including All, Rejected and
-       Processed. Same rule as the order rows now: a badge means a request
-       still needs somebody, and the finished states carry none. */
+    /* Only unfinished return states show a badge. */
     const b = tabBadge(t.id, t.label, count, "to process");
     return `<button class="return-tab-btn ${adminState.returnTab===t.id?"active":""}" data-returntab="${t.id}"
                     role="tab" aria-selected="${adminState.returnTab===t.id}"
@@ -1796,11 +1479,9 @@ function renderReturns(){
     return;
   }
 
-  /* Paging + sort, client-side: RETURNS is already fully loaded. One slot —
-     mountToolbarControl keeps a single slot per screen. */
+  /* Client-side paging and sort, since RETURNS is fully loaded. */
   const pg = adminState.returnPager || (adminState.returnPager = { page: 1, limit: 10, sort: "newest" });
-  /* Mounted once — re-mounting on every tab/sort/page rebuilt both menus and
-     made them flicker. */
+  /* Mount the toolbar controls once to avoid flicker. */
   if(!$("#ret-sort")) mountToolbarControl("returns", "paging", `
     <select class="filter-select" id="ret-sort" aria-label="Sort returns">
       <option value="newest">Newest first</option>
@@ -1832,8 +1513,7 @@ function renderReturns(){
   if(pg.page > pages) pg.page = pages;
   const pageRows = sorted.slice((pg.page - 1) * pg.limit, pg.page * pg.limit);
 
-  /* List first, detail on demand: the full card (steps, reasons, actions)
-     opens in a modal from View. */
+  /* The full return card opens in a modal from View. */
   $("#returns-content").innerHTML = `
     <div class="table-wrap viewport-bound">
       <table class="data-table">
@@ -1865,8 +1545,7 @@ function returnItemsSummary(r){
   return items[0].name + (items.length > 1 ? ` +${items.length - 1} more` : "");
 }
 
-/* How long after the order completed the request came in — the 24-hour rule
-   is enforced when the customer files it; this shows staff the margin. */
+/* Show how long after completion the request came in. */
 function returnWindowNote(r){
   if(!r.orderCompletedAt || !r.receivedDate) return "—";
   const h = (new Date(r.receivedDate.replace(" ","T")) - new Date(r.orderCompletedAt.replace(" ","T"))) / 36e5;
@@ -1892,11 +1571,11 @@ function returnRefundToRows(r){
 function returnStatusChip(r){
   const chipStatus = r.status==="processed" ? "completed" : r.status==="ineligible"||r.status==="rejected" ? "cancelled" : r.status==="approved"||r.status==="eligible" ? "accepted" : r.status==="received"?"pending":r.status;
   const statusLabel = {received:"Received",validated:"Validated",eligible:"Eligible",ineligible:"Ineligible",approved:"Approved",rejected:"Rejected",processed:"Processed"}[r.status] || r.status;
-  return `<span class="status-chip status-${chipStatus}">${statusLabel}</span>`;
+  return `<span class="status-chip status-${chipStatus}">${statusLabel}</span>` +
+    (isLargeRefund(r) && r.status !== "ineligible" && r.status !== "rejected" ? ` <span class="ret-large-chip" title="At or above the large-refund threshold">Large</span>` : "");
 }
 
-/* The full return card in a modal. Its action buttons open their own
-   step modal in place of this one. */
+/* The full return card in a modal; its actions open step modals. */
 function openReturnDetail(returnId){
   const r = RETURNS.find(r=>r.id===returnId);
   if(!r) return;
@@ -1912,8 +1591,7 @@ function openReturnDetail(returnId){
   });
 }
 
-/* The View popup's content: header strip, then one card per concern —
-   progress, the return itself, what was said about it, and the next step. */
+/* View popup: header, then cards for progress, the return, notes and next step. */
 function renderReturnCard(r){
   const step = RETURN_STATUS_STEP[r.status] || 1;
   const steps = RETURN_STEPS.map((s,i)=>{
@@ -1961,7 +1639,7 @@ function renderReturnCard(r){
         <div class="order-detail-heading">Items Returned · ${r.qty} ${r.qty === 1 ? "unit" : "units"}</div>
         <div class="order-items-list">${(r.items || []).map(it => `
           <div class="order-item-row">
-            <span class="order-item-name">${escHtml(it.name)}</span>
+            <span class="order-item-name">${escHtml(it.name)}${it.batchCode ? ` <span class="badge badge-muted" title="Batch / lot code">Batch ${escHtml(it.batchCode)}</span>` : ""}</span>
             <span class="order-item-qty">×${it.qty}</span>
             <span class="order-item-sub">${peso(it.subtotal)}</span>
           </div>`).join("")}
@@ -2004,7 +1682,51 @@ ${r.proofImage ? `
     </div>`;
 }
 
+/* Large refunds (api/returns/advance.php enforces this). */
+function isLargeRefund(r){
+  const lr = adminState.largeRefund;
+  return !!(lr && lr.threshold > 0 && (+r.refundAmount || 0) >= lr.threshold);
+}
+function largeRefundBlocked(r){
+  return isLargeRefund(r) && !(adminState.largeRefund && adminState.largeRefund.canHandle);
+}
+function largeRefundNote(){
+  return `<span class="ret-large-note">Large refund (${peso(adminState.largeRefund.threshold)}+): needs an Admin or the Super Admin.</span>`;
+}
+
+/* Super Admin sets the limit; everyone else sees it. */
+function renderLargeRefundBar(){
+  const el = $("#ret-limit");
+  const lr = adminState.largeRefund;
+  if(!el) return;
+  if(!lr){ el.innerHTML = ""; return; }
+  const txt = lr.threshold > 0
+    ? `Refunds of <b>${peso(lr.threshold)}</b> or more need an Admin or the Super Admin.`
+    : `No large-refund limit is set.`;
+  el.innerHTML = `<span class="ret-limit-ic" aria-hidden="true">₱</span><span class="ret-limit-txt">${txt}</span>` +
+    (lr.canSetLimit ? `<button type="button" class="btn btn-ghost btn-sm" id="ret-limit-edit">Change limit</button>` : "");
+  $("#ret-limit-edit")?.addEventListener("click", ()=>{
+    openModal({
+      title: "Large Refund Threshold",
+      body: `<p style="font-size:.86rem;color:var(--text-muted);margin-bottom:12px">Refunds at or above this amount can only be approved and processed by an Admin or the Super Admin. Set 0 for no limit.</p>
+        <div class="field"><label for="ret-limit-input">Threshold (₱)</label><input class="control" type="number" id="ret-limit-input" min="0" step="0.01" value="${lr.threshold}"/></div>`,
+      confirmLabel: "Save", confirmClass: "btn-gold",
+      async onConfirm(){
+        const v = parseFloat($("#ret-limit-input").value);
+        if(!(v >= 0)){ toast("Enter 0 or a positive amount","err"); return; }
+        try {
+          const { data } = await EbApi.post("settings/save.php", { refund_large_threshold: v });
+          lr.threshold = data.refund_large_threshold;
+          toast("Large refund threshold saved","ok");
+          closeModal(); renderReturns();
+        } catch(err){ toast(err.message, "err"); }
+      }
+    });
+  });
+}
+
 function returnActions(r){
+  if((r.status === "eligible" || r.status === "approved") && largeRefundBlocked(r)) return largeRefundNote();
   switch(r.status){
     case "received":  return `<button class="btn btn-gold btn-sm" data-validate-ret="${r.id}">Validate Customer & Order</button>`;
     case "validated": return `
@@ -2026,9 +1748,7 @@ function wireReturnActions(scope = "#returns-content"){
   $$(`${scope} [data-refund-ret]`).forEach(btn=> btn.addEventListener("click", ()=>processRefund(btn.dataset.refundRet)));
 }
 
-/* The audit row for a return transition is written by returns/advance.php,
-   inside the same transaction as the status change (D13). This raises the UI
-   notification only — it does not, and must not, record the event. */
+/* The audit row is written by returns/advance.php; this only raises the UI notification. */
 function addReturnAudit(returnId, status, notes){
   addAuditEntry("order", `Return ${returnId} → ${status}.${notes?` ${notes}.`:""}`);
 }
@@ -2195,15 +1915,8 @@ function processRefund(returnId){
   });
 }
 
-/* ============================================================
-   ORDER DETAIL MODAL (shared by Transactions/Queue/Status/History)
-   ============================================================ */
-/* Fill the History panel from api/orders/get.php.
-
-   The Order Status stepper was inferred from the current status, so it could
-   show that an order had been accepted but never who accepted it or when, and
-   a cancelled order's path was unrecoverable. order_status_history records each
-   move with the user who made it. */
+/* ===== ORDER DETAIL MODAL (shared by Transactions, Queue, Status, History) ===== */
+/* Fill the History panel from api/orders/get.php (who changed each status and when). */
 async function fillOrderHistory(orderId){
   const box = document.getElementById("order-history-body");
   if(!box) return;
@@ -2220,8 +1933,7 @@ async function fillOrderHistory(orderId){
             ${h.note ? `<br><span class="muted">${escHtml(h.note)}</span>` : ""}</span>
         </div>`).join("");
     }
-    /* Flag a stored total that disagrees with its own line items rather than
-       displaying it as though it were reconciled. */
+    /* Flag a stored total that does not match its line items. */
     if(data.totalsAgree === false){
       box.innerHTML += `<div class="detail-row" style="color:var(--out-ink)">
         <span class="detail-row-label">Warning</span>
@@ -2235,19 +1947,23 @@ async function fillOrderHistory(orderId){
 function openOrderDetail(orderId){
   const o = ORDERS.find(o=>o.id===orderId);
   if(!o) return;
-  const total = orderTotal(o);
+  /* Before the retailer discount; the discount and Amount due rows follow it. */
+  const total = orderGross(o);
   const itemRows = o.items.map(it=>{
     const p = getProduct(it.id);
-    /* it.price is price_at_purchase, from order_items. This used to multiply
-       by the product's CURRENT price, so editing a price silently rewrote what
-       every past order appeared to have cost — a receipt that disagreed with
-       what the customer was actually charged. */
+    /* it.price is price_at_purchase, never the current product price. */
     const unit = it.price != null ? it.price : (p ? p.price : null);
-    return `<div class="order-item-row">
-      <span class="order-item-name">${escHtml(it.name || (p ? p.name : it.id))}</span>
-      <span class="order-item-qty">×${it.qty}</span>
-      <span class="order-item-sub">${unit != null ? peso(unit * it.qty) : "—"}</span>
-    </div>`;
+    /* One row per batch the units came from (its own qty and subtotal); a line with no batch stays one row. */
+    const name = escHtml(it.name || (p ? p.name : it.id));
+    const lots = (it.lots || []).filter(l => l.lot);
+    const parts = lots.map(l => ({ lot: l.lot, qty: l.qty }));
+    const rest = it.qty - parts.reduce((n, x) => n + x.qty, 0);
+    if(rest > 0) parts.push({ lot: null, qty: rest });
+    return parts.map(x => `<div class="order-item-row">
+      <span class="order-item-name">${name}${x.lot ? ` <span class="badge badge-muted" title="Batch / lot code">Batch ${escHtml(x.lot)}</span>` : ""}</span>
+      <span class="order-item-qty">×${x.qty}</span>
+      <span class="order-item-sub">${unit != null ? peso(unit * x.qty) : "—"}</span>
+    </div>`).join("");
   }).join("");
 
   openModal({
@@ -2264,10 +1980,21 @@ function openOrderDetail(orderId){
       <div class="order-detail-section">
         <div class="order-detail-heading">Items</div>
         <div class="order-items-list">${itemRows}</div>
+        ${o.tax && o.tax.shipping ? `<div class="detail-row" style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px">
+          <span class="detail-row-label">Estimated Delivery Fee <span class="muted" style="font-size:.78rem">${escHtml([o.tax.shipping.destination, o.tax.shipping.weightKg != null ? (+o.tax.shipping.weightKg).toFixed(2) + " kg" : ""].filter(Boolean).join(" · "))}</span></span>
+          <span class="detail-row-val">${EbFormat.pesoExact(o.tax.shipping.fee)}</span>
+        </div>
+        ${o.tax.shipping.etaFrom ? `<div class="detail-row"><span class="detail-row-label">Estimated Arrival${o.tax.shipping.remote ? ' <span class="muted" style="font-size:.78rem">Island / remote area</span>' : ""}</span>
+          <span class="detail-row-val">${escHtml(etaText({ from: o.tax.shipping.etaFrom, to: o.tax.shipping.etaTo }))}</span></div>` : ""}` : ""}
         <div class="detail-row" style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px;font-weight:700">
           <span class="detail-row-label">Total</span>
           <span class="detail-row-val" style="color:var(--gold-ink);font-size:1.1rem">${peso(total)}</span>
         </div>
+        ${o.tax && (o.tax.withholdingTax > 0 || o.tax.termInterest > 0) ? `
+        ${o.tax.withholdingTax > 0 ? `<div class="detail-row"><span class="detail-row-label">Retailer discount</span><span class="detail-row-val">− ${EbFormat.pesoExact(o.tax.withholdingTax)}</span></div>` : ""}
+        ${o.tax.termInterest > 0 ? `<div class="detail-row"><span class="detail-row-label">Interest (${escHtml(payMethodLabel(o.payMethod))}, ${+o.tax.termInterestRate}%)</span><span class="detail-row-val">+ ${EbFormat.pesoExact(o.tax.termInterest)}</span></div>` : ""}
+        <div class="detail-row" style="font-weight:700"><span class="detail-row-label">Amount due</span>
+          <span class="detail-row-val" style="color:var(--gold-ink);font-size:1.1rem">${EbFormat.pesoExact(o.tax.amountDue)}</span></div>` : ""}
       </div>
       <div class="order-detail-section">
         <div class="order-detail-heading">Payment</div>
@@ -2278,8 +2005,7 @@ function openOrderDetail(orderId){
         ${o.trackingNumber ? `<div class="detail-row"><span class="detail-row-label">Tracking #</span><span class="detail-row-val"><code>${escHtml(o.trackingNumber)}</code></span></div>` : ""}
         ${o.deliveredAt ? `<div class="detail-row"><span class="detail-row-label">Delivered</span><span class="detail-row-val">${fmtDateTime(o.deliveredAt)}</span></div>` : ""}
         ${o.credit
-          /* A Net order is paid later, in instalments checked in Payment Schemes —
-             "Pending" here read as a payment nobody had looked at. */
+          /* Net orders show their instalment status instead of "Pending". */
           ? `<div class="detail-row"><span class="detail-row-label">Payment</span><span class="detail-row-val">On ${escHtml(o.credit.scheme)} terms · ${peso(o.credit.paidAmount)} of ${peso(o.credit.owed)} paid${o.credit.settled ? " — settled" : ` · ${peso(o.credit.remaining)} left, due ${fmtDate(o.credit.dueDate)}`}</span></div>`
           : `<div class="detail-row"><span class="detail-row-label">Verified</span><span class="detail-row-val" style="color:${o.payVerified?"var(--ok)":"var(--text-muted)"}">${o.payVerified?"✓ Verified":"Pending"}</span></div>`}
       </div>
@@ -2291,11 +2017,11 @@ function openOrderDetail(orderId){
       </div>
       <div class="order-detail-section" id="order-history-section">
         <div class="order-detail-heading">History</div>
-        <div id="order-history-body" class="muted" style="font-size:.85rem">Loading…</div>
+        <div id="order-history-body" class="muted" style="font-size:.85rem">${EbUI.skeletonBlock(3)}</div>
       </div>`,
     onOpen: () => fillOrderHistory(orderId),
-    confirmLabel: STATUS_TRANSITIONS[o.status]?.length ? "Update Status" : null,
+    confirmLabel: nextStatuses(o).length ? "Update Status" : null,
     confirmClass:"btn-gold", cancelLabel:"Close",
-    onConfirm: STATUS_TRANSITIONS[o.status]?.length ? ()=>{ closeModal(); openStatusModal(orderId); } : undefined,
+    onConfirm: nextStatuses(o).length ? ()=>{ closeModal(); openStatusModal(orderId); } : undefined,
   });
 }

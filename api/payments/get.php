@@ -1,16 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/payments/get.php?id=pay-05 — one Net account, for staff review.
- *
- * Requires payments.manage.
- *
- * The account's figures (Payments::describeAccount), the order that opened it,
- * and EVERY payment toward it — screenshot, reference, amount, date and status —
- * newest first. This is the screen where three separate transfers toward one
- * ₱13,330 balance are read side by side, with what is left and the due date.
- */
+/** GET /api/payments/get.php (needs payments.manage) returns one Net account with its figures, originating order and every payment toward it. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -28,8 +19,7 @@ if ($row === null) {
 }
 $account = Payments::describeAccount($row);
 
-/* The sale behind the receivable. Seeded accounts predate the link (migration
-   004) and legitimately have none. */
+/* The order behind the account; seeded accounts may have none. */
 $order = null;
 if ($account['orderId']) {
     $o = Database::one(

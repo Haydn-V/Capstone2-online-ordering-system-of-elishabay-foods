@@ -1,45 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/shop/cart.php
- *
- * The signed-in customer's saved cart.
- *
- * WHY THIS EXISTS
- * ---------------
- * The storefront's cart was `cart: []` on a JavaScript object and nothing
- * else. It did not survive a reload, a sign-out, or opening the shop on a
- * different device — and #cart-badge rendering 0 was the honest answer, not a
- * display bug. The manuscript describes the cart as part of the customer's
- * account; db/migrations/007-persistent-cart.sql is the storage and this is
- * the read side.
- *
- * WHAT IT RETURNS, AND WHY IT IS NOT JUST THE ROWS
- * -----------------------------------------------
- * A cart can sit untouched for a week, and the catalogue does not sit still
- * for a week. Two things can have happened to a saved line by the time
- * somebody comes back for it:
- *
- *   - the product was archived, so it cannot be bought at all; or
- *   - stock fell below the saved quantity.
- *
- * Neither is a reason to hand the shopper a cart that will be refused at
- * checkout. api/shop/checkout.php already re-checks both and rejects the whole
- * order with "We only have N of X left" — correct, but the shopper meets it at
- * the last step, after filling in an address. Reconciling here means the
- * drawer they open is a cart that can actually be bought.
- *
- * The reconciliation is WRITTEN BACK, not merely applied to the response. A
- * response that quietly differs from the stored row would put it back on the
- * next load, and the shopper would fix the same line twice.
- *
- * `changes` reports what was done so the page can say so. Silently deleting
- * somebody's cart line is worse than the stale line was.
- *
- * Scoped to the session customer throughout. No id is read from the request —
- * there is no parameter that could carry one.
- */
+/** GET /api/shop/cart.php returns the signed-in customer's saved cart, removing archived products and lowering quantities above stock, saving those fixes and reporting them in changes. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -48,15 +10,10 @@ Response::requireMethod('GET');
 $customer = Auth::requireCustomer('Sign in to see your cart.');
 $customerId = (string) $customer['id'];
 
-/* Everything the drawer draws, in one query. The storefront's renderCart()
-   looks each line up in its own PRODUCTS array, which is loaded from
-   shop/products.php and therefore holds only unarchived rows — so a cart line
-   whose product has since been archived would have found nothing there and
-   thrown on `p.name`. Sending the product fields with the line removes that
-   dependency entirely. */
+/* Return all product fields with each line so the drawer does not depend on the storefront's product list. */
 $rows = Database::all(
     "SELECT ci.product_id, ci.qty, ci.updated_at,
-            p.name, p.price, p.image_url, p.tint, p.stock, p.archived,
+            p.name, p.price, p.image_url, p.tint, " . Stock::availableSql('p') . " AS stock, p.archived,
             c.name AS category
        FROM cart_items ci
        JOIN products p   ON p.id = ci.product_id
@@ -66,14 +23,7 @@ $rows = Database::all(
     [$customerId]
 );
 
-/* The band only; the wording comes from Inventory::shopLabel() so a product
-   described one way in the grid is not described another way in the drawer.
-
-   These three thresholds are a local copy of a rule that lives in
-   Inventory::rankSelect(), and they do not agree with it — the real bands also
-   account for days of cover, which needs the velocity join this query does not
-   carry. Left as-is rather than half-fixed: it is a pill colour on a line the
-   shopper has already chosen, and the quantity beside it is exact either way. */
+/* Stock band only (wording from Inventory::shopLabel()); these simple thresholds differ from Inventory's full rule but only affect the pill colour. */
 $band = static function (int $stock): array {
     if ($stock <= 0)  return ['level' => 'out'];
     if ($stock <= 10) return ['level' => 'crit'];
@@ -125,17 +75,14 @@ foreach ($rows as $r) {
         'tint'       => $r['tint'],
         'cat'        => $r['category'],
         'inStock'    => true,
-        /* Carried so the drawer's stepper can cap at what is actually there —
-           the grid's card already does, and a cart line that lets you type 99
-           after the card refused it is the same failure one screen later. */
+        /* Include stock so the drawer's stepper can cap at what is available. */
         'stock'      => $stock,
         'stockLevel' => $b['level'],
         'stockLabel' => Inventory::shopLabel($b['level'], $stock),
     ];
 }
 
-/* Written back so the next load agrees with this one. One transaction: a
-   half-applied reconciliation is a cart nobody has seen a correct version of. */
+/* Save the fixes in one transaction so the next load matches. */
 if ($drop !== [] || $clamp !== []) {
     $pdo = Database::pdo();
     try {
@@ -164,10 +111,7 @@ if ($drop !== [] || $clamp !== []) {
 
 Response::ok([
     'items'   => $items,
-    /* PRODUCTS, not units — the same definition cartLineCount() uses in
-       assets/js/public/site.js. Two products at quantity 2 is 2, not 4. One
-       definition on both sides, so the badge cannot show a different number
-       depending on whether the cart came from here or from local state. */
+    /* Count products, not units, matching cartLineCount() in site.js. */
     'count'   => count($items),
     'changes' => $changes,
 ]);

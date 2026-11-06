@@ -1,73 +1,112 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Stock — the one place that moves inventory.
- *
- * Same reasoning as Payments (I8), found by the Phase 4 duplicate-write sweep.
- * `products.stock` was written from five places with four different rules:
- *
- *   pos/checkout.php      stock = stock - ?, sold = sold + ?   AND stock >= ?
- *   orders/status.php     stock = stock - ?, sold = sold + ?   AND stock >= ?
- *   orders/status.php     stock = stock + ?, sold = GREATEST(sold - ?, 0)
- *   returns/advance.php   stock = stock + ?                    <-- no sold change
- *   inventory/adjust.php  stock = stock + ?                    AND stock + ? >= 0
- *
- * THE DRIFT THAT MATTERED
- * -----------------------
- * A CANCELLED order restores stock and decrements `sold`. A REFUNDED RETURN
- * restored stock and left `sold` alone — so a returned unit counted as sold for
- * ever. Two implementations of "the goods came back, reverse the sale", written
- * months apart, disagreeing about half of it.
- *
- * That is not cosmetic. `products.sold` drives:
- *   - the Fast / Slow / Non-Moving classification in products/list.php
- *     (>1000 / 200-1000 / <200), on the Inventory Report
- *   - the default "featured" sort on the public storefront (shop/products.php)
- *   - the "N sold" figure printed on every public product card
- *   - the Landing editor's Best Sellers ranking, and its revenue column, which
- *     is price x sold
- *
- * So a heavily returned product read as Fast Moving, sorted to the front of the
- * shop, and advertised its returns to customers as sales.
- *
- * Money already handled this correctly — reports/sales.php nets refunds out of
- * revenue. Units did not. The two ledgers disagreed.
- *
- * WHY A CLASS RATHER THAN A TIDY-UP
- * ---------------------------------
- * The rules are genuinely different per movement and that is the point: naming
- * them makes the difference deliberate instead of accidental. An adjustment is
- * not a sale and must not touch `sold`; a return is a reversed sale and must.
- *
- * Every method here MUST be called inside the caller's transaction. None of
- * them opens one, because stock only ever moves alongside something else — an
- * order, a return, an adjustment — and a stock movement that commits without
- * its reason is how inventory becomes permanently unexplainable.
- */
+/** Stock is the only place inventory moves, with named rules per movement (a sale changes stock and sold, a reversal restores both, an adjustment changes stock only), always inside the caller's transaction. */
 
 final class Stock
 {
-    /**
-     * Goods leave: an order is committed, or a walk-in sale rings up.
-     *
-     * Returns the number of rows affected. **The caller must check it.** The
-     * guard `AND stock >= ?` means a request for more than exists changes
-     * nothing and returns 0 rather than driving stock negative — which is a
-     * refusal the caller has to turn into a message naming the product, not a
-     * silent no-op.
-     */
+    /* Lot tracking (migration 028): which batch every sold unit came from. Skipped until the table exists. */
+    private static ?bool $lotsReady = null;
+
+    public static function lotsReady(): bool
+    {
+        return self::$lotsReady ??= Database::hasTable('order_item_lots');
+    }
+
+    /** Take $qty units of a product from its lots, earliest expiry first (lots that failed lab testing are skipped),
+        lowering each lot's remaining count and recording the lots against the order. Units not in any lot are recorded
+        with no lot code. Call inside the caller's transaction, right after a successful sell(). */
+    public static function allocateLots(string $orderId, string $productId, int $qty): void
+    {
+        if ($qty < 1 || !self::lotsReady()) {
+            return;
+        }
+        $left = $qty;
+        foreach (Database::all(
+            "SELECT id, lot_code, remaining_qty FROM batches
+              WHERE product_id = ? AND remaining_qty > 0 AND lab_status <> 'failed'
+              ORDER BY expiry_date ASC, production_date ASC, id ASC
+              FOR UPDATE",
+            [$productId]
+        ) as $b) {
+            if ($left <= 0) { break; }
+            $take = min($left, (int) $b['remaining_qty']);
+            Database::run('UPDATE batches SET remaining_qty = remaining_qty - ? WHERE id = ?', [$take, $b['id']]);
+            Database::run('INSERT INTO order_item_lots (order_id, product_id, lot_code, qty) VALUES (?, ?, ?, ?)',
+                [$orderId, $productId, $b['lot_code'], $take]);
+            $left -= $take;
+        }
+        if ($left > 0) {
+            Database::run('INSERT INTO order_item_lots (order_id, product_id, lot_code, qty) VALUES (?, ?, NULL, ?)',
+                [$orderId, $productId, $left]);
+        }
+    }
+
+    /** Put a cancelled order's units back into the lots they came from and forget the allocation. */
+    public static function releaseLots(string $orderId): void
+    {
+        if (!self::lotsReady()) {
+            return;
+        }
+        foreach (Database::all('SELECT lot_code, qty FROM order_item_lots WHERE order_id = ? AND lot_code IS NOT NULL', [$orderId]) as $r) {
+            Database::run('UPDATE batches SET remaining_qty = remaining_qty + ? WHERE lot_code = ?', [(int) $r['qty'], $r['lot_code']]);
+        }
+        Database::run('DELETE FROM order_item_lots WHERE order_id = ?', [$orderId]);
+    }
+
+    /** Lots for many orders at once: [orderId][productId] => [['lot' => ?string, 'qty' => int], ...]. */
+    public static function lotsByOrders(array $orderIds): array
+    {
+        if ($orderIds === [] || !self::lotsReady()) {
+            return [];
+        }
+        $out = [];
+        $ph  = implode(',', array_fill(0, count($orderIds), '?'));
+        foreach (Database::all("SELECT order_id, product_id, lot_code, qty FROM order_item_lots WHERE order_id IN ($ph) ORDER BY id", $orderIds) as $r) {
+            $out[$r['order_id']][$r['product_id']][] = ['lot' => $r['lot_code'], 'qty' => (int) $r['qty']];
+        }
+        return $out;
+    }
+
+    /** The lots one product of an order was taken from, in the order they were used: [['lot' => ?string, 'qty' => int], ...]. */
+    public static function lotsFor(string $orderId, string $productId): array
+    {
+        if (!self::lotsReady()) {
+            return [];
+        }
+        return array_map(static fn(array $r): array => ['lot' => $r['lot_code'], 'qty' => (int) $r['qty']],
+            Database::all('SELECT lot_code, qty FROM order_item_lots WHERE order_id = ? AND product_id = ? ORDER BY id',
+                [$orderId, $productId]));
+    }
+
+    /* Online orders not yet accepted (pending or on hold) reserve their items: shoppers see stock minus reservations,
+       accepting turns the reservation into a real sale, and cancelling simply drops it, so nothing needs putting back. */
+    public const RESERVING_STATUSES = ['pending', 'on-hold'];
+
+    /** SQL for the units of product `$alias`.id reserved by unaccepted online orders. */
+    public static function reservedSql(string $alias = 'p'): string
+    {
+        return "(SELECT COALESCE(SUM(roi.qty), 0)
+                   FROM order_items roi
+                   JOIN orders ro ON ro.id = roi.order_id
+                  WHERE roi.product_id = {$alias}.id AND ro.type = 'online'
+                    AND ro.status IN ('pending', 'on-hold'))";
+    }
+
+    /** SQL for what shoppers can still order: stock minus reservations, never below 0. */
+    public static function availableSql(string $alias = 'p'): string
+    {
+        return 'GREATEST(' . $alias . '.stock - ' . self::reservedSql($alias) . ', 0)';
+    }
+
+    /** Goods leave (order committed or walk-in sale); returns affected rows, and the caller must treat 0 as "not enough stock". */
     public static function sell(string $productId, int $qty): int
     {
         if ($qty < 1) {
             throw new InvalidArgumentException("Stock::sell needs a positive quantity, got {$qty}.");
         }
 
-        /* Read the band BEFORE the movement. Every path that reduces stock goes
-           through this method, which is why the alert is raised here rather
-           than in pos/checkout.php and orders/status.php separately — two
-           copies of a threshold rule is how the four stock-writing rules this
-           class replaced came to disagree in the first place. */
+        /* Read the stock band before the movement so a low-stock alert can be raised here for every sale path. */
         $before = Inventory::levelForProduct($productId);
 
         $rows = Database::run(
@@ -83,25 +122,7 @@ final class Stock
         return $rows;
     }
 
-    /**
-     * Raise a Critical notification when a sale takes a product INTO the
-     * critical or out-of-stock band.
-     *
-     * ON THE TRANSITION, NOT THE STATE. Firing whenever stock is low would put
-     * a row in the bell for every jar sold of an already-critical product — on
-     * a busy afternoon that is dozens of identical alerts, and a bell nobody
-     * reads is worse than no bell, because it also buries the ones that matter.
-     * Comparing the band on either side of the movement means one alert per
-     * crossing, which is one alert per thing that actually changed.
-     *
-     * Crossing DOWNWARD only: 'ok' to 'crit' fires, and 'crit' to 'out' fires
-     * again because running out is a different problem from running low. A sale
-     * cannot move a product upward, so there is no other direction to consider.
-     *
-     * NOT FATAL. This runs inside the caller's transaction alongside the order
-     * it belongs to, and an order must not be lost because the bell could not
-     * be rung. A failure here is logged and the sale stands.
-     */
+    /** Raise a Critical notification only when a sale moves a product down into critical or out-of-stock, logging (not failing) if that errors. */
     private static function alertOnBandCrossing(string $productId, ?string $before): void
     {
         try {
@@ -123,24 +144,14 @@ final class Stock
                 ? sprintf('%s is out of stock — 0 units remaining.', $row['name'])
                 : sprintf('%s has fallen to critical stock — %d unit(s) left.', $row['name'], $stock);
 
-            /* 'inventory' maps to Critical in Notify's one table; the level is
-               not passed from here, deliberately. */
+            /* 'inventory' maps to Critical in Notify's table; the level is not passed from here. */
             Notify::createOnceWhileUnread('inventory', $productId, $message);
         } catch (Throwable $e) {
             error_log('[elishabay] stock alert failed for ' . $productId . ': ' . $e->getMessage());
         }
     }
 
-    /**
-     * Goods come back and the sale is reversed: a cancellation, or a refunded
-     * return.
-     *
-     * `sold` comes back down. GREATEST(…, 0) because `sold` is also seeded
-     * demo data and a return against a pre-seed sale must not push it negative.
-     *
-     * No stock guard: adding stock cannot make it negative, and refusing to put
-     * returned goods back on the shelf because of a race would lose them.
-     */
+    /** Goods come back and the sale is reversed (cancellation or refunded return), lowering sold but never below 0. */
     public static function reverseSale(string $productId, int $qty): void
     {
         if ($qty < 1) {
@@ -154,20 +165,7 @@ final class Stock
         );
     }
 
-    /**
-     * A correction, not a sale: a restock, a delivery, spoilage, a stock count.
-     *
-     * `sold` is deliberately untouched — receiving 200 jars is not 200 sales,
-     * and writing off spoilage is not 200 un-sales. This is the one movement
-     * where leaving `sold` alone is correct, which is exactly why it needs its
-     * own name rather than sharing one with the others.
-     *
-     * `$delta` is signed. The guard refuses a negative result rather than
-     * clamping it: stock that would go below zero means the count is wrong, and
-     * quietly writing 0 hides that.
-     *
-     * Returns rows affected; 0 means the adjustment was refused.
-     */
+    /** A correction, not a sale (restock, delivery, spoilage, count): sold is untouched and a result below zero is refused; returns 0 when refused. */
     public static function adjust(string $productId, int $delta): int
     {
         if ($delta === 0) {

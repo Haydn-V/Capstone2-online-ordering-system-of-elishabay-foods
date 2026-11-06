@@ -1,61 +1,17 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Payments — the one place that decides what a payment means.
- *
- * DECISION I8: one function, one table, one transaction.
- *
- * WHY THIS FILE EXISTS
- * --------------------
- * Two checkout endpoints each worked out the payment columns for themselves,
- * with the same expression copy-pasted into both:
- *
- *     pos/checkout.php   $refNum !== null ? 1 : 0      // proof_uploaded
- *     shop/checkout.php  $refNum !== null ? 1 : 0      // proof_uploaded
- *
- * Duplicated logic drifts, and this pair had already drifted in the way that
- * matters: pos/checkout.php hardcoded pay_verified = 1 for every sale, which is
- * right for cash in hand and wrong for a Net-30 retailer who has not paid
- * anything yet. The POS offered Net 30/60/90 and the endpoint refused them, so
- * the question never came up — the order simply failed, silently.
- *
- * Both endpoints now ask this class. There is one definition of what each
- * payment method implies, and adding a method means changing one file.
- *
- * WHAT A "PAYMENT" IS HERE
- * ------------------------
- * There is no `payments` table in this schema and this file does not invent
- * one. Payment state lives in two places that already exist:
- *
- *   orders.pay_verified / proof_*   — for money paid at or around the sale
- *   payment_accounts                — a receivable, for money owed on terms
- *
- * An immediate sale touches the first. A credit sale touches both: the order
- * records that nothing has been verified as paid, and a receivable is opened
- * for the amount. That is the write which was missing entirely — every row in
- * payment_accounts was seeded, and the only statement in the codebase that
- * touched the table was `UPDATE ... SET paid = ?`. A balance could be settled
- * and could never be raised.
- */
+/** Payments decides what each payment method means for an order in one place: an immediate sale sets the order's payment columns, while a credit (Net) sale also opens a receivable in payment_accounts. */
 
 final class Payments
 {
     /** Paid at the point of sale, or claimed to be and awaiting verification. */
     public const IMMEDIATE = ['cash', 'gcash', 'bank'];
 
-    /** Paid later, on terms. The value is the number of days until due. */
+    /** Credit terms paid later; the value is the number of days until due. */
     public const CREDIT = ['net30' => 30, 'net60' => 60, 'net90' => 90];
 
-    /**
-     * Methods a caller may accept.
-     *
-     * Credit terms are offered only to a retailer, and only where a retailer
-     * can actually be named — the storefront has no retailer selection, so it
-     * passes false. Returning the list from here rather than writing it out at
-     * each call site is what stops the client's list and the server's list
-     * drifting apart again.
-     */
+    /** Payment methods a caller may accept, with credit terms only when a retailer can be named. */
     public static function methods(bool $allowCredit): array
     {
         return $allowCredit
@@ -74,6 +30,31 @@ final class Payments
         return self::CREDIT[$method] ?? 0;
     }
 
+    /** Check a GCash or bank reference number: GCash is 13 digits, bank is 6–20 letters or digits (spaces and
+        dashes dropped), and a reference already on any order or non-rejected payment cannot be used again.
+        Returns [cleaned reference, error or null]; other methods pass through untouched. */
+    public static function checkRef(string $method, ?string $ref): array
+    {
+        if ($ref === null || !in_array($method, ['gcash', 'bank'], true)) {
+            return [$ref, null];
+        }
+        $clean = strtoupper(str_replace([' ', '-'], '', $ref));
+        if ($method === 'gcash' && !preg_match('/^\d{13}$/', $clean)) {
+            return [$clean, 'GCash reference numbers are 13 digits.'];
+        }
+        if ($method === 'bank' && !preg_match('/^[A-Z0-9]{6,20}$/', $clean)) {
+            return [$clean, "Enter the 6–20 character reference from your bank's confirmation."];
+        }
+        /* Older rows are compared the same way (spaces and dashes ignored), never changed. */
+        $norm = "REPLACE(REPLACE(UPPER(%s), ' ', ''), '-', '')";
+        $used = (int) Database::scalar(
+            'SELECT (SELECT COUNT(*) FROM orders WHERE ' . sprintf($norm, 'proof_ref_num') . ' = ?)
+                  + (SELECT COUNT(*) FROM credit_payments WHERE status <> ? AND ' . sprintf($norm, 'ref_num') . ' = ?)',
+            [$clean, 'rejected', $clean]
+        );
+        return $used > 0 ? [$clean, 'This reference number has already been used. Check it against your receipt.'] : [$clean, null];
+    }
+
     /** 'net30' -> 'Net 30', for payment_accounts.scheme and for audit text. */
     public static function schemeLabel(string $method): string
     {
@@ -82,36 +63,7 @@ final class Payments
             : ucfirst($method);
     }
 
-    /**
-     * The payment-related columns for an `orders` INSERT.
-     *
-     * Returned as an array rather than written here, because the order row does
-     * not exist yet — the caller is mid-INSERT. One place decides the values;
-     * the caller places them.
-     *
-     * `$proofPath` is the uploaded reference image, or null. `$refNum` is the
-     * typed reference number, or null.
-     *
-     * ON `proof_uploaded`
-     * -------------------
-     * It means "the customer has supplied something for staff to check" — a
-     * reference number, an image, or both. That is exactly what it meant
-     * before, when a reference number was the only thing that could be
-     * supplied, so no existing row or screen changes meaning. The name is
-     * poor and predates images; it is kept because the Payment Verification
-     * screen filters on it and renaming a column to fix a comment is how a
-     * working screen goes dark.
-     *
-     * ON `pay_verified`
-     * -----------------
-     *   cash at the till      1  — the cashier is holding the money
-     *   gcash/bank at the till 1  — the cashier watched the transfer land
-     *   gcash/bank online     0  — a claim, until staff verify it
-     *   any credit method     0  — nothing has been paid at all
-     *
-     * The old POS code hardcoded 1 for every method it could reach, which was
-     * correct only because it could not reach a credit method.
-     */
+    /** Payment columns for an orders INSERT: proof_uploaded means the customer supplied a reference or image to check, and pay_verified is 1 only when staff saw the money at the till (never for online or credit). */
     public static function orderFields(
         string $method,
         ?string $refNum,
@@ -122,8 +74,7 @@ final class Payments
         $hasProof = ($refNum !== null && $refNum !== '') || ($proofPath !== null && $proofPath !== '');
 
         if (self::isCredit($method)) {
-            /* Nothing has been paid. There is no proof to hold and no amount
-               claimed — the amount owed lives on the receivable, not here. */
+            /* Credit sale: nothing paid yet, so no proof or amount here; the amount owed lives on the receivable. */
             return [
                 'pay_verified'     => 0,
                 'proof_uploaded'   => 0,
@@ -138,30 +89,38 @@ final class Payments
             'proof_uploaded'   => $hasProof ? 1 : 0,
             'proof_ref_num'    => $refNum,
             'proof_image_path' => $proofPath,
-            /* The amount the customer says they sent. Compared against the
-               order total on the Payment Verification screen, so it must be
-               the real total rather than whatever the client believed. */
+            /* The amount the customer says they sent, set to the real order total so Payment Verification compares correctly. */
             'proof_amount'     => $hasProof ? $total : 0.0,
         ];
     }
 
-    /**
-     * Open a receivable for a credit sale.
-     *
-     * MUST be called inside the caller's transaction, alongside the order
-     * INSERT. A sale recorded without its receivable is money the business
-     * cannot see it is owed, and a receivable without its sale is a debt
-     * nobody can explain — either half alone is worse than neither.
-     *
-     * One row per credit sale, which is the shape the table already has:
-     * pay-01 and pay-04 are two Net-30 rows for the same customer, one settled
-     * and one not. No new concept is introduced here.
-     *
-     * The due date is computed by the database with CURDATE(), not in PHP and
-     * certainly not in the browser — D1, and the same reason `isOverdue()` was
-     * moved server-side after it spent two months frozen against a hardcoded
-     * date.
-     */
+    /** A cancelled order owes nothing, so close its Net account inside the caller's transaction: payments still
+        waiting are rejected, and the account is removed when nothing was paid, or else billed only what was paid
+        (and marked settled) so the money already received stays on record for a refund. */
+    public static function closeForCancelledOrder(string $orderId): void
+    {
+        $acct = Database::one('SELECT id FROM payment_accounts WHERE order_id = ? FOR UPDATE', [$orderId]);
+        if ($acct === null) {
+            return;
+        }
+        Database::run(
+            "UPDATE credit_payments SET status = 'rejected', reject_reason = 'The order was cancelled.', decided_at = NOW()
+              WHERE account_id = ? AND status = 'pending'",
+            [$acct['id']]
+        );
+        $paid = (float) Database::scalar(
+            "SELECT COALESCE(SUM(amount), 0) FROM credit_payments WHERE account_id = ? AND status = 'verified'",
+            [$acct['id']]
+        );
+        if ($paid <= 0) {
+            Database::run('DELETE FROM credit_payments WHERE account_id = ?', [$acct['id']]);
+            Database::run('DELETE FROM payment_accounts WHERE id = ?', [$acct['id']]);
+        } else {
+            Database::run('UPDATE payment_accounts SET balance = ?, paid = 1 WHERE id = ?', [$paid, $acct['id']]);
+        }
+    }
+
+    /** Open a receivable for a credit sale inside the caller's transaction (alongside the order), with the due date computed by the database. */
     public static function openCreditAccount(
         string $orderId,
         array $customer,
@@ -204,22 +163,85 @@ final class Payments
         ];
     }
 
-    /* ------------------------------------------------------------------
-       Retailer credit: overdue and penalty
-       ------------------------------------------------------------------
-       Moved here from api/payments/list.php when the customer-facing
-       api/shop/my-payments.php needed the same numbers.
+    /* Retailer tiers and credit budgets: a tier's budget is the most a retailer may owe on Net terms at once (settings credit_limit_*; Super Admin edits them). */
+    public const TIERS = ['Bronze', 'Silver', 'Gold'];
+    public const TIER_DEFAULTS = ['Bronze' => 20000.0, 'Silver' => 50000.0, 'Gold' => 100000.0];
 
-       It was three lines and it would have been quicker to copy them. That is
-       exactly the mistake this codebase has already paid for twice — the stock
-       quartet and the `proof_uploaded` expression both drifted after being
-       written out in more than one place. A retailer who is shown a penalty
-       that differs by a peso from what the cashier is looking at will not
-       assume it is a rounding rule; they will assume they are being
-       overcharged, and the feature becomes worse than not having it.
-       ------------------------------------------------------------------ */
+    /** Budget per tier, falling back to the defaults for a missing or invalid setting. */
+    public static function creditLimits(): array
+    {
+        $stored = [];
+        foreach (Database::all("SELECT key_name, value_text FROM settings WHERE key_name LIKE 'credit_limit_%'") as $r) {
+            $stored[$r['key_name']] = $r['value_text'];
+        }
+        $out = [];
+        foreach (self::TIER_DEFAULTS as $tier => $fallback) {
+            $raw = $stored['credit_limit_' . strtolower($tier)] ?? null;
+            $out[$tier] = is_numeric($raw) && (float) $raw >= 0 ? (float) $raw : $fallback;
+        }
+        return $out;
+    }
 
-    /** The configured penalty percentage. Read from settings, never hardcoded. */
+    /** A retailer's tier, Bronze when none was ever set. */
+    public static function tierFor(string $customerId): string
+    {
+        $tier = Database::scalar('SELECT retailer_tier FROM customers WHERE id = ?', [$customerId]);
+        return in_array($tier, self::TIERS, true) ? $tier : 'Bronze';
+    }
+
+    /** What the retailer still owes across open Net accounts (penalties included), ignoring cancelled orders. */
+    public static function creditUsed(string $customerId): float
+    {
+        $rate = self::penaltyRate();
+        $used = 0.0;
+        foreach (Database::all(
+            self::accountSelect()
+            . " LEFT JOIN orders o ON o.id = pa.order_id
+               WHERE pa.customer_id = ? AND pa.paid = 0 AND (o.status IS NULL OR o.status <> 'cancelled')",
+            [$customerId]
+        ) as $r) {
+            $a = self::describeAccount($r, $rate);
+            if (!$a['settled']) { $used += $a['remaining']; }
+        }
+        return round($used, 2);
+    }
+
+    /** Tier, budget, amount used and amount left for one retailer. */
+    public static function creditStanding(string $customerId): array
+    {
+        $tier  = self::tierFor($customerId);
+        $limit = self::creditLimits()[$tier];
+        $used  = self::creditUsed($customerId);
+        return [
+            'tier'      => $tier,
+            'limit'     => $limit,
+            'used'      => $used,
+            'available' => max(0.0, round($limit - $used, 2)),
+        ];
+    }
+
+    /** Why a new Net order of this amount cannot be placed (budget would be passed), or null when it fits. */
+    public static function creditProblem(string $customerId, float $amount, bool $forStaff = false): ?string
+    {
+        $s = self::creditStanding($customerId);
+        if (round($s['used'] + $amount, 2) <= $s['limit']) {
+            return null;
+        }
+        $peso = static fn(float $n): string => '₱' . number_format($n, 2);
+        return sprintf(
+            '%s %s tier credit budget is %s, with %s still unpaid on Net terms, so only %s is left for a new Net order (this one is %s). '
+            . '%s',
+            $forStaff ? 'This retailer\'s' : 'Your',
+            $s['tier'], $peso($s['limit']), $peso($s['used']), $peso($s['available']), $peso($amount),
+            $forStaff
+                ? 'Collect payment on their open Net balances first, or take this sale as cash, GCash or bank transfer.'
+                : 'Pay your open Net balances first, or place this order on cash, GCash or bank transfer.'
+        );
+    }
+
+    /* Retailer credit overdue and penalty rules, kept here so the retailer and staff screens always show the same amounts. */
+
+    /** The configured late-payment penalty percentage, read from settings (one rate for every term). */
     public static function penaltyRate(): float
     {
         return (float) (Database::scalar(
@@ -227,41 +249,73 @@ final class Payments
         ) ?? 2);
     }
 
-    /* ==================================================================
-       Payments toward a Net account — credit_payments (migration 013)
-       ==================================================================
-       payment_accounts.balance is what the sale BILLED and never changes.
-       Everything else is derived from payment rows, so every figure on every
-       screen can be explained line by line:
+    /* Interest for buying on terms: a Net order is money lent to the retailer, so the amount they owe is the amount due
+       plus a one-time interest at the term's rate (Net 30 / 60 / 90, set by the Super Admin). It is shown in the checkout
+       breakdown, stored on the order (term_interest_rate, term_interest, migration 037) and billed on the Net account. */
+    public const INTEREST_DEFAULTS = ['net30' => 2.0, 'net60' => 3.0, 'net90' => 4.0];
 
-         paid so far   SUM of VERIFIED payments (legacy rows included — that
-                       money did arrive; see migration 013)
-         pending       SUM of payments a retailer has sent that staff have not
-                       checked yet
-         penalty       once past due, the penalty rate × what was STILL UNPAID
-                       ON THE DUE DATE. Paying part early lowers it; paying after
-                       the due date does not erase it. Decided 2026-09-11.
-         remaining     billed + penalty − paid so far
-         settled       remaining is zero. payment_accounts.paid mirrors this and
-                       is written ONLY by refreshAccount(), never by hand.
+    /** @return array<string,float> term => interest % */
+    public static function interestRates(): array
+    {
+        $out = [];
+        foreach (self::INTEREST_DEFAULTS as $term => $default) {
+            $v = Database::scalar('SELECT value_text FROM settings WHERE key_name = ?', ["interest_rate_{$term}"]);
+            $out[$term] = (float) ($v ?? $default);
+        }
+        return $out;
+    }
 
-       The retailer's Payment Schemes page, the staff Payment Scheme screen,
-       checkout's overdue check and the POS retailer picker all read
-       describeAccount(). A penalty worked out in two places is a penalty that
-       eventually disagrees with itself, in front of the customer.
-       ================================================================== */
+    /** Whether orders can store the interest (migration 037 run). */
+    public static function interestReady(): bool
+    {
+        static $ready = null;
+        return $ready ??= Database::hasColumn('orders', 'term_interest');
+    }
 
-    /** How a payment toward an account may arrive. Cash only at the counter. */
+    /** Add the term's interest to a breakdown (Tax::compute, after the delivery fee): termInterestRate, termInterest,
+        and a higher amountDue. Anything but a Net method, or before migration 037, adds nothing. */
+    public static function applyInterest(array $tax, string $method): array
+    {
+        $tax['termInterestRate'] = null;
+        $tax['termInterest']     = 0.0;
+        if (!self::isCredit($method) || !self::interestReady()) {
+            return $tax;
+        }
+        $rate = self::interestRates()[$method] ?? 0.0;
+        if ($rate <= 0) {
+            return $tax;
+        }
+        $interest = round((float) $tax['amountDue'] * $rate / 100, 2);
+        $tax['termInterestRate'] = $rate;
+        $tax['termInterest']     = $interest;
+        $tax['termScheme']       = self::schemeLabel($method);
+        $tax['amountDue']        = round((float) $tax['amountDue'] + $interest, 2);
+        return $tax;
+    }
+
+    /** Write the interest onto an order just inserted. */
+    public static function saveInterestOnOrder(string $orderId, array $tax): void
+    {
+        if (!self::interestReady() || empty($tax['termInterest'])) {
+            return;
+        }
+        Database::run('UPDATE orders SET term_interest_rate = ?, term_interest = ? WHERE id = ?',
+            [$tax['termInterestRate'], $tax['termInterest'], $orderId]);
+    }
+
+    /** SQL for what the buyer pays on an order: total, less the retailer discount, plus any term interest. */
+    public static function dueSql(string $alias = 'o'): string
+    {
+        return "({$alias}.total - COALESCE({$alias}.withholding_tax, 0)"
+            . (self::interestReady() ? " + COALESCE({$alias}.term_interest, 0)" : '') . ')';
+    }
+
+    /* Net account figures are derived from credit_payments: paid = verified payments, pending = unchecked payments, penalty = rate x amount still unpaid on the due date, remaining = billed + penalty - paid, and only refreshAccount() writes payment_accounts.paid. */
+
+    /** Ways a payment toward an account may arrive (cash only at the counter). */
     public const PAYMENT_METHODS = ['gcash', 'bank', 'cash'];
 
-    /**
-     * SELECT for accounts with their payment sums, ready for a WHERE / ORDER BY.
-     *
-     * The sums come from a derived table rather than a join-and-group on the
-     * outer query, so callers can add any WHERE without an aggregate getting in
-     * the way. `paid_by_due` needs the account's own due date, hence the inner
-     * join back to payment_accounts.
-     */
+    /** SELECT for accounts with their payment totals from a derived table, so callers can add any WHERE or ORDER BY. */
     public static function accountSelect(): string
     {
         return "SELECT pa.id, pa.customer_id, pa.order_id, pa.name, pa.email, pa.scheme,
@@ -285,13 +339,7 @@ final class Payments
                   ) s ON s.account_id = pa.id";
     }
 
-    /**
-     * The money figures for one account. Pure arithmetic — no queries.
-     *
-     * `$daysPastDue` is DATEDIFF(CURDATE(), due_date), positive when late.
-     * Derived at read time and never stored, so an account cannot sit at
-     * "3 days late" because nobody reopened a screen.
-     */
+    /** Money figures for one account (pure arithmetic), with days past due computed at read time. */
     public static function figures(
         float $billed,
         float $paid,
@@ -303,16 +351,13 @@ final class Payments
         $rate        = $rate ?? self::penaltyRate();
         $pastDue     = $daysPastDue > 0;
         $unpaidAtDue = max(0.0, round($billed - $paidByDue, 2));
-        /* Flat percentage, charged once — not compounding per day, which would
-           need a documented business rule nobody has written. */
+        /* A flat one-time penalty percentage, not compounding daily. */
         $penalty     = ($pastDue && $unpaidAtDue > 0) ? round($unpaidAtDue * ($rate / 100), 2) : 0.0;
         $owed        = round($billed + $penalty, 2);
         $remaining   = max(0.0, round($owed - $paid, 2));
         $settled     = $remaining <= 0.0;
         $overdue     = !$settled && $pastDue;
-        /* What may still be SENT: payments already waiting for review count
-           against it, so two screenshots for the same last ₱5,000 cannot both
-           be submitted. */
+        /* What can still be sent: pending payments count against it so the same final amount cannot be submitted twice. */
         $payable     = max(0.0, round($remaining - $pending, 2));
 
         return [
@@ -330,9 +375,7 @@ final class Payments
             'rate'          => $rate,
             'state'         => $settled ? 'paid'
                              : ($overdue ? 'overdue' : ($paid > 0 ? 'partial' : 'pending')),
-            /* The names screens written before instalments already read, kept
-               with their nearest honest meaning so nothing goes blank:
-               balance = billed, paid = settled, totalDue = what is left. */
+            /* Older field names kept for screens that still read them: balance = billed, paid = settled, totalDue = remaining. */
             'balance'       => round($billed, 2),
             'paid'          => $settled,
             'totalDue'      => $remaining,
@@ -362,13 +405,7 @@ final class Payments
         );
     }
 
-    /**
-     * Lock an account for the rest of the caller's transaction and describe it.
-     *
-     * Two staff verifying the last two payments at once, or a retailer sending
-     * a payment while a cashier records one, must not both see the same
-     * "remaining" and together take it below zero. The row lock serialises them.
-     */
+    /** Lock the account row for the rest of the transaction so simultaneous payments cannot push the balance below zero. */
     public static function lockAccount(string $id): ?array
     {
         if (!Database::scalar('SELECT id FROM payment_accounts WHERE id = ? FOR UPDATE', [$id])) {
@@ -378,10 +415,7 @@ final class Payments
         return $row === null ? null : self::describeAccount($row);
     }
 
-    /**
-     * Why an amount cannot be paid toward an account, or null if it can.
-     * One wording for the retailer's form and the cashier's.
-     */
+    /** Why an amount cannot be paid toward an account (or null if it can), with one wording for retailer and cashier. */
     public static function amountProblem(float $amount, array $acct): ?string
     {
         if ($amount <= 0) {
@@ -402,16 +436,7 @@ final class Payments
         return null;
     }
 
-    /**
-     * Record one payment. MUST run inside the caller's transaction, after
-     * lockAccount() and amountProblem().
-     *
-     *   customer  sent from the Payment Schemes page — starts `pending`
-     *   staff     recorded at the counter — `verified` at once, by that person
-     *
-     * `$paidDate` is the revenue date: the day the money was paid. NULL means
-     * today. Returns the new payment's id.
-     */
+    /** Record one payment inside the caller's transaction (after lockAccount() and amountProblem()): customer payments start pending, staff payments are verified at once; returns the new id. */
     public static function addPayment(
         array $acct,
         float $amount,
@@ -442,13 +467,7 @@ final class Payments
         return $id;
     }
 
-    /**
-     * Re-derive an account and write payment_accounts.paid to match.
-     *
-     * The ONLY writer of that column. Called after any payment is verified or
-     * rejected, so a rejection that takes an account back below its total
-     * reopens it without anyone flipping a flag.
-     */
+    /** Recompute an account and update payment_accounts.paid (the only writer of that column) after any payment is verified or rejected. */
     public static function refreshAccount(string $accountId): ?array
     {
         $row = Database::one(self::accountSelect() . ' WHERE pa.id = ?', [$accountId]);
@@ -461,45 +480,6 @@ final class Payments
             Database::run('UPDATE payment_accounts SET paid = ? WHERE id = ?', [$flag, $accountId]);
         }
         return $acct;
-    }
-
-    /**
-     * The tax a withholding retailer kept from a Net sale, recorded as a
-     * verified payment on its account.
-     *
-     * A withholding agent pays the seller the sale LESS the tax, and remits
-     * that tax to the BIR on the seller's behalf (BIR Form 2307). The buyer has
-     * therefore settled that part at the moment of sale — just not in cash to
-     * this business. Recording it as a payment is what keeps the account right:
-     * the retailer owes the cash part, the balance billed is still the full
-     * sale, and revenue (which counts verified payments) still counts all of
-     * it rather than losing the withheld share forever.
-     *
-     * Call inside the transaction that opened the account.
-     */
-    public static function recordWithholding(
-        string $accountId,
-        ?string $customerId,
-        float $amount,
-        float $rate,
-        ?array $staff
-    ): void {
-        if ($amount <= 0) {
-            return;
-        }
-        Database::run(
-            "INSERT INTO credit_payments
-                    (account_id, customer_id, amount, method, ref_num, proof_image_path,
-                     status, source, paid_date, note, decided_by, decided_at)
-             VALUES (?, ?, ?, NULL, NULL, NULL, 'verified', 'withholding', CURDATE(), ?, ?, NOW())",
-            [
-                $accountId, $customerId, round($amount, 2),
-                sprintf('Withholding tax (%s%%) kept by the buyer and remitted to the BIR — BIR Form 2307.',
-                    rtrim(rtrim(number_format($rate, 2), '0'), '.')),
-                $staff['id'] ?? null,
-            ]
-        );
-        self::refreshAccount($accountId);
     }
 
     /** The compact shape an ORDER carries about its Net account. */
@@ -556,16 +536,7 @@ final class Payments
         ];
     }
 
-    /**
-     * Next id in the seeded `pay-NN` sequence.
-     *
-     * Derived from MAX rather than COUNT: COUNT collides the moment a row is
-     * deleted, and this is a primary key. Zero-padded to two digits to match
-     * pay-01..pay-04, and allowed to run past two digits rather than wrapping.
-     *
-     * Called inside the caller's transaction, so the read and the INSERT that
-     * follows cannot be interleaved by another cashier.
-     */
+    /** Next pay-NN id using MAX (not COUNT), inside the caller's transaction so two cashiers cannot get the same id. */
     private static function nextAccountId(): string
     {
         $max = (int) Database::scalar(

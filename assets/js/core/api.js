@@ -1,29 +1,7 @@
-/* ============================================================
- API CLIENT — the only place in the project that calls fetch()
- ------------------------------------------------------------
- Every request goes through here so that base-path resolution,
- envelope unwrapping, error shape, timeouts and 401 handling are
- decided once instead of per caller.
-
- A NOTE ON MODULE FORMAT
- -----------------------
- The brief asks for ES modules. This file is a classic script that
- publishes `window.EbApi` instead, because engine.js (3,300 lines)
- and its three companions are classic scripts sharing globals — an
- `import` cannot reach them, and converting all four is Phase 5's
- job, not a prerequisite for removing plaintext passwords from the
- browser. The surface below is deliberately import-shaped, so the
- conversion is a one-line change per caller when that happens.
- ============================================================ */
+/* API client: the only place that calls fetch(), handling base path, envelope unwrapping, errors, timeouts and 401s in one place (published as window.EbApi for the classic scripts). */
 
 
-/* Project root, derived from this module's own URL.
-
-   `import.meta.url`, not `document.currentScript` — the latter is null inside a
-   module script, so the old derivation silently fell back to "/" the moment
-   this file became a module, pointing every request at the web root instead of
-   /elishabay/api/. The classic scripts still use currentScript, which is
-   correct for them. */
+/* Project root from this module's own URL (import.meta.url, since document.currentScript is null in modules). */
 const BASE = (() => {
   const src = import.meta.url;
   const i = src.indexOf("assets/js/core/");
@@ -35,16 +13,10 @@ const API_ROOT = BASE + "api/";
 /* A request that never resolves leaves a spinner running forever. */
 const TIMEOUT_MS = 15000;
 
-/* Uploads get longer: a phone photo over a slow uplink genuinely takes more
-   than 15 seconds, and aborting a nearly-finished upload is worse than
-   waiting for it. */
+/* Uploads get a longer timeout because phone photos on slow connections take time. */
 const UPLOAD_TIMEOUT_MS = 60000;
 
-/**
- * Error carrying the envelope's own code/message/fields, so callers can
- * branch on `code` and render `fields` against a form without parsing
- * strings.
- */
+/** Error carrying the envelope's code, message and fields, so callers can branch on code and show field errors. */
 class ApiError extends Error {
   constructor(code, message, fields, status, retryAfter) {
     super(message);
@@ -52,29 +24,19 @@ class ApiError extends Error {
     this.code = code;
     this.fields = fields || {};
     this.status = status;
-    /* Seconds to wait, from a 429. Carried OUTSIDE `fields` on purpose: the
-       server puts it beside `fields` rather than in it, because `fields` is
-       rendered straight onto form inputs and a "retryAfter" key would have the
-       sign-in modal hunting for an input by that name. 0 when not applicable. */
+    /* Seconds to wait from a 429, kept outside fields so it is never treated as a form input. */
     this.retryAfter = Number(retryAfter) || 0;
   }
   get isAuth()       { return this.code === "UNAUTHENTICATED"; }
   get isForbidden()  { return this.code === "FORBIDDEN"; }
   get isValidation() { return this.code === "VALIDATION"; }
-  /* A lockout, not a wrong password. The two were indistinguishable to a
-     caller until the server started saying which — see api/core/Lockout.php. */
+  /* A lockout, not a wrong password (see api/core/Lockout.php). */
   get isRateLimited(){ return this.code === "RATE_LIMITED"; }
-  /* A distinct code, not just a 403. The server answers 403 with code "CSRF"
-     rather than "FORBIDDEN" precisely so this is distinguishable: a CSRF
-     failure is a stale page, not a permission problem, and telling someone
-     they lack access when they simply need to reload sends them to the wrong
-     person for help. */
+  /* A CSRF failure (code "CSRF") means the page is stale, not that access is denied. */
   get isCsrf()       { return this.code === "CSRF"; }
 }
 
-/* Fetch a fresh CSRF token after a rejection. Deliberately not a retry: an
-   automatic replay of a state-changing request that was just refused is how one
-   click becomes two orders. This only makes the NEXT deliberate attempt work. */
+/* Fetch a fresh CSRF token after a rejection, but never retry automatically (that could place an order twice). */
 function refreshCsrf() {
   fetch(`${API_ROOT}auth/me.php`, {
     credentials: "same-origin",
@@ -85,13 +47,10 @@ function refreshCsrf() {
     .catch(() => { /* offline or signed out; the reload prompt still stands */ });
 }
 
-/* Called when any request comes back 401. Set by session.js so the portal
-   can drop to its login view rather than rendering an empty dashboard. */
+/* Called on any 401; set by session.js so the portal shows its login view. */
 let onUnauthenticated = null;
 
-/* CSRF token for the current session, handed over by login.php / me.php.
-   Attached to every state-changing request; a cross-origin page cannot read
-   it, which is the whole point. */
+/* CSRF token for this session (from login.php/me.php), sent with every state-changing request. */
 let csrfToken = null;
 
 async function request(path, options = {}) {
@@ -114,8 +73,7 @@ async function request(path, options = {}) {
     res = await fetch(url, {
       method,
       signal: controller.signal,
-      /* The session cookie is the entire authentication story, so it has
-         to ride along. */
+      /* Send the session cookie with every request. */
       credentials: "same-origin",
       headers: {
         "Accept": "application/json",
@@ -134,8 +92,7 @@ async function request(path, options = {}) {
   }
   clearTimeout(timer);
 
-  /* A PHP fatal or a 404 on the endpoint itself returns HTML, not JSON.
-     Saying so beats "Unexpected token < in JSON at position 0". */
+  /* An HTML response (PHP fatal or 404) gets a clear message instead of a JSON parse error. */
   let payload;
   const text = await res.text();
   try {
@@ -166,10 +123,7 @@ async function request(path, options = {}) {
     onUnauthenticated(apiError);
   }
 
-  /* A CSRF rejection almost always means the page is older than the session —
-     someone signed in again in another tab, or the server restarted. The token
-     is refreshed here so the next attempt works, and the message says what to
-     do rather than reporting a bare "Request failed (HTTP 403)". */
+  /* On a CSRF rejection, refresh the token and tell the user to try again. */
   if (apiError.isCsrf) {
     apiError.message =
       "This page is out of date with your session — reload and try again.";
@@ -179,36 +133,24 @@ async function request(path, options = {}) {
   throw apiError;
 }
 
-/**
- * Upload a file to api/uploads/image.php.
- *
- * A separate function rather than a flag on request(), because a multipart body
- * needs the exact opposite of what request() does: the Content-Type header must
- * NOT be set. `fetch` derives it from the FormData along with the multipart
- * boundary, and a hand-set "multipart/form-data" arrives with no boundary at
- * all — PHP then parses nothing and $_FILES is empty. That is one of the shapes
- * the brief lists for "the upload doesn't work", so it is worth being explicit:
- * there is no Content-Type here on purpose.
- *
- * The CSRF header still applies. Uploads are state-changing.
- *
- * Timeout is longer than the standard 15s: a phone photo over a slow uplink is
- * a real case, and aborting a nearly-complete upload is worse than waiting.
- *
- * Returns { path, bytes, width, height }.
- */
+/** Upload a file to api/uploads/image.php; returns { path, bytes, width, height }. */
 async function upload(file, purpose, { signal = null } = {}) {
   const form = new FormData();
   form.append("file", file);
   form.append("purpose", purpose);
+  return postForm("uploads/image.php", form, { signal, timeoutMessage: "The upload took too long. Try a smaller image." });
+}
 
+/** POST a FormData (multipart, e.g. a file) without setting Content-Type (fetch adds the boundary), with CSRF and the
+    longer upload timeout; returns the payload's data or throws ApiError like request(). */
+async function postForm(path, form, { signal = null, timeoutMessage = "The upload took too long. Try a smaller file." } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
   if (signal) signal.addEventListener("abort", () => controller.abort());
 
   let res;
   try {
-    res = await fetch(`${API_ROOT}uploads/image.php`, {
+    res = await fetch(`${API_ROOT}${path}`, {
       method: "POST",
       signal: controller.signal,
       credentials: "same-origin",
@@ -221,7 +163,7 @@ async function upload(file, purpose, { signal = null } = {}) {
   } catch (err) {
     clearTimeout(timer);
     if (err.name === "AbortError") {
-      throw new ApiError("TIMEOUT", "The upload took too long. Try a smaller image.", {}, 0);
+      throw new ApiError("TIMEOUT", timeoutMessage, {}, 0);
     }
     throw new ApiError("NETWORK", "Cannot reach the server. Is Apache running?", {}, 0);
   }
@@ -232,8 +174,7 @@ async function upload(file, purpose, { signal = null } = {}) {
   try {
     payload = JSON.parse(text);
   } catch {
-    /* A body over post_max_size makes PHP return an empty 200 with no JSON at
-       all. Reporting it as a size problem beats "not JSON". */
+    /* An empty 200 means the upload exceeded post_max_size, so report it as too large. */
     throw new ApiError(
       "BAD_RESPONSE",
       res.status === 200
@@ -267,6 +208,7 @@ export const EbApi = {
   base: BASE,
   root: API_ROOT,
   upload,
+  postForm,
   get:  (path, query)      => request(path, { method: "GET", query }),
   post: (path, body)       => request(path, { method: "POST", body }),
   put:  (path, body)       => request(path, { method: "PUT", body }),

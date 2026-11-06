@@ -2,11 +2,11 @@
 <html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>History — Elisha Bay</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="../../assets/css/public/styles.css" />
     <link rel="stylesheet" href="../../assets/css/public/profile.css" />
       <!-- Theme before first paint: Light / Dark / System (no flash). -->
@@ -53,24 +53,7 @@
     <!-- ===== SCAFFOLDING required by script.js ===== -->
     <div id="modal-scrim" class="modal-scrim">
       <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <!-- #modal-title WAS MISSING FROM THIS PAGE, AND THAT BROKE EVERY MODAL.
-
-             openModal() opens with `$("#modal-title").textContent = title`. With
-             no such element that line threw before anything opened, so SIGN IN
-             on the signed-out guard and Proceed to Checkout in the cart both
-             looked like dead buttons on all four profile pages while working
-             fine on index.html and shop.html, which have it.
-
-             aria-labelledby="modal-title" was already here, pointing at nothing
-             — a dangling reference, so role="dialog" also had no accessible
-             name. Both are fixed by the element existing.
-
-             The `modal-body` CLASS was missing too; .modal-body carries the
-             dialog's 18px/26px padding, so content sat flush against the edges.
-
-             Same drift as #toast-wrap vs #toast-root, written up on showToast().
-             The shared shell in assets/js/public/modal-shell.js now owns this
-             markup so the copies cannot diverge again. -->
+        <!-- The modal markup (with #modal-title and .modal-body) is required; modal-shell.js now ensures it. -->
         <div class="modal-head">
           <h3 id="modal-title"></h3>
           <button class="modal-close" id="modal-close" aria-label="Close dialog">
@@ -162,12 +145,7 @@
     <script defer src="../../assets/js/public/site.js"></script>
     <script defer src="../../assets/js/public/profile-shell.js"></script>
     <script>
-    /* ── History page ─────────────────────────────────────────────────
-       Transactions: every order and every refund, newest first, from the
-       same endpoints My Orders uses (shop/my-orders.php, shop/returns.php).
-       Notifications: the full feed including read ones
-       (shop/notifications.php?all=1) — the bell shows unread only.
-       Wrapped: site.js already owns `esc` and `peso` as globals. */
+    /* History page: transactions (orders and refunds) and the full notification feed, wrapped to avoid site.js's globals. */
     (function () {
       const esc  = v => EbFormat.escHtml(v == null ? "" : v);
       const peso = n => EbFormat.peso(n);
@@ -226,7 +204,7 @@
       const redraw = () => tab === "tx" ? drawTx() : drawNotif();
       const list = () => document.getElementById("hist-list");
       const filtersEl = () => document.getElementById("hist-filters");
-      const loading = () => { list().innerHTML = '<div class="orders-empty"><p>Loading…</p></div>'; };
+      const loading = () => { list().innerHTML = `<div style="padding:4px 18px">${EbUI.skeletonBlock(6)}</div>`; };
       const empty = (t, p) => `<div class="orders-empty"><h3>${t}</h3><p>${p}</p></div>`;
 
       async function loadTx() {
@@ -236,17 +214,17 @@
         ]);
         const rows = orders.data.map(o => ({
           kind: "order", when: o.datetime, id: o.id,
-          title: "Order #" + o.id,
-          detail: (o.items[0] ? o.items[0].name + (o.items.length > 1 ? ` +${o.items.length - 1} more` : "") : "No items")
-                  + " · " + (PAY[o.payMethod] || o.payMethod),
+          title: "Order #" + o.id, type: "Order",
+          items: o.items[0] ? o.items[0].name + (o.items.length > 1 ? ` +${o.items.length - 1} more` : "") : "No items",
+          pay: PAY[o.payMethod] || o.payMethod,
           amount: o.total, sign: "",
           chip: `<span class="order-status status-${esc(o.status)}">${esc(STATUS[o.status] || o.status)}</span>`,
         }));
         (returns.data.requests || []).filter(r => r.status === "refunded").forEach(r => rows.push({
           kind: "refund", when: r.submittedAt, id: r.id,
-          title: "Refund #" + r.id,
-          detail: `Order #${r.orderId} · ${r.itemCount} ${r.itemCount === 1 ? "item" : "items"}`
-                  + (r.refundMethod ? " · " + (PAY[r.refundMethod] || r.refundMethod) : ""),
+          title: "Refund #" + r.id, type: "Refund",
+          items: `Order #${r.orderId} · ${r.itemCount} ${r.itemCount === 1 ? "item" : "items"}`,
+          pay: r.refundMethod ? (PAY[r.refundMethod] || r.refundMethod) : "—",
           amount: r.refundAmount, sign: "+",
           chip: '<span class="order-status status-completed">Refunded</span>',
         }));
@@ -269,19 +247,23 @@
                            String(b.when).localeCompare(String(a.when)));
         const shown = paginate(rows);
         if (!rows.length) { list().innerHTML = empty("Nothing here yet", "Your orders and refunds will be listed here."); return; }
-        list().innerHTML = shown.map(r => `
-          <a class="hist-row hist-${r.kind}" href="my-orders.html${r.kind === "refund" ? "#returns" : ""}">
-            <span class="hist-ic" aria-hidden="true">${r.kind === "refund" ? ICON.refund : ICON.order}</span>
-            <span class="hist-main">
-              <b>${esc(r.title)}</b>
-              <span>${esc(r.detail)}</span>
-              <small>${EbFormat.fmtDateTime(r.when)}</small>
-            </span>
-            <span class="hist-side">
-              <span class="hist-amt">${r.sign}${peso(r.amount)}</span>
-              ${r.chip}
-            </span>
-          </a>`).join("");
+        /* A plain table; a row opens My Orders (refunds open its Returns tab). */
+        list().innerHTML = `<div class="hist-table-wrap"><table class="hist-table">
+          <thead><tr><th>Reference</th><th>Items</th><th>Payment</th><th>Date</th><th class="num">Amount</th><th>Status</th></tr></thead>
+          <tbody>${shown.map(r => `
+            <tr data-href="my-orders.html${r.kind === "refund" ? "#returns" : ""}" tabindex="0">
+              <td><b class="hist-ref">${esc(r.id)}</b><small class="hist-type">${r.type}</small></td>
+              <td>${esc(r.items)}</td>
+              <td>${esc(r.pay)}</td>
+              <td class="hist-date">${EbFormat.fmtDateTime(r.when)}</td>
+              <td class="num"><b class="${r.kind === "refund" ? "hist-plus" : ""}">${r.sign}${peso(r.amount)}</b></td>
+              <td>${r.chip}</td>
+            </tr>`).join("")}</tbody></table></div>`;
+        list().querySelectorAll("tr[data-href]").forEach(tr => {
+          const go = () => { location.href = tr.dataset.href; };
+          tr.addEventListener("click", go);
+          tr.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+        });
       }
 
       const ago = s => s < 60 ? "just now" : s < 3600 ? Math.floor(s / 60) + " min ago"
@@ -298,7 +280,6 @@
         if (!rows.length) { list().innerHTML = empty("No notifications yet", "Updates about your orders, payments and returns will appear here."); return; }
         list().innerHTML = shown.map(n => `
           <a class="hist-row hist-n-${esc(n.type)}${n.read ? "" : " unread"}" href="${esc(EbFormat.imageUrl("/public/" + (n.link || "profile/dashboard.html")))}">
-            <span class="hist-ic" aria-hidden="true">${n.type === "payment" ? ICON.payment : n.type === "return" ? ICON.refund : ICON.truck}</span>
             <span class="hist-main">
               <b>${esc(n.title)}</b>
               <span>${esc(n.message)}</span>

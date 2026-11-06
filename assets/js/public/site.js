@@ -1,13 +1,14 @@
-/* =================================================================
-   ELISHA BAY — Single-file interactive landing page
-   Architecture:
-     CONFIG  -> brand-level source of truth (re-skin here)
-     DATA    -> PRODUCTS / CATEGORIES / FAQS / CERTS (edit here to update UI)
-     state   -> cart / theme / auth / filters (what a backend would plug into)
-     render  -> factory functions build every card/row/line ONCE
-     ui      -> generic modal / toast / drawer primitives
-   ================================================================= */
+/* ===== Storefront script: CONFIG (brand), DATA (products, FAQs, certs), state (cart, theme, auth, filters), render factories and UI primitives (modal, toast, drawer) ===== */
 "use strict";
+
+/* Same format rule as Payments::checkRef (the server also refuses a reference already used). */
+function refFormatError(method, ref){
+  const c = String(ref || "").replace(/[\s-]/g, "").toUpperCase();
+  if(method === "gcash" && !/^\d{13}$/.test(c)) return "GCash reference numbers are 13 digits.";
+  if(method === "bank" && !/^[A-Z0-9]{6,20}$/.test(c)) return "Enter the 6–20 character reference from your bank's confirmation.";
+  return "";
+}
+
 
 /* ---------- CONFIG: brand source of truth ---------- */
 const CONFIG = {
@@ -18,7 +19,7 @@ const CONFIG = {
   address: "148 Brgy. Mangin, Dagupan City, Pangasinan",
   phone: "+63 900 000 0000",
   email: "hello@elishabay.ph",
-  facebook: "facebook.com/ElishaBayPH",
+  facebook: "facebook.com/elishabayfoods",
   certifications: [
     { code: "DOST", label: "Dept. of Science & Technology" },
     { code: "DTI",  label: "Dept. of Trade & Industry" },
@@ -27,26 +28,9 @@ const CONFIG = {
   ],
 };
 
-/* ---------- STAFF ACCOUNTS — DELETED ----------
-   This file held all five staff credentials in plaintext and is served to
-   every visitor, so anyone who opened it could sign in as Super Admin. The
-   login handler below now posts to api/auth/login.php, which verifies against
-   bcrypt hashes in MySQL. Nothing on this page needs to know an account exists
-   until the server says so.
+/* Staff credentials were removed from this file; sign-in posts to api/auth/login.php (bcrypt in MySQL). */
 
-   The array was also a maintenance trap: it had drifted out of sync with the
-   portal's own copy (five accounts here, six there — the archived one was
-   missing, so an account disabled in the portal could still sign in from this
-   page). One source of truth removes the whole class of bug. */
-
-/* Project root, derived from this script's own URL rather than hardcoded.
-   The old routes were absolute (/StuffModule/AdminModule/admin.html) and
-   404'd unless the project was served at the web root — which broke staff
-   login the moment it moved into htdocs/elishabay/.
-
-   Deriving from the page URL instead would not work: this file loads on
-   both public/index.html and public/profile/*.html, which sit at different
-   depths. The script's own path is the same from either. */
+/* Project root from this script's URL, so routes work from public/ and public/profile/ in any install folder. */
 const BASE_PATH = (() => {
   const src = (document.currentScript && document.currentScript.src) || "";
   const marker = "assets/js/public/";
@@ -54,9 +38,7 @@ const BASE_PATH = (() => {
   return i >= 0 ? src.slice(0, i) : "/";
 })();
 
-/* Route map: role → portal path. Portal folders are named for the role they
-   accept; the receiving portal's checkSessionAuth() compares the role string
-   verbatim, so these keys must match STAFF_ACCOUNTS exactly. */
+/* Role to portal path; keys must match the role names exactly. */
 const STAFF_ROUTES = {
   "Super Admin":         BASE_PATH + "portal/super-admin/",
   "Admin":               BASE_PATH + "portal/admin/",
@@ -66,62 +48,25 @@ const STAFF_ROUTES = {
 };
 
 /* ---------- DATA: categories ---------- */
-const CATEGORIES = ["All", "Deboned Bangus", "Bottled Gourmet Bangus"];
+/* Starting category chips, replaced by renderCatChips() with the categories actually in use. */
+let CATEGORIES = ["All", "Deboned Bangus", "Bottled Gourmet Bangus"];
 
-/* ---------- DATA: products (single source — edit one entry to update UI)
-   tint = contents color used by the generated jar illustration.
-   stock thresholds (non-overlapping): >100 ok | 11-100 low | 1-10 critical | 0 out
-------------------------------------------------------------------- */
-/* Filled from api/shop/products.php by loadShopCatalog() at startup. The
-   literals below are scaffolding for the moment before that resolves, and are
-   overwritten wholesale — what a visitor sees is the database.
-
-   The public endpoint returns no stock counts, only a coarse availability
-   band; exact inventory is operational detail that does not belong on a page
-   anyone can open. */
-/* Filled from api/shop/products.php by loadShopProducts(). Empty until then.
-   Held mock rows until Phase 6. They were overwritten on every load, so
-   they changed nothing at runtime — but a load that failed left the screen
-   showing invented data that looked real. Empty is the honest starting
-   state: a failed load now shows an empty table and its error toast. */
+/* Products: tint is the jar illustration's colour. */
+/* Filled from api/shop/products.php by loadShopCatalog() at startup. */
+/* Filled from api/shop/products.php by loadShopProducts(); starts empty. */
 let PRODUCTS = [];
+/* False until the first catalogue answer; until then the grid and carousel show skeleton cards. */
+let CATALOG_READY = false;
 
-/* ---------- FAQs ----------
-
-   Empty by design (D14). These five questions used to be hardcoded here, and
-   the same five live in the `faqs` table where the Landing Page editor writes
-   them. Two copies of the same content, and the literal was what a visitor saw
-   whenever content/get.php failed — including after an administrator had
-   edited an answer. The stale text rendered exactly like the real thing, with
-   nothing to indicate it was months out of date.
-
-   A failed load now says so. An empty accordion that admits it is empty is
-   more use to a visitor than a confident wrong answer about how long food
-   keeps. */
+/* FAQs start empty and come only from content/get.php (the faqs table), so a failed load shows an error instead of stale text. */
 let FAQS = [];
 let FAQS_LOADED = false;
 
-/* =================================================================
-   APP STATE  (single object — backend plugs in here)
-   ================================================================= */
-/* The theme is set by assets/js/theme.js (loaded in <head>): Light, Dark, or
-   System default. This only reads what it chose. */
+/* ===== APP STATE ===== */
+/* The theme is set by assets/js/theme.js; this only reads it. */
 const _savedTheme = document.documentElement.getAttribute("data-theme") || "light";
 
-/* Deliberately NOT restored from localStorage.
-
-   This used to read localStorage["eb-auth"] and, if the stored object said
-   `loggedIn:true`, start the page in a signed-in state. localStorage is
-   editable from the console, so that was a login: type the right JSON and the
-   account menu appeared under any name. bootstrapCustomer() would eventually
-   correct it against shop/me.php, but "eventually" is doing real work there —
-   until that response landed the page believed it, and if the request failed
-   for any reason other than 401 the stale value survived.
-
-   The page now starts signed out and stays that way until the server says
-   otherwise. The cost is a brief logged-out header on load for people who
-   genuinely are signed in; the benefit is that the only thing that can produce
-   a signed-in state is a verified password. */
+/* Never restore sign-in from localStorage (editable in the console); the page starts signed out until the server confirms. */
 const _savedAuth = { loggedIn:false, name:"", email:"", id:null, status:null };
 
 const state = {
@@ -131,59 +76,40 @@ const state = {
   filter: { search:"", category:"All", sort:"featured" },
 };
 
-/* =================================================================
-   HELPERS
-   ================================================================= */
+/* ===== HELPERS ===== */
 const $  = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => [...r.querySelectorAll(s)];
 const peso = n => CONFIG.currency + n.toLocaleString("en-PH");
 const getProduct = id => PRODUCTS.find(p => p.id === id);
 const txId = () => "EB-" + Date.now().toString(36).toUpperCase() + "-" + Math.floor(Math.random()*900+100);
 
-/* Availability, from the public catalogue.
+/* Availability from the public catalogue (exact stock, inStock and stockLevel); productMax() caps the stepper at stock, but checkout re-checks stock on the server. */
+/* The cart can hold up to the product's available stock (CART_MAX_QTY is only a safety ceiling, matching
+   api/shop/cart-save.php and migration 029); one add from the product popup is at most what is still available. */
+const CART_MAX_QTY = 9999;
 
-   api/shop/products.php now sends the exact `stock` alongside `inStock` and the
-   `stockLevel` band — see that file's header for what publishing the number
-   costs and how to narrow it to low-stock-only later. These read it, falling
-   back to the band alone for the seeded rows rendered before the catalogue
-   loads.
 
-   WHAT THE CAP IS AND IS NOT. productMax() caps the quantity stepper at what is
-   actually on the shelf, which stops the storefront from printing "Only 6 left"
-   and then accepting 99 in the box beside it. It is a courtesy, not a control:
-   api/shop/checkout.php re-reads stock inside its transaction and refuses the
-   line with "We only have N of X left" regardless of what the browser allowed.
-   The client shows the number; the server still owns it. */
-const CART_MAX_QTY = 99;
-
-/* The most of one product a shopper may put in the box.
-
-   Falls back to CART_MAX_QTY when `stock` is absent — a cart line hydrated
-   before the catalogue arrived, or a seeded row — because refusing to add
-   anything is a worse answer to "we do not know yet" than deferring to the
-   server, which does know. */
+/* Max quantity of one product, falling back to CART_MAX_QTY when stock is unknown. */
 function productMax(p){
   const stock = p && typeof p.stock === "number" ? p.stock : null;
   if(stock === null) return CART_MAX_QTY;
   return Math.max(1, Math.min(CART_MAX_QTY, stock));
 }
 
-/* The stepper's own description of its cap. Every capped stepper carries it, so
-   the limit is never silent, and it costs no space on a card. */
+/* Most that one add can put in the cart: the available stock, minus what is already in the cart. */
+function addMax(p){
+  const inCart = (state.cart.find(i => p && i.id === p.id) || {}).qty || 0;
+  return Math.max(1, productMax(p) - inCart);
+}
+
+/* Every capped stepper describes its limit (for assistive tech). */
 function qtyCapAttrs(p){
   const max = productMax(p);
   if(max >= CART_MAX_QTY) return `aria-label="Quantity"`;
   return `aria-label="Quantity, maximum ${max} available" title="Only ${max} in stock"`;
 }
 
-/* The VISIBLE line under the stepper, restricted to the scarcity bands.
-
-   Every product with fewer than 99 jars is capped, but printing "Max 143" under
-   a card whose pill already reads "In Stock · 143 available" is the same number
-   twice, and reads as a warning about a product nothing is wrong with. The line
-   earns its space only where a shopper might actually hit the cap, which is the
-   same crit/warn bands Inventory::shopLabel() words as scarcity. Above that the
-   cap still exists and is still announced — see qtyCapAttrs(). */
+/* The visible cap line only shows for low-stock bands, so it does not repeat the stock pill. */
 function qtyCapHint(p){
   const max = productMax(p);
   if(!p || typeof p.stock !== "number" || max >= CART_MAX_QTY) return "";
@@ -191,31 +117,8 @@ function qtyCapHint(p){
   return `<small class="qty-cap">Max ${max} — all we have left</small>`;
 }
 
-/* Mirrors api/uploads/image.php — UPLOAD_MAX_BYTES (8MB) and its $ACCEPTED
-   map. Held here so the checkout's dropzone can name the real limit in its
-   hint line and refuse an obviously wrong file before spending a round trip
-   uploading it. The server re-checks both and reads the MIME from the file's
-   own bytes rather than trusting file.type, which is the only check that
-   counts; these two exist to save the shopper a wait, not to decide anything.
-   If that file's constants change, change these. */
-/* The payment methods, keyed by the string the API actually takes.
-
-   THE KEY IS THE VALUE. `data-pay` on each tile holds `cash`/`gcash`/`bank`/
-   `net30`/`net60`/`net90` — exactly what api/shop/checkout.php validates
-   against Payments::methods() — so there is nothing to translate on the way
-   out. What was there instead was:
-
-       pay_method: payment === "Cash" ? "cash"
-                 : (payment === "GCash" ? "gcash" : "bank")
-
-   a chained ternary whose FINAL branch is "bank". Adding a Net 30 tile without
-   noticing that line would have posted every credit order as a bank transfer:
-   the right total, the wrong payment method, no receivable opened, and nothing
-   anywhere saying so. The mapping is gone rather than extended, because the
-   next person to add a method should not have to find it.
-
-   `label` is for display only — the receipt, and the "reference number
-   required for X" message. */
+/* Mirrors api/uploads/image.php's 8MB limit and accepted types, to refuse obviously wrong files early (the server re-checks). */
+/* Payment methods keyed by the exact value the API takes (cash, gcash, bank, net30/60/90); label is for display only. */
 const PAY_METHODS_UI = {
   cash:  "Cash",
   gcash: "GCash",
@@ -226,13 +129,7 @@ const PAY_METHODS_UI = {
 };
 const payLabel = key => PAY_METHODS_UI[key] || key;
 
-/* Mirrors Payments::CREDIT in api/core/Payments.php — the same three terms and
-   the same day counts. Spelled out here rather than derived from a response so
-   the tiles render with the first paint; the server is what decides whether
-   they are allowed, and refuses the key regardless of what was rendered.
-
-   Labelled with what the term MEANS. "Net 30" is trade vocabulary; a first-time
-   partner reads "Pay within 30 days" without having to be told. */
+/* Credit terms mirroring Payments::CREDIT, labelled as "Pay within N days"; the server decides if they are allowed. */
 const CREDIT_METHODS = [
   { key: "net30", label: "Net 30", hint: "Pay within 30 days" },
   { key: "net60", label: "Net 60", hint: "Pay within 60 days" },
@@ -243,12 +140,83 @@ const isCreditMethod = key => CREDIT_METHODS.some(m => m.key === key);
 const UPLOAD_MAX_MB  = 8;
 const UPLOAD_ACCEPT  = { "image/jpeg": "JPEG", "image/png": "PNG", "image/webp": "WebP" };
 
-/* Where a GCash or bank payment is SENT: the account name, number and QR code
-   maintained in Landing Page Maintenance and served by content/get.php
-   (window.EB_LANDING.payment). Used at checkout and on a retailer's Pay form.
+/* Payment account card (name, number, QR) from Landing Page Maintenance, used at checkout and on the retailer Pay form, saying so when nothing is published. */
+/* Delegated copy buttons for payQrHtml. */
+document.addEventListener("click", async e => {
+  const b = e.target.closest(".pay-copy"); if(!b) return;
+  const text = b.dataset.copy || "";
+  try { await navigator.clipboard.writeText(text); }
+  catch(_){ const t = document.createElement("textarea"); t.value = text; t.setAttribute("readonly", ""); t.style.position = "fixed"; t.style.opacity = "0"; document.body.appendChild(t); t.select(); try { document.execCommand("copy"); } catch(__){} t.remove(); }
+  const was = b.textContent; b.textContent = "Copied"; b.classList.add("is-done");
+  setTimeout(() => { b.textContent = was; b.classList.remove("is-done"); }, 1600);
+});
 
-   With nothing published it says so, rather than showing an empty frame that
-   reads like a broken image. */
+/* On phones, scroll to and focus the first error. */
+function focusFirstError(root){
+  const bad = root.querySelector(".field.has-error, .has-error, [aria-invalid=\"true\"]");
+  if(!bad) return;
+  const target = bad.matches("input, select, textarea") ? bad
+    : bad.querySelector("input:not([type=hidden]), select, textarea, .ebs-trigger, .up-drop") || bad;
+  bad.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  setTimeout(() => { try { target.focus({ preventScroll: true }); } catch(_){} }, 250);
+}
+
+/* Track the visible viewport height so phone sheets keep the pinned bar above the on-screen keyboard. */
+(function trackVisibleHeight(){
+  const vv = window.visualViewport; if(!vv) return;
+  const set = () => {
+    document.documentElement.style.setProperty("--vvh", vv.height + "px");
+    document.documentElement.style.setProperty("--vvtop", vv.offsetTop + "px");
+  };
+  vv.addEventListener("resize", set); vv.addEventListener("scroll", set); set();
+})();
+
+/* On phones the Sales Invoice is scaled down (never rearranged), with tap for full size; printing uses its own full-size copy. */
+/* Full-screen invoice viewer, fitted to the width. */
+function openInvoiceViewer(src){
+  if(!src) return;
+  const v = document.createElement("div");
+  v.className = "inv-viewer"; v.setAttribute("role", "dialog"); v.setAttribute("aria-label", "Sales invoice");
+  v.innerHTML = `<div class="inv-viewer-bar"><b>Sales Invoice</b>
+      <button type="button" class="inv-viewer-close" aria-label="Close">&times;</button></div>
+    <div class="inv-viewer-body"><div class="inv-viewer-page"></div></div>`;
+  const page = v.querySelector(".inv-viewer-page"), body = v.querySelector(".inv-viewer-body");
+  const sheet = src.cloneNode(true); sheet.style.zoom = ""; page.appendChild(sheet);
+  document.body.appendChild(v);
+  const fit = () => {
+    sheet.style.zoom = "";
+    sheet.style.zoom = String(Math.min(1, (body.clientWidth - 24) / (sheet.offsetWidth || 499)));
+  };
+  const close = () => { v.remove(); window.removeEventListener("resize", fit); document.removeEventListener("keydown", onKey, true); };
+  const onKey = e => { if(e.key === "Escape"){ e.stopPropagation(); close(); } };
+  v.querySelector(".inv-viewer-close").addEventListener("click", close);
+  window.addEventListener("resize", fit); document.addEventListener("keydown", onKey, true);
+  fit(); v.querySelector(".inv-viewer-close").focus();
+}
+
+function fitInvoices(){
+  document.querySelectorAll(".receipt-invoice").forEach(box => {
+    const inv = box.querySelector(".eb-invoice"); if(!inv) return;
+    inv.style.zoom = "";
+    if(box.classList.contains("is-full")) return;
+    const natural = inv.scrollWidth, room = box.clientWidth;
+    const fit = natural > room + 1;
+    box.classList.toggle("is-fit", fit);
+    if(fit) inv.style.zoom = String(Math.max(0.5, room / natural));
+    if(!box.dataset.fitWired){
+      box.dataset.fitWired = "1";
+      box.addEventListener("click", () => {
+        if(box.classList.contains("is-fit")) openInvoiceViewer(box.querySelector(".eb-invoice"));
+      });
+    }
+  });
+}
+new MutationObserver(muts => {
+  if(muts.some(m => [...m.addedNodes].some(n => n.nodeType === 1 && (n.matches?.(".receipt-invoice") || n.querySelector?.(".receipt-invoice")))))
+    { requestAnimationFrame(fitInvoices); setTimeout(fitInvoices, 400); }   /* again once the modal has finished opening */
+}).observe(document.documentElement, { childList: true, subtree: true });
+window.addEventListener("resize", () => requestAnimationFrame(fitInvoices));
+
 function payQrHtml(method){
   const pay = (window.EB_LANDING && window.EB_LANDING.payment) || {};
   const a = pay[method] || {};
@@ -256,32 +224,13 @@ function payQrHtml(method){
   const rows = [];
   if(method === "bank" && a.bank) rows.push(`<div class="pay-qr-row"><span>Bank</span><b>${esc(a.bank)}</b></div>`);
   if(a.name)   rows.push(`<div class="pay-qr-row"><span>Account name</span><b>${esc(a.name)}</b></div>`);
-  if(a.number) rows.push(`<div class="pay-qr-row"><span>${method === "bank" ? "Account number" : "GCash number"}</span><b class="pay-qr-mono">${esc(a.number)}</b></div>`);
+  /* Copy buttons for account numbers, since people often pay from the same phone. */
+  if(a.number) rows.push(`<div class="pay-qr-row"><span>${method === "bank" ? "Account number" : "GCash number"}</span><span class="pay-qr-num"><b class="pay-qr-mono">${esc(a.number)}</b><button type="button" class="pay-copy" data-copy="${escAttr(a.number)}" aria-label="Copy number">Copy</button></span></div>`);
   if(!a.qr && !rows.length){
     return `<div class="pay-qr pay-qr-empty">Our ${title} details are not published yet. Contact us for where to send your payment.</div>`;
   }
-  /* THE CODE OPENS FULL SIZE IN A NEW TAB.
-
-     A QR has to be big enough for a camera to lock onto, and how big that is
-     depends on the screen it is being scanned off and how far away the phone
-     is — not on anything this layout can know. So the inline code is as large
-     as the card allows, and the image itself is a link to the original upload:
-     the browser's own image view scales it to the whole screen, zooms, and
-     saves, which is also the only way someone reading this ON their phone can
-     scan it at all (they cannot point that phone at its own screen).
-
-     A link and not a modal, deliberately: the checkout IS a modal, and opening
-     another over it would replace it and take everything typed so far with it.
-     rel="noopener" because target="_blank" without it hands the new tab a
-     reference back to this one. */
-  /* THE WORDS ARE ABOVE AND BELOW THE CODE, NOT BESIDE IT.
-
-     They used to share a row with it, which cost the code more than half the
-     card's width for a heading and two lines of text — and the code is the one
-     thing here that has to survive being photographed. Stacked, it gets the
-     full width of the card. The account name and number stay ABOVE it, because
-     they are what a person checks against their app before sending money, and
-     the instruction goes below, where it is read after the code is scanned. */
+  /* The QR is a link that opens the full-size image in a new tab (rel="noopener"), not a modal over the checkout. */
+  /* Account details above the QR and the instruction below, so the code gets the full width. */
   return `<div class="pay-qr">
       <div class="pay-qr-head">
         <div class="pay-qr-title">Pay by ${title}</div>
@@ -360,59 +309,60 @@ const ICONS = {
 };
 function icon(name, cls=""){ return `<span class="${cls}" aria-hidden="true">${ICONS[name]||""}</span>`; }
 
-/* ---------- Image resolver, shared with the portal (decision I6) ----------
-   site.js is a classic script; EbFormat is published as a global by
-   assets/js/core/index.js. Declared as a function, not a const arrow, because
-   the seed-array .map() blocks near the top of this file run at parse time and
-   a const would still be in its temporal dead zone. */
+/* Shared image resolver (EbFormat.imageUrl), declared as a function so it is hoisted. */
 function imageUrl(rec){ return EbFormat.imageUrl(rec); }
 
-/* Escape anything from the database before it goes into markup.
-
-   THIS FILE HAD NO ESCAPER AND 31 innerHTML ASSIGNMENTS.
-
-   The portal escapes properly — engine.js makes 107 escHtml() calls against 29
-   innerHTML, orders.js 66 against 23. The storefront is the half that never got
-   one, and the result was a stored XSS reachable by any account holding
-   products.manage or landing.manage: a product description saved through the
-   normal Product Maintenance form executed as script for every anonymous
-   visitor to the shop. Reproduced before this fix, with an <img onerror> that
-   set a global; the payload ran.
-
-   ESCAPED AT RENDER, NOT SANITISED AT WRITE. Stripping tags when the
-   administrator saves silently destroys their copy — an ampersand in a product
-   name is not an attack — and it only protects the rows written after the
-   sanitiser was added. Escaping at the point of output is lossless, reversible,
-   and covers every row that already exists.
-
-   `esc` for element text, `escAttr` for attribute values. They do the same
-   thing — EbFormat.escHtml covers & < > " — and are named apart so a reader can
-   see which context each call site is in. */
+/* Escape all database text before putting it into markup (esc for text, escAttr for attributes), which closed a stored XSS through product descriptions. */
 function esc(v){ return EbFormat.escHtml(v == null ? "" : v); }
+
+/* A name written properly, as the server stores it (CustomerName::proper): each word capitalised ("juan dela cruz" ->
+   "Juan Dela Cruz", "mary-ann" -> "Mary-Ann"), mixed-case words kept (McArthur), suffixes II-IX in capitals. */
+function properName(v){
+  return String(v || "").trim().replace(/\s+/g, " ").split(" ").map((w, i) => {
+    if(!w) return w;
+    if(i > 0 && /^(ii|iii|iv|vi|vii|viii|ix)$/i.test(w)) return w.toUpperCase();
+    const lower = w.toLowerCase();
+    if(w !== lower && w !== w.toUpperCase()) return w.charAt(0).toUpperCase() + w.slice(1);
+    return lower.replace(/(^|[-'’])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
+  }).join(" ");
+}
+/* The name shown everywhere (CustomerName::display): "Juan D. Dela Cruz" — only the middle initial. */
+function displayName(first, middle, last){
+  const m = properName(middle);
+  return [properName(first), m ? m.charAt(0).toUpperCase() + "." : "", properName(last)].filter(Boolean).join(" ");
+}
+/* Tidy name fields as the customer leaves them (sign-up and My Profile), and preview how the name will show. */
+document.addEventListener("focusout", e => {
+  const el = e.target;
+  if(el && el.matches && el.matches("#rg-first, #rg-middle, #rg-last, #pf-first, #pf-middle, #pf-last") && el.value.trim()) el.value = properName(el.value);
+});
+document.addEventListener("input", e => {
+  const el = e.target;
+  if(!el || !el.matches || !el.matches("#rg-first, #rg-middle, #rg-last, #pf-first, #pf-middle, #pf-last")) return;
+  const pre = el.id.slice(0, 3);
+  const v = id => (document.getElementById(pre + id)?.value || "");
+  const out = document.getElementById(pre === "rg-" ? "rg-name-preview" : "pf-name-preview");
+  if(!out) return;
+  const show = v("first").trim() && v("last").trim();
+  out.hidden = !show;
+  if(show) out.textContent = "Shown as: " + displayName(v("first"), v("middle"), v("last"));
+});
 function escAttr(v){ return esc(v); }
 
-/* ---------- Image holder ----------
-   FOUR arguments. The fourth is the photo, and omitting it is not a smaller
-   call — it is the placeholder branch, unconditionally.
+/* Image holder takes four arguments; the fourth is the photo, and leaving it out always shows the placeholder. */
+/* srcset for an uploaded photo: the browser picks the 400px or 800px copy (api/uploads/thumb.php) or the original; empty when there are no copies. */
+function photoSrcset(rec){
+  const s = EbFormat.thumbUrl(rec, 400), m = EbFormat.thumbUrl(rec, 800), full = imageUrl(rec);
+  return s === full ? "" : `${s} 400w, ${m} 800w, ${full} 1600w`;
+}
 
-   The product card passed it. renderCart() and openProductDetail() did not, so
-   `img` was "" and the cart line and the detail modal showed the camera mark
-   for every product, including the ones with a photo uploaded. Same function,
-   same data, two call sites that had drifted from the third.
-
-   (A product with no photo still shows the placeholder here, and that is
-   correct: api/shop/products.php sends `image` => image_url, imageUrl()
-   resolves it, and a row with no image_url has nothing to show. That is a
-   Product Maintenance upload, not a defect in this file.) */
-function jarSVG(tint, label, cls="jar", img=""){
-  /* Real photo when the admin has uploaded one, placeholder otherwise. `img`
-     has already been through imageUrl() by the time it arrives here. */
-  /* `label` is a product name from the database and lands in three attributes;
-     `img` is a path from imageUrl(). Both escaped. */
+function jarSVG(tint, label, cls="jar", img="", srcset="", sizes=""){
+  /* Real photo when one is uploaded, otherwise a placeholder; img is already resolved by imageUrl(). */
+  /* label and img are escaped. */
   const L = escAttr(label);
   if(img){
     return `<div class="img-holder has-photo" aria-label="${L}" title="${L}">
-      <img src="${escAttr(img)}" alt="${L}" loading="lazy" draggable="false">
+      <img src="${escAttr(img)}"${srcset ? ` srcset="${escAttr(srcset)}" sizes="${escAttr(sizes)}"` : ""} alt="${L}" loading="lazy" decoding="async" draggable="false">
     </div>`;
   }
   const camIcon = ICONS.camera || '';
@@ -422,32 +372,14 @@ function jarSVG(tint, label, cls="jar", img=""){
   </div>`;
 }
 
-/* ===================================================================
-   STAR RATING — AND THE HONEST ZERO
-   -------------------------------------------------------------------
-   THE COUNT IS NOT OPTIONAL. Every product used to be seeded with a
-   rating between 4.5 and 4.9 that nothing had ever written from
-   evidence, so a product nobody had rated advertised "4.9" beside its
-   name. products.rating is now derived from published reviews
-   (Reviews::recompute) and is 0.00 when there are none.
-
-   Which makes rendering it blindly WORSE than before, not better: five
-   empty stars and "0.0" reads as a product people rated badly. So a
-   product with no reviews gets no stars at all — it gets a sentence
-   saying so. That is the honest thing to show, and it is the reason
-   reviewCount travels with rating from api/shop/products.php.
-
-   `count` is deliberately a required argument rather than one that
-   defaults to something. A call site that forgets it throws here, in
-   development, instead of quietly resurrecting the old lie.
-   =================================================================== */
+/* ===== STAR RATING: products with no published reviews show "No ratings yet" instead of 0.0 stars; count is a required argument ===== */
 function starRating(r, count){
   const n = Number(count);
   if(!Number.isFinite(n)){
     throw new TypeError("starRating(rating, count): count is required — see the note above.");
   }
   if(n <= 0){
-    /* Not "0.0", not five hollow stars. Nobody has said anything yet. */
+    /* No reviews yet. */
     return '<span class="stars stars-none">No ratings yet</span>';
   }
   const label = `Rated ${r.toFixed(1)} out of 5, from ${n} review${n === 1 ? "" : "s"}`;
@@ -457,21 +389,12 @@ function starRating(r, count){
     else if(r >= i-.5)html += ICONS.starhalf;
     else              html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.8L12 17.3 5.8 20.9l1.6-6.8L2.2 8.9l6.9-.6z"/></svg>';
   }
-  /* The number of reviews sits beside the average because the average
-     alone cannot be judged: one five-star review and forty are the same
-     "5.0" and are not the same claim. aria-hidden because the label
-     above already says all of it, in a sentence. */
+  /* The review count sits beside the average (aria-hidden, since the label already says it). */
   html += `<span class="rv">${r.toFixed(1)}</span><span class="rc" aria-hidden="true">(${n})</span></span>`;
   return html;
 }
 
-/* The photo card's floating rating badge — one star, not five, because five
-   small stars stop being legible at the size a badge sitting on top of a
-   photo can spare. Same honest-zero rule as starRating() above (a product
-   with no reviews gets no badge, not an empty one), written separately
-   rather than reused because starRating()'s five-star row is a different
-   shape of answer to the same question, built for the space .pc-meta has
-   rather than the space this has. */
+/* Photo card rating badge: one star with the honest-zero rule (no badge when unrated). */
 function ratingBadge(p){
   const n = Number(p.reviewCount);
   if(!Number.isFinite(n) || n <= 0) return "";
@@ -479,74 +402,8 @@ function ratingBadge(p){
   return `<span class="pc-rating-badge" aria-label="${label}">${icon("star")}<b>${p.rating.toFixed(1)}</b><span aria-hidden="true">(${n})</span></span>`;
 }
 
-/* =================================================================
-   RENDER: product card factory (used by Shop + Best Sellers)
-   -----------------------------------------------------------------
-   THE MEDIA LINE BELOW WAS DEFECT 3.2.
-
-   api/shop/products.php sends the photo as "image". This function read
-   p.img, which is undefined for every product, so every card took the
-   placeholder branch — while the POS tiles, which read "image", showed
-   the photo perfectly well. That asymmetry is what made it look like a
-   staff-versus-customer problem rather than what it was: one endpoint
-   and one renderer spelling the same field two ways, with 1.8MB of
-   base64 downloaded and discarded on every page load.
-
-   It goes through imageUrl() now, which accepts either key and resolves
-   the stored path against the application root, so neither half of the
-   mistake can return.
-   ================================================================= */
-/* PHOTO-FIRST CARD — the request's reference image, built from what the
-   catalogue actually has rather than the fields the reference happened to
-   show. Four of its pieces have no product underneath them here: a
-   favorite/heart toggle (no wishlist feature exists), a spice-level tag, a
-   "serves N" count, and a delivery-time estimate. Rather than invent values
-   for those — which is how this codebase ended up with a seeded 4.9-star
-   rating nobody had earned, see starRating() above — this keeps the
-   reference's LAYOUT (a full-bleed photo carrying the name, price and
-   rating; a compact bar below it for status and the buy action) and fills
-   it with what is real: category, price, rating (honest-zero, never
-   fabricated), units sold, stock status, Add to cart.
-
-   STOCK STATUS LIVES ON THE PHOTO, "N sold" LIVES IN THE BAR — the reverse
-   of the first version. Stock labels are server text of very different
-   lengths ("Out of Stock" against "In Stock · 160 available", see
-   Inventory::shopLabel()), and the bar is flow layout: whichever card in a
-   row got the longer label wrapped its bar onto two lines and grew taller
-   than its neighbours, which is the "some cards have more space at the
-   bottom" a shopper actually reported. "N sold" never has that problem — it
-   is always a number and a word. Swapping them moves the unpredictable
-   string onto the overlay, which is position:absolute inside a fixed
-   aspect-ratio photo, so wrapping there costs nothing: the photo's height
-   does not depend on what is drawn over it, only the bar's height did.
-
-   NO qtyCapHint() HERE EITHER, for the same complaint from a second
-   direction. It used to print "Max 9 — all we have left" under the Add
-   button on scarce products, and Inventory::shopLabel() ALWAYS folds the
-   count into the label itself once stock is low enough to trigger the hint
-   ("Only 9 left", "Low stock · 6 left") — so the hint was never telling a
-   shopper the count, just repeating the one .stock-pill already showed, the
-   exact "same number twice" its own original comment said to avoid. It also
-   only appeared on SOME cards, which is a second content-driven height in a
-   grid row: a shop grid stretches every card in a row to match the tallest
-   one (CSS Grid's default align-items), so the one scarce product in a row
-   grew and everything beside it grew an equal, empty amount to match — the
-   dead space under an ordinary card's Add button that prompted this fix.
-   Dropping the hint removes a real duplicate and the one piece of the card
-   whose presence depended on the PRODUCT rather than the LAYOUT. The modal's
-   own copy (openProductDetail(), further down) is untouched: one card in a
-   dialog has no row of neighbours to stretch, so it was never the bug here —
-   though it is worth knowing the same redundancy exists there too.
-
-   THE STEPPER IS GONE. The reference has no quantity picker on the card —
-   its Add button is a single action — and every other card on this site
-   let a shopper choose a quantity before adding. Rather than silently drop
-   that ability, it moved: the card's Add button adds one (the delegated
-   handler already falls back to qty=1 when no stepper is found, see the
-   click listener below), and openProductDetail()'s modal still carries its
-   own stepper for anyone who wants more than one before checking out. A
-   description one line down is a design compromise, not a config the two
-   surfaces disagree on. */
+/* ===== RENDER: product card factory (Shop and Best Sellers), using imageUrl() so every card shows its photo ===== */
+/* Photo-first card using only real data (category, price, rating, sold count, stock, Add); stock sits on the photo and "N sold" in the bar so cards in a row stay the same height, and Add adds one (quantity is chosen in the product modal). */
 function createProductCard(p, {ribbon=false}={}){
   const s = stockInfo(p);
   const out = !productAvailable(p);
@@ -555,11 +412,11 @@ function createProductCard(p, {ribbon=false}={}){
   el.dataset.id = p.id;
   el.innerHTML = `
     <div class="pc-media" data-detail="${escAttr(p.id)}" role="button" tabindex="0" aria-label="View ${escAttr(p.name)} details">
-      ${jarSVG(p.tint, p.name, 'jar', imageUrl(p))}
+      ${jarSVG(p.tint, p.name, 'jar', imageUrl(p), photoSrcset(p), "(max-width: 640px) 50vw, 320px")}
       <div class="pc-scrim" aria-hidden="true"></div>
-      ${ribbon && p.best ? `<span class="ribbon">${icon("star")} Best Seller</span>` : ""}
       <div class="pc-overlay">
         <div class="pc-overlay-top">
+          ${ribbon && p.best ? `<span class="bs-ribbon">${icon("star")} Best Seller</span>` : ""}
           <span class="pc-cat">${esc(p.cat)}</span>
           <h3 class="pc-name">${esc(p.name)}</h3>
           <span class="price"><span class="cur">${CONFIG.currency}</span>${p.price}</span>
@@ -579,22 +436,7 @@ function createProductCard(p, {ribbon=false}={}){
   return el;
 }
 
-/* The shop's sort options, as one table rather than a switch.
-
-   WHY A TABLE. Top 5 and Top 10 are a comparator PLUS a cap, and a switch
-   returning only a comparator has nowhere to put the cap — which is how a
-   "top 5" ends up implemented as a slice somewhere else in the function,
-   separated from the ranking it is supposed to be the top of.
-
-   `featured` and `best-selling` are deliberately different orders. `featured`
-   is the administrator's shelf: the products flagged is_best first, units sold
-   only as a tie-break. `best-selling` is the unedited ranking, and it is what
-   Top 5 and Top 10 are the top of — otherwise "Top 5" would mean "the five
-   flagged products, or fewer", which is a curation, not a ranking.
-
-   Mirrors the $sortMap in api/shop/products.php. The grid does not use that
-   map today (see renderProducts below), but the endpoint offers the same keys
-   so a future server-paged grid can send `sort` straight through. */
+/* Shop sort options as a table of comparator plus optional cap (Top 5/10), mirroring $sortMap in api/shop/products.php. */
 const bySold = (a,b) => (b.sold - a.sold) || a.name.localeCompare(b.name);
 const SHOP_SORTS = {
   "featured":     { cmp: (a,b)=> (b.best - a.best) || bySold(a,b),  limit: null },
@@ -606,22 +448,11 @@ const SHOP_SORTS = {
   "price-desc":   { cmp: (a,b)=> b.price - a.price,                 limit: null },
 };
 
-/* render the shop grid honoring filter/search/sort
-
-   THE GRID IS NOT SERVER-PAGED. loadShopCatalog() fetches api/shop/products.php
-   once, with no page or limit parameter, into PRODUCTS; every filter, sort and
-   search below runs over that array. So the Top 5 / Top 10 cap belongs HERE and
-   only here — there is no page two for a client-side slice to contradict, and
-   pushing the cap to the endpoint would cap the catalogue the search box and
-   the category chips are filtering, not the list the shopper is looking at.
-
-   That last point is the whole of "Top 5 within a category". The cap is applied
-   AFTER the category and search filters, so Top 5 of Deboned Bangus is the five
-   best-selling Deboned Bangus — not the global five with the non-matching ones
-   removed, which would show two cards under a heading promising five. */
+/* Render the shop grid with filters, search and sort, all client-side, applying the Top N cap after category and search filters. */
 function renderProducts(){
   const grid = $("#product-grid");
   if(!grid) return;
+  if(!CATALOG_READY){ grid.innerHTML = window.EbUI ? EbUI.skeletonCards(8) : ""; return; }
   const { search, category, sort } = state.filter;
   let list = PRODUCTS.filter(p=>{
     const matchCat = category === "All" || p.cat === category;
@@ -635,20 +466,7 @@ function renderProducts(){
   list.sort(mode.cmp);
   if(mode.limit) list = list.slice(0, mode.limit);
 
-  /* Say WHY the list is short. "Showing 5 products" beside a category holding
-     nine reads as a broken filter; naming the cap and the total it was taken
-     from does not.
-
-     THIS FUNCTION OWNS THE LINE OUTRIGHT, IN BOTH CASES. The first version
-     wrote the capped wording and merely cleared the flag when the cap came
-     off, leaving the previous sentence on screen and trusting shop.html's
-     MutationObserver to correct it. Observer callbacks are a microtask late,
-     so switching from Top 5 to Best Selling showed "the top 5 best sellers of
-     15" over a grid of fifteen until the next tick — and any render that
-     mutated nothing would never have corrected it at all. Writing both
-     sentences here means the line is never momentarily false. The `owned`
-     flag stays set from now on, so the DOM-counting fallback (which cannot
-     know the pre-cap total) permanently defers. */
+  /* Write the result line here in both cases, naming the cap and total when the list is capped. */
   const countEl = $("#product-count");
   if(countEl){
     countEl.dataset.owned = "1";
@@ -666,14 +484,7 @@ function renderProducts(){
   list.forEach(p => grid.appendChild(createProductCard(p, {ribbon:true})));
 }
 
-/* Grid ⇄ row toggle for the shop's product list — a per-viewer convenience
-   the adviser asked for on top of the normal page scroll, not a replacement
-   for it: nothing here touches how the PAGE scrolls, only how the product
-   list itself does once the shopper opts into "row".
-
-   The class lives on #product-grid, which renderProducts() empties and
-   refills on every filter/sort/search but never replaces, so a chosen view
-   survives a re-render without this function needing to run again. */
+/* Grid or sideways-row view for the product list; the class stays on #product-grid across re-renders. */
 function wireShopView(){
   const grid    = $("#product-grid");
   const gridBtn = $("#view-grid-btn");
@@ -697,15 +508,7 @@ function wireShopView(){
   gridBtn.addEventListener("click", ()=> setView("grid"));
   rowBtn.addEventListener("click", ()=> setView("row"));
 
-  /* THIS is the "sideways scroll wheel" the request asked for. An ordinary
-     mouse wheel only ever reports a vertical delta — a trackpad or a wheel
-     with a tilt function can already pan sideways on its own, but a plain
-     wheel cannot, and without this a "sideways-scrolling" row would do
-     nothing for the shopper who asked for it. It only fires in row mode:
-     in grid mode the same wheel event is left alone and the page scrolls
-     normally, which is the "do not remove the normal scrolling" half of the
-     request. Guarded by deltaX so a gesture that IS already horizontal
-     (trackpad, tilt-wheel) is not doubled. */
+  /* In row view, turn a plain mouse wheel's vertical scroll into sideways scrolling (skipping gestures that are already horizontal). */
   grid.addEventListener("wheel", (e)=>{
     if(!grid.classList.contains("view-row")) return;
     if(Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
@@ -718,8 +521,8 @@ function wireShopView(){
 function renderBestSellers(){
   const track = $("#bestsellers-track");
   if(!track) return;
-  /* The admin's Landing Page module writes a chosen list; fall back to the
-     `best` flag when nothing has been saved yet. */
+  if(!CATALOG_READY){ track.className = "bs-skeleton"; track.innerHTML = window.EbUI ? EbUI.skeletonCards(3) : ""; return; }
+  /* Use the Landing Page module's chosen list, falling back to each product's best flag. */
   const picked = (window.EB_LANDING && Array.isArray(window.EB_LANDING.featured))
     ? window.EB_LANDING.featured : null;
   const items = picked && picked.length
@@ -764,10 +567,7 @@ function renderBestSellers(){
     return d;
   });
 
-  /* Wheel geometry. WHEEL_STEP is the angle between neighbouring cards on
-     the rim; everything else follows from it because the pivot lives far
-     below the stage (see --wheel-origin in styles.css). Index 0 is the
-     centre card, 1 its neighbours, 2 the pair clipped at the edges. */
+  /* Wheel geometry: WHEEL_STEP is the angle between cards (see --wheel-origin in styles.css). */
   var WHEEL_STEP  = 17;                 /* degrees between cards */
   var WHEEL_SCALE = [1, 0.94, 0.86];
   var WHEEL_OP    = [1, 0.9, 0.5];
@@ -788,8 +588,7 @@ function renderBestSellers(){
       var card = slide.firstElementChild;
       var tf   = "rotate(" + angle + "deg)";
 
-      /* wrap-around: a card jumping from one end of the arc to the other
-         must snap rather than tween straight back through the centre */
+      /* A card wrapping from one end to the other snaps instead of animating through the centre. */
       var prevNorm = slide._norm;
       if(prevNorm !== undefined && Math.abs(norm - prevNorm) > 2){
         var saved     = slide.style.transition;
@@ -811,13 +610,12 @@ function renderBestSellers(){
       slide._norm = norm;
       slide.style.zIndex = zi;
       slide.setAttribute("data-active", abs === 0 ? "true" : "false");
-      slide.style.cursor = abs === 0 ? "auto" : "pointer";
+      slide.style.cursor = abs === 0 ? "grab" : "pointer";
     });
     dots.forEach(function(d, i){ d.classList.toggle("active", i === current); });
   }
 
-  /* rapid clicking switches to a short transition so cards don't
-     pile up mid-flight on the 2.5s glide */
+  /* Rapid clicks use a short transition so cards do not pile up. */
   var lastNav = 0, fastTimer = null;
   function navPaint(){
     var now = Date.now();
@@ -828,9 +626,7 @@ function renderBestSellers(){
     }
     lastNav = now;
     paint();
-    /* Give the visitor the full dwell time after they choose a card, instead
-       of letting the already-running timer fire moments later. Stay paused if
-       the pointer is still on the carousel. */
+    /* After a manual choice, restart the full dwell time (stay paused while hovered). */
     pause();
     if(!hovering) resume();
   }
@@ -858,6 +654,42 @@ function renderBestSellers(){
     resume();
   });
 
+  /* Mouse drag: hold and drag sideways to turn the wheel, one card per DRAG_STEP pixels and at most one per DRAG_GAP_MS so it stays easy to follow; a real drag swallows the click that follows so no card opens. */
+  var DRAG_STEP = 180, DRAG_GAP_MS = 450, lastDragTurn = 0, dragX = null, dragMoved = 0, dragSuppress = false;
+  stage.addEventListener("dragstart", function(e){ e.preventDefault(); });
+  stage.addEventListener("mousedown", function(e){
+    if(e.button !== 0 || e.target.closest("button, a, input")) return;
+    dragX = e.clientX; dragMoved = 0; dragSuppress = false;
+    pause();
+    stage.classList.add("dragging");
+  });
+  window.addEventListener("mousemove", function(e){
+    if(dragX === null) return;
+    var dx = e.clientX - dragX;
+    if(Math.abs(dx) >= DRAG_STEP && Date.now() - lastDragTurn >= DRAG_GAP_MS){
+      /* Drag left brings the next card in, matching the touch swipe; the normal glide is kept (not the fast one). */
+      current = dx < 0 ? (current + 1) % total : (current - 1 + total) % total;
+      dragX = e.clientX;
+      lastDragTurn = Date.now();
+      dragSuppress = true;
+      paint();
+      pause();
+    }
+    dragMoved += Math.abs(e.movementX || 0);
+    if(dragMoved > 6) dragSuppress = true;
+  });
+  window.addEventListener("mouseup", function(){
+    if(dragX === null) return;
+    dragX = null;
+    stage.classList.remove("dragging");
+    /* The click (if any) fires right after mouseup, so clear the flag once it has had its chance. */
+    setTimeout(function(){ dragSuppress = false; }, 0);
+    if(!hovering) resume();
+  });
+  stage.addEventListener("click", function(e){
+    if(dragSuppress){ e.stopPropagation(); e.preventDefault(); dragSuppress = false; }
+  }, true);
+
   /* auto-rotate */
   var timer = null;
   /* 0.8s glide (the CSS transition) + 1.0s at rest in the centre. */
@@ -871,9 +703,7 @@ function renderBestSellers(){
   }
   function pause(){ clearInterval(timer); }
 
-  /* Track hover explicitly: navPaint() restarts the countdown after a manual
-     choice, and without this flag an arrow click would resume autoplay even
-     though the pointer is still resting on the carousel. */
+  /* Track hover so an arrow click does not resume autoplay while the pointer is still on the carousel. */
   var hovering = false;
   track.addEventListener("mouseenter", function(){ hovering = true;  pause();  });
   track.addEventListener("mouseleave", function(){ hovering = false; resume(); });
@@ -882,15 +712,12 @@ function renderBestSellers(){
   resume();
 }
 
-/* =================================================================
-   RENDER: certifications, FAQ, trust badges
-   ================================================================= */
+/* ===== RENDER: certifications, FAQ, trust badges ===== */
 function renderCerts(){
   const make = c => `<div class="cert"><span class="ring">${esc(c.code)}</span><small>${esc(c.label)}</small></div>`;
   const aboutCerts = $("#about-certs");
   if(aboutCerts) aboutCerts.innerHTML = CONFIG.certifications.map(make).join("");
-  /* #trust-badges removed — the element does not exist in any HTML file.
-     #about-certs and #foot-certs below are real and stay. */
+  /* Trust badges removed (no element exists); certifications stay. */
   const footCerts = $("#foot-certs");
   if(footCerts) footCerts.innerHTML = CONFIG.certifications.map(c=>`<span>${esc(c.code)}</span>`).join("");
 }
@@ -919,9 +746,7 @@ function renderFaqs(){
   wrap.innerHTML = "";
 
   if(!FAQS.length){
-    /* D14: an error state, never invented rows. Distinguishes "still loading"
-       from "we could not reach the server" — a visitor can act on the second
-       by trying again, and can act on neither if both look the same. */
+    /* Show an error state (not fake rows), distinguishing loading from a failed load. */
     const note = document.createElement("div");
     note.className = "faq-empty muted";
     note.style.cssText = "padding:18px 0;text-align:center";
@@ -935,51 +760,14 @@ function renderFaqs(){
   FAQS.forEach((qa,i)=> wrap.appendChild(createFaqItem(qa,i)));
 }
 
-/* =================================================================
-   UI PRIMITIVE: TOAST
-   ================================================================= */
+/* ===== UI PRIMITIVE: TOAST ===== */
 function showToast(msg, type="success", opts={}){
-  /* Two separate faults were fixed here.
-
-     1. `msg` went in as innerHTML. Callers compose it from database values —
-        `${p.name} added to cart` is the obvious one — so a product name
-        containing markup executed. The icon is ours and stays as markup; the
-        message is data and is escaped.
-
-     2. `wrap.appendChild(t)` ran with no null check. #toast-wrap does not exist
-        on profile.html or my-orders.html — both declare #toast-root — so EVERY
-        toast on the two customer account pages threw
-        "Cannot read properties of null (reading 'appendChild')" and the
-        customer was told nothing at all: not "Address saved", not "Password
-        changed", not any error. The saves themselves worked, which is what made
-        it invisible.
-
-     Both container ids are accepted, and a page with neither degrades to the
-     console instead of throwing — the same thing EbUI.toast() in
-     assets/js/core/ui.js has always done. That this file's twin lacked the
-     guard is the duplicate-implementation drift catalogued in REMEDIATION.md.
-
-     TWIN: EbUI.toast() in assets/js/core/ui.js serves the portal. It is a
-     different markup contract on purpose — #toast-container, types ok/err/warn,
-     a flat bordered card with no icon well — and its glyphs are already sized
-     by portal.css. Behaviour is what has to stay in step between the two, not
-     structure. Change one, read the other. */
+  /* Toast: the message is escaped, either #toast-wrap or #toast-root is accepted, and with neither it logs to the console; keep behaviour in step with EbUI.toast() in core/ui.js. */
   const wrap = $("#toast-wrap") || $("#toast-root");
   if(!wrap){ console.log(`[${type}] ${msg}`); return; }
   const t = document.createElement("div");
   t.className = `toast ${type}`;
-  /* The non-success marker is an EMPTY well, filled by CSS with a dot.
-
-     It used to be ICONS.cart, and that was wrong twice over. Geometrically:
-     ICONS.check draws `M20 6 9 17l-5-5`, inset well inside its 24x24 box, so
-     it sits happily in a 22px circle. ICONS.cart starts at `M1 1`, runs out to
-     x=23 and puts its two wheels down at cy=21 — corner to corner, so in the
-     same circle it touches the edge and reads bottom-left heavy. Semantically:
-     a shopping trolley says nothing at all on "Signed out." or on an upload
-     failure, which are two of the messages that carried it.
-
-     A dot carries no false meaning and cannot be off-centre. The check stays
-     for success, where it means something. */
+  /* Non-success toasts show a CSS dot instead of an icon. */
   t.innerHTML = `<span class="ic">${type==="success"?ICONS.check:""}</span><span class="toast-msg">${esc(msg)}</span>`;
 
   let timer = null;
@@ -989,16 +777,7 @@ function showToast(msg, type="success", opts={}){
     setTimeout(()=>t.remove(), 320);
   };
 
-  /* An optional action, so a destructive change can be offered back instead of
-     asked about first. Removing a cart line used to be the only way to empty
-     it and there was no way to take it back; a confirm() would have been the
-     obvious fix and is the wrong one — nothing else on this storefront uses a
-     browser dialog, and a prompt in front of every removal taxes the ninety
-     per cent of removals that were meant. Undo taxes the ten per cent that
-     were not.
-
-     The window is longer than a plain toast's: an undo the reader has not
-     finished reading is not an undo. */
+  /* Optional Undo action (with a longer display time), used instead of a confirm dialog. */
   if(opts.action && typeof opts.action.onClick === "function"){
     const btn = document.createElement("button");
     btn.type = "button";
@@ -1012,26 +791,10 @@ function showToast(msg, type="success", opts={}){
   timer = setTimeout(dismiss, opts.duration || (opts.action ? 6000 : 2600));
 }
 
-/* =================================================================
-   UI PRIMITIVE: MODAL  (serves product detail, login, register, checkout, receipt)
-   ================================================================= */
+/* ===== UI PRIMITIVE: MODAL (product detail, login, register, checkout, receipt) ===== */
 let lastFocus = null;
 function openModal(title, bodyHTML, {wide=false, onOpen}={}){
-  /* EVERY NODE IS OPTIONAL, AND THAT IS THE POINT.
-
-     This opened with `$("#modal-title").textContent = title` and nothing else.
-     The four pages under public/profile/ had no #modal-title, so that first
-     line threw TypeError and the function died before opening anything — SIGN
-     IN on the signed-out guard and Proceed to Checkout in the cart drawer both
-     read as dead buttons on those pages, while working on index.html and
-     shop.html, which have the element.
-
-     The markup is fixed as well (all five copies now carry the full shell), so
-     this guard should never fire again. It stays because the last identical
-     bug — #toast-wrap vs #toast-root, see showToast() — was also "fixed in the
-     markup", and the markup drifted again. A missing SCRIM is the one thing
-     worth refusing over: without it there is no dialog to show and pretending
-     otherwise would lock the page scroll with nothing on screen. */
+  /* Every modal node is optional so a missing element never breaks opening; only a missing scrim stops it. */
   const scrim = $("#modal-scrim");
   const body  = $("#modal-body");
   if(!scrim || !body){
@@ -1043,6 +806,8 @@ function openModal(title, bodyHTML, {wide=false, onOpen}={}){
   const titleEl = $("#modal-title");
   if(titleEl) titleEl.textContent = title;
   body.innerHTML = bodyHTML;
+  /* Scroll the reused modal back to the top when opening. */
+  const modalEl = $("#modal"); if(modalEl) modalEl.scrollTop = 0;
   $("#modal")?.classList.toggle("wide", wide);
   scrim.classList.add("open");
   document.body.style.overflow = "hidden";
@@ -1051,11 +816,7 @@ function openModal(title, bodyHTML, {wide=false, onOpen}={}){
   const f = body.querySelector("input,select,textarea,button");
   if(f) setTimeout(()=>f.focus(), 60);
 }
-/* ── Sign-up STEP 2: email verification ─────────────────────────
-   Shown in place of the Create Account form once shop/register.php has
-   emailed a code. The account is created only by register-verify.php,
-   after the code matches. "Edit details" goes back to the (still filled)
-   form; nothing was saved, so there is nothing to undo. */
+/* Sign-up step 2: email code verification replaces the form; register-verify.php creates the account, and Edit details goes back. */
 function showSignupOtp(root, info){
   const panel = root.querySelector('#ap-register');
   const form  = root.querySelector('#reg-form');
@@ -1171,47 +932,204 @@ function showSignupOtp(root, info){
   setTimeout(() => boxes[0].focus(), 60);
 }
 
+/* Forgot password replaces the Sign In form: email, then code plus new password (same answer for unknown emails). */
+function showForgot(root){
+  const panel = root.querySelector('#ap-login');
+  const form  = root.querySelector('#login-form');
+  if(!panel || !form) return;
+  panel.querySelector('#fp-step')?.remove();
+  const head = panel.querySelector('.auth-panel-head');
+  form.style.display = "none"; if(head) head.style.display = "none";
+
+  const box = document.createElement('div');
+  box.id = 'fp-step'; box.className = 'otp-step fp-step';
+  panel.appendChild(box);
+  let tick = null;
+  const back = () => { clearInterval(tick); box.remove(); form.style.display = ""; if(head) head.style.display = ""; };
+  const lockIc = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+
+  /* Step 1 — which account */
+  const stepEmail = (prefill = "") => {
+    clearInterval(tick);
+    box.innerHTML = `
+      <div class="otp-ic" aria-hidden="true">${lockIc}</div>
+      <h3 class="otp-title">Forgot your password?</h3>
+      <p class="otp-sub">Enter the email you signed up with and we will send you a 6-digit code to reset it.</p>
+      <div class="auth-field fp-field">
+        <label for="fp-email">Email address *</label>
+        <div class="auth-input-group">
+          <span class="auth-input-icon" aria-hidden="true">${ICONS.mail}</span>
+          <input class="auth-input" id="fp-email" type="email" placeholder="you@email.com" autocomplete="email" value="${esc(prefill)}"/>
+        </div>
+        <span class="field-error" id="fp-err"></span>
+      </div>
+      <button type="button" class="auth-submit" id="fp-send">Send code ${_authArrow}</button>
+      <div class="otp-links"><button type="button" class="otp-link" id="fp-back">Back to sign in</button></div>`;
+    const inp = box.querySelector('#fp-email'), err = box.querySelector('#fp-err'), go = box.querySelector('#fp-send');
+    box.querySelector('#fp-back').addEventListener('click', back);
+    const send = async () => {
+      const email = inp.value.trim();
+      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ err.textContent = 'Enter a valid email address.'; inp.focus(); return; }
+      go.disabled = true; go.textContent = 'Sending code…';
+      try {
+        const { data } = await EbApi.post("shop/password-reset.php", { email });
+        stepCode(data, email);
+      } catch(e){
+        err.textContent = e.fields?.email || e.message;
+        go.disabled = false; go.innerHTML = `Send code ${_authArrow}`;
+      }
+    };
+    go.addEventListener('click', send);
+    inp.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); send(); } });
+    inp.addEventListener('input', () => { err.textContent = ''; });
+    setTimeout(() => inp.focus(), 60);
+  };
+
+  /* Step 2 — code + new password */
+  const stepCode = (info, email) => {
+    box.innerHTML = `
+      <div class="otp-ic" aria-hidden="true">${lockIc}</div>
+      <h3 class="otp-title">Reset your password</h3>
+      <p class="otp-sub">If an account exists for <b>${esc(info.email || email)}</b>, we sent it a 6-digit code. Enter it with your new password.</p>
+      <div class="otp-boxes" role="group" aria-label="Reset code">
+        ${Array.from({length:6}, (_, i) => `<input class="otp-box" inputmode="numeric" autocomplete="${i === 0 ? "one-time-code" : "off"}" maxlength="1" aria-label="Digit ${i + 1}">`).join("")}
+      </div>
+      <span class="field-error otp-err" id="fp-code-err"></span>
+      ${info.devCode ? `<p class="otp-dev">Test mode — email sending is not set up on this server. Your code is <b>${esc(info.devCode)}</b>.</p>` : ""}
+      <div class="auth-field fp-field">
+        <label for="fp-pw">New password *</label>
+        <div class="auth-input-group">
+          <span class="auth-input-icon" aria-hidden="true">${_lockIcon}</span>
+          <input class="auth-input" id="fp-pw" type="password" placeholder="Create a strong password" autocomplete="new-password"/>
+        </div>
+        <span class="field-error" id="fp-pw-err"></span>
+      </div>
+      <div class="auth-field fp-field">
+        <label for="fp-pw2">Confirm new password *</label>
+        <div class="auth-input-group">
+          <span class="auth-input-icon" aria-hidden="true">${_lockIcon}</span>
+          <input class="auth-input" id="fp-pw2" type="password" placeholder="Type it again" autocomplete="new-password"/>
+        </div>
+        <span class="field-error" id="fp-pw2-err"></span>
+      </div>
+      <button type="button" class="auth-submit" id="fp-go">Reset password ${_authArrow}</button>
+      <div class="otp-links">
+        <button type="button" class="otp-link" id="fp-resend" disabled>Resend code</button>
+        <span class="otp-timer" id="fp-timer"></span>
+        <span class="otp-dot">·</span>
+        <button type="button" class="otp-link" id="fp-change">Change email</button>
+      </div>`;
+    const boxes = [...box.querySelectorAll('.otp-box')];
+    const codeErr = box.querySelector('#fp-code-err'), pw = box.querySelector('#fp-pw'), pw2 = box.querySelector('#fp-pw2');
+    const pwErr = box.querySelector('#fp-pw-err'), pw2Err = box.querySelector('#fp-pw2-err');
+    const pwMissing = mountPwChecklist(pw);
+    const go = box.querySelector('#fp-go'), resend = box.querySelector('#fp-resend'), timerEl = box.querySelector('#fp-timer');
+    const code = () => boxes.map(b => b.value).join('');
+    boxes.forEach((b, i) => {
+      b.addEventListener('input', () => {
+        b.value = b.value.replace(/\D/g, '').slice(-1);
+        if(b.value){ (boxes[i + 1] || pw).focus(); }
+        codeErr.textContent = '';
+      });
+      b.addEventListener('keydown', e => {
+        if(e.key === 'Backspace' && !b.value && boxes[i - 1]){ boxes[i - 1].focus(); boxes[i - 1].value = ''; }
+      });
+      b.addEventListener('paste', e => {
+        const d = (e.clipboardData?.getData('text') || '').replace(/\D/g, '').slice(0, 6);
+        if(!d) return;
+        e.preventDefault();
+        boxes.forEach((x, n) => { x.value = d[n] || ''; });
+        (d.length === 6 ? pw : boxes[d.length]).focus();
+      });
+    });
+    [pw, pw2].forEach(x => {
+      x.addEventListener('input', () => { pwErr.textContent = ''; pw2Err.textContent = ''; });
+      x.addEventListener('keydown', e => { if(e.key === 'Enter') submit(); });
+    });
+    const countdown = secs => {
+      clearInterval(tick); resend.disabled = true;
+      const end = Date.now() + secs * 1000;
+      const draw = () => {
+        const left = Math.max(0, Math.ceil((end - Date.now()) / 1000));
+        timerEl.textContent = left ? `in ${left}s` : '';
+        if(!left){ resend.disabled = false; clearInterval(tick); }
+      };
+      draw(); tick = setInterval(draw, 1000);
+    };
+    countdown(info.resendIn || 60);
+
+    let busy = false;
+    async function submit(){
+      if(busy) return;
+      let bad = false;
+      if(code().length !== 6){ codeErr.textContent = 'Enter all 6 digits.'; bad = true; }
+      const miss = pwMissing();
+      if(miss){ pwErr.textContent = `Your password needs: ${miss.label.toLowerCase()}.`; bad = true; }
+      else if(pw.value !== pw2.value){ pw2Err.textContent = 'The two passwords do not match.'; bad = true; }
+      if(bad) return;
+      busy = true; go.disabled = true; go.textContent = 'Saving…';
+      try {
+        const { data } = await EbApi.post("shop/password-reset.php", { code: code(), password: pw.value, confirm: pw2.value });
+        clearInterval(tick);
+        signIn(data.customer);
+        showToast("Password changed — you're signed in.", "success");
+      } catch(e){
+        const f = e.fields || {};
+        if(f.password) pwErr.textContent = f.password;
+        else if(f.confirm) pw2Err.textContent = f.confirm;
+        else { codeErr.textContent = e.message; boxes.forEach(x => { x.value = ''; }); boxes[0].focus(); }
+        if(e.status === 410) setTimeout(() => stepEmail(email), 1200);
+      } finally {
+        busy = false; go.disabled = false; go.innerHTML = `Reset password ${_authArrow}`;
+      }
+    }
+    go.addEventListener('click', submit);
+    box.querySelector('#fp-change').addEventListener('click', () => stepEmail(email));
+    resend.addEventListener('click', async () => {
+      resend.disabled = true;
+      try {
+        const { data } = await EbApi.post("shop/password-reset.php", { resend: true });
+        codeErr.textContent = '';
+        showToast("A new code is on its way.", "info");
+        const dev = box.querySelector('.otp-dev b'); if(dev && data.devCode) dev.textContent = data.devCode;
+        countdown(data.resendIn || 60);
+      } catch(e){
+        codeErr.textContent = e.message;
+        if(e.status === 410) setTimeout(() => stepEmail(email), 1200); else resend.disabled = false;
+      }
+    });
+    setTimeout(() => boxes[0].focus(), 60);
+  };
+
+  stepEmail(root.querySelector('#lg-email')?.value.trim() || "");
+}
+
 function closeModal(){
-  /* Guarded for the same reason openModal() is. This one could be reached on a
-     page with no modal at all — the Escape handler calls it unconditionally on
-     every keydown — and an unguarded scrim lookup would throw on every press of
-     Escape rather than only when something tried to open. */
+  /* Guarded so pressing Escape on a page without a modal never throws. */
   $("#modal-scrim")?.classList.remove("open");
   document.body.style.overflow = "";
-  /* Drop the auth look only after the fade-out. Removing it at once turned
-     the dark two-panel login into the plain white modal mid-fade — the
-     "white pop" on clicking outside. Skipped if something reopened. */
+  /* Remove the auth styling only after the fade-out, unless something reopened. */
   setTimeout(() => {
     if(!$("#modal-scrim")?.classList.contains("open")) $("#modal")?.classList.remove("is-auth");
   }, 400);
   if(lastFocus) lastFocus.focus();
 }
 
-/* =================================================================
-   CART logic
-   ================================================================= */
-/* PRODUCTS, not units.
+/* Popups close only from their X, Close/Cancel buttons or Escape; a click on the backdrop just shakes the popup as a hint, so nothing typed is ever lost. */
+function wireBackdropClose(backdrop, box){
+  if(!backdrop) return;
+  backdrop.addEventListener("click", e => {
+    if(e.target !== backdrop) return;
+    const el = box();
+    if(!el) return;
+    el.classList.remove("modal-nudge"); void el.offsetWidth; el.classList.add("modal-nudge");
+  });
+}
 
-   This was `reduce((n,i)=>n+i.qty, 0)`, so two products at quantity 2 gave 4:
-   the header badge said 4 and the drawer said "Subtotal (4 items)" when two
-   things had been added. "Items" is the ambiguous word that let it pass — it
-   reads as either, so neither number looked wrong.
-
-   One definition, used by the badge, by the drawer label and by
-   api/shop/cart.php's `count`, so the badge cannot disagree with itself
-   depending on whether the cart came from the server or from local state.
-   The label says "products" rather than "items" so the number names itself.
-
-   The unit total is not computed anywhere any more. Nothing wanted it: the
-   old cartCount() had exactly these two callers. If the header badge is later
-   meant to show units, it is one helper and one call site. */
+/* ===== CART logic ===== */
+/* Count products, not units, the same as api/shop/cart.php's count. */
 const cartLineCount = () => state.cart.length;
-/* Guarded on the product. Every line used to be dereferenced straight through
-   getProduct(), which is a lookup into PRODUCTS — a list loaded asynchronously
-   from shop/products.php. Once the cart arrives from the server it can arrive
-   BEFORE that list does, and `getProduct(id).price` on undefined throws and
-   takes the whole drawer with it. mergeCartProducts() below means this should
-   never fire; it is here because "should never" is not a guarantee. */
+/* Skip a cart line whose product is not loaded yet instead of throwing. */
 const cartSubtotal = () => state.cart.reduce((s,i)=>{
   const p = getProduct(i.id);
   return s + (p ? p.price * i.qty : 0);
@@ -1219,36 +1137,9 @@ const cartSubtotal = () => state.cart.reduce((s,i)=>{
 
 let pendingCartAdd = null; // item queued while user logs in
 
-/* =================================================================
-   CART PERSISTENCE — the cart is on the account, not in the tab
-   -----------------------------------------------------------------
-   state.cart was `cart: []` and nothing else. A reload emptied it, signing out
-   emptied it, and a second device never saw it — so the badge rendering 0 was
-   not a badge defect, there genuinely was nothing there.
+/* ===== CART PERSISTENCE: the cart is stored on the account (migration 007, api/shop/cart.php and cart-save.php), never in localStorage ===== */
 
-   NOT localStorage, and the reason is already written down in this file: read
-   the comment above _savedAuth. The signed-in flag used to be restored from
-   localStorage, which made typing the right JSON into the console a login.
-   That flag is deliberately not restored any more. A cart in localStorage is
-   the same mistake one size down — per-browser rather than per-account, so it
-   misses the device change that is most of the point, and shared by everyone
-   who uses the machine.
-
-   db/migrations/007-persistent-cart.sql, api/shop/cart.php and
-   api/shop/cart-save.php are the other three quarters of this.
-   ================================================================= */
-
-/* Write one line through to the server.
-
-   The UI has already been updated and redrawn by the time this runs — a
-   stepper that waits for a round trip before moving is a stepper that feels
-   broken on a slow connection. What this owns is the failure: `rollback` puts
-   state.cart back the way it was, and the shopper is told, rather than being
-   left with a drawer that disagrees with the database.
-
-   Signed out is not a failure. addToCart() refuses before this point, so the
-   only way to be here without a session is a stale tab; there is nowhere to
-   save to and nothing to say about it. */
+/* Save one line to the server after the UI updates, rolling back and telling the shopper if it fails. */
 async function saveCartLine(id, qty, rollback){
   if(!state.auth.loggedIn) return false;
   try {
@@ -1262,26 +1153,14 @@ async function saveCartLine(id, qty, rollback){
   }
 }
 
-/* Fold the product fields the cart endpoint sends into PRODUCTS.
-
-   shop/cart.php joins each line to its product and returns name, price, image
-   and tint alongside the quantity, so the drawer can be drawn from the cart
-   response alone. Without this the drawer would depend on loadShopCatalog()
-   having already resolved — two independent requests, and renderCart() would
-   be correct or blank depending on which won.
-
-   Existing entries are not overwritten: the catalogue row is richer (it has
-   the long description, the nutrition line and the rating the product detail
-   modal needs) and this one is a subset of it. */
+/* Merge product fields from the cart response into PRODUCTS (without overwriting richer catalogue rows). */
 function mergeCartProducts(items){
   (items || []).forEach(it => {
     if(getProduct(it.id)) return;
     PRODUCTS.push({
       id: it.id, name: it.name, price: it.price, image: it.image,
       tint: it.tint, cat: it.cat, desc: "", long: "", nutri: "",
-      /* reviewCount 0 alongside rating 0 — starRating() requires it, and a
-         cart-derived stub genuinely knows nothing about this product's
-         reviews. "No ratings yet" is the correct thing for it to say. */
+      /* A cart-derived product has reviewCount 0, so it shows "No ratings yet". */
       rating: 0, reviewCount: 0, sold: 0, best: false,
       inStock: it.inStock, stock: it.stock,
       stockLevel: it.stockLevel, stockLabel: it.stockLabel,
@@ -1289,13 +1168,7 @@ function mergeCartProducts(items){
   });
 }
 
-/* Load the signed-in customer's cart and render it.
-
-   Returns the server's payload so a caller can act on the count — signIn()
-   uses it for the "items waiting" reminder — or null when there is no session
-   or the request failed. A failed load leaves state.cart alone rather than
-   emptying it: "the request did not come back" says nothing about what is in
-   the cart, and rendering zero would read as "we lost it". */
+/* Load and render the signed-in customer's cart; returns the payload, or null (leaving the cart alone) on failure. */
 async function loadServerCart(){
   if(!state.auth.loggedIn) return null;
   try {
@@ -1305,10 +1178,7 @@ async function loadServerCart(){
     updateCartBadge();
     renderCart();
 
-    /* The server reconciles a saved cart against the current catalogue —
-       archived products dropped, quantities clamped to stock — and reports
-       what it changed. Saying so is the entire point of reporting it; a cart
-       that quietly loses a line is worse than the stale line was. */
+    /* Tell the shopper what the server changed in their saved cart. */
     (data.changes || []).forEach(c => {
       const what = c.action === "clamped"
         ? `quantity reduced to ${c.qty}`
@@ -1335,31 +1205,28 @@ async function addToCart(id, qty=1){
   const line = state.cart.find(i=>i.id===id);
   const prevQty = line ? line.qty : 0;
   const newQty = prevQty + qty;
-  /* Refused against what is on the shelf, not a flat 99, now that the card has
-     told the shopper the number. The server still re-checks at checkout — this
-     only spares them a failure they could already see coming. */
+  /* Refuse quantities above the shelf stock (the server re-checks). */
   const max = productMax(p);
   if(newQty > max){
-    showToast(max < CART_MAX_QTY
-      ? `Only ${max} of ${p.name} left`
-      : `Maximum ${CART_MAX_QTY} per item`, "info");
+    /* Say how many are available, and how many more fit given what is already in the cart. */
+    const room = Math.max(0, max - prevQty);
+    const what = `Only ${max} of ${p.name} available`;
+    showToast(prevQty
+      ? `${what} — you already have ${prevQty} in your cart${room ? `, so you can add ${room} more` : ""}.`
+      : `${what}.`, "info");
     return;
   }
   if(line) line.qty = newQty; else state.cart.push({id, qty});
   updateCartBadge(true);
   renderCart();
   showToast(`${p.name} added to cart`, "success");
-  /* Screen first, server second. If the write is refused — the product went
-     out of stock between the page loading and this click — the line goes back
-     to what it was and the shopper is told why. */
+  /* Update the screen first, then the server, rolling back if refused. */
   await saveCartLine(id, newQty, () => {
     if(prevQty > 0){ const l = state.cart.find(i=>i.id===id); if(l) l.qty = prevQty; }
     else state.cart = state.cart.filter(i=>i.id!==id);
   });
 }
-/* Several lines at once (Reorder). One badge/drawer refresh and no per-line
-   toast; the caller says what happened. Each line is capped at the shelf,
-   and a line the server refuses is rolled back like addToCart's. */
+/* Add several lines at once (Reorder), capped at stock, with one refresh. */
 async function addManyToCart(lines){
   let added = 0; const skipped = [];
   const saves = [];
@@ -1382,9 +1249,7 @@ async function addManyToCart(lines){
   return { added, skipped };
 }
 function setQty(id, qty){
-  /* The floor stays at 1. This clamp is what protects the typed number input,
-     where 0 is not a quantity — "remove this line" is a decision made by the
-     minus button and the change handler, which know the difference. */
+  /* The minimum stays 1 for typed input; removing is the minus button's job. */
   qty = Math.max(1, Math.min(qty, productMax(getProduct(id))));
   const line = state.cart.find(i=>i.id===id);
   if(!line) return;
@@ -1394,12 +1259,7 @@ function setQty(id, qty){
   updateCartBadge(); renderCart();
   saveCartLine(id, qty, () => { const l = state.cart.find(i=>i.id===id); if(l) l.qty = prevQty; });
 }
-/* Removal is immediate and reversible.
-
-   The line goes now — no dialog standing between the shopper and the thing
-   they just asked for — and the toast carries the way back. The index is kept
-   as well as the line so an undo puts it back WHERE it was rather than at the
-   bottom of the drawer, which reads as a different cart. */
+/* Removal is immediate with an Undo toast that restores the line in its original position. */
 function removeFromCart(id){
   const idx = state.cart.findIndex(i => i.id === id);
   if(idx < 0) return;
@@ -1409,16 +1269,12 @@ function removeFromCart(id){
   showToast(`${p ? p.name : "Item"} removed from your cart`, "info", {
     action: { label: "Undo", onClick: () => restoreCartLine(idx, line) },
   });
-  /* qty 0 is the delete. If the delete is refused the line comes back, and
-     `false` stops that restore posting a write of its own — the row was never
-     removed server-side, so there is nothing to put back there. */
+  /* qty 0 deletes; if refused, the line comes back without another write. */
   saveCartLine(id, 0, () => restoreCartLine(idx, line, false));
 }
 
 function restoreCartLine(idx, line, persist=true){
-  /* The shopper may have added the same product again while the toast was up.
-     Putting the old line back on top of the new one would silently overwrite
-     whatever quantity they just chose. */
+  /* Undo does not overwrite a quantity the shopper re-added meanwhile. */
   if(state.cart.some(i => i.id === line.id)) return;
   state.cart.splice(Math.min(idx, state.cart.length), 0, line);
   updateCartBadge(true); renderCart();
@@ -1454,7 +1310,7 @@ function renderCart(){
     const line = document.createElement("div");
     line.className = "cart-line";
     line.innerHTML = `
-      <div class="thumb">${jarSVG(p.tint, p.name, 'jar', imageUrl(p))}</div>
+      <div class="thumb">${jarSVG(p.tint, p.name, 'jar', imageUrl(p), photoSrcset(p), "96px")}</div>
       <div class="cl-info">
         <b>${esc(p.name)}</b>
         <span class="cl-unit">${peso(p.price)} each</span>
@@ -1482,25 +1338,7 @@ function renderCart(){
 function openCart(){ $("#cart-scrim").classList.add("open"); $("#cart-drawer").classList.add("open"); document.body.style.overflow="hidden"; }
 function closeCart(){ $("#cart-scrim").classList.remove("open"); $("#cart-drawer").classList.remove("open"); document.body.style.overflow=""; }
 
-/* =================================================================
-   LOCKOUT COUNTDOWN
-   -----------------------------------------------------------------
-   WHY A COUNTDOWN AND NOT JUST A MESSAGE
-
-   A lockout used to arrive as "Email or password is incorrect", which
-   sent people back to retype a password that was already right. It now
-   says it is a lockout and how long it lasts — but a static "try again
-   in 10 minutes" still leaves somebody watching a clock and guessing
-   whether the wait has elapsed. The number ticks so they can see it.
-
-   IT ALSO DISABLES THE BUTTON. A form that accepts a submission it
-   knows will be refused is teaching people that the message is
-   advisory. Re-enabled the moment the wait reaches zero.
-
-   The server is still the authority: this only mirrors `retryAfter`
-   from the 429. Reloading the page clears the countdown, and the next
-   attempt is refused again with a fresh number.
-   ================================================================= */
+/* ===== LOCKOUT COUNTDOWN: show a ticking wait from the server's retryAfter and disable the button until it ends ===== */
 let lockTimer = null;
 
 function stopLockCountdown(root){
@@ -1520,9 +1358,7 @@ function startLockCountdown(root, seconds, message){
 
   let left = Math.max(0, Number(seconds) || 0);
 
-  /* No number to count. Show what the server said and leave the form
-     usable — refusing to accept input on a wait we cannot measure would
-     strand the person entirely. */
+  /* No number from the server: show its message and leave the form usable. */
   if(left <= 0){
     box.hidden = false;
     box.textContent = message;
@@ -1551,23 +1387,7 @@ function startLockCountdown(root, seconds, message){
   }, 1000);
 }
 
-/* =================================================================
-   PRODUCT REVIEWS — the read-only list under the product detail
-   -----------------------------------------------------------------
-   NO STAR INPUT HERE, DELIBERATELY. The only place a rating can be
-   written is My Orders, on a line of an order that reached `completed`
-   (renderOrderReviewControl below). A star input on the product page
-   would have to be disabled for almost everyone who saw it, and a
-   control that is usually refused teaches people to ignore controls.
-   The path from purchase to review runs through the order, which is
-   also the evidence api/shop/review-save.php checks.
-
-   "Verified purchase" is rendered on EVERY row without checking a
-   field, because it is true of every row by construction — the table
-   requires an order id and the endpoint derives it. A flag would imply
-   some rows are unverified, which would be false and, worse, would be
-   something a future bug could make true without anyone noticing.
-   ================================================================= */
+/* ===== PRODUCT REVIEWS (read-only list under the product detail): ratings can only be written from My Orders on a completed order, and every review is a verified purchase ===== */
 function reviewStars(n){
   let html = `<span class="stars" aria-label="${n} out of 5">`;
   for(let i=1;i<=5;i++){
@@ -1577,10 +1397,7 @@ function reviewStars(n){
   return html + "</span>";
 }
 
-/* The 1-5 histogram. An average alone cannot be judged: twenty fives and
-   four ones averages the same 4.2 as twenty-four fours, and they are not
-   the same product. The bar is aria-hidden because the row already reads
-   as "5 stars, 12 reviews" — a bar announced twice is noise. */
+/* 1 to 5 star histogram (bars aria-hidden). */
 function reviewSpread(spread, total){
   if(!total) return "";
   return `<div class="rev-spread">` + [5,4,3,2,1].map(n=>{
@@ -1600,8 +1417,7 @@ async function loadProductReviews(productId, root){
   try{
     const { data } = await EbApi.get("shop/reviews.php", { product_id: productId, limit: 20 });
 
-    /* THE ZERO CASE IS A SENTENCE, NOT AN EMPTY LIST. A heading with
-       nothing under it reads as a page that failed to load. */
+    /* With no reviews, say so in a sentence. */
     if(!data.review_count){
       host.innerHTML = `<h4 class="pd-rev-title">Reviews</h4>
         <p class="pd-rev-empty">No ratings yet. Reviews come from customers who
@@ -1636,11 +1452,7 @@ async function loadProductReviews(productId, root){
         ? `<p class="pd-rev-more">Showing ${data.reviews.length} of ${data.review_count}.</p>`
         : "");
 
-    /* The customer's OWN review, at whatever status. Somebody whose review
-       is held needs to be told that rather than left to conclude it
-       vanished, and a rejection is shown with the reason a moderator was
-       required to give — a refusal with no stated cause is
-       indistinguishable from censorship. */
+    /* The customer's own review at any status, with the moderator's reason when rejected. */
     if(data.mine && data.mine.status !== "published"){
       const held = data.mine.status === "pending";
       host.insertAdjacentHTML("beforeend", `
@@ -1652,35 +1464,64 @@ async function loadProductReviews(productId, root){
         </div>`);
     }
   }catch(err){
-    /* The product detail is still useful without the reviews, so this
-       reports and stops rather than taking the modal down with it. */
+    /* Report a reviews failure without breaking the product modal. */
     host.innerHTML = `<h4 class="pd-rev-title">Reviews</h4>
       <p class="pd-rev-empty">Reviews could not be loaded just now.</p>`;
     console.warn("[reviews]", err);
   }
 }
 
-/* =================================================================
-   PRODUCT DETAIL modal
-   ================================================================= */
+/* ===== PRODUCT DETAIL modal ===== */
+function pdWeight(g){ return g >= 1000 ? `${+(g/1000).toFixed(2)} kg` : `${g} g`; }
+
+/* Nutrition facts label from Product Maintenance values, skipping empty rows. */
+function nutritionPanel(n){
+  if(!n) return "";
+  const rows = [
+    ["calories","Calories","kcal",true], ["fat","Total Fat","g"], ["sat_fat","Saturated Fat","g",false,true],
+    ["cholesterol","Cholesterol","mg"], ["sodium","Sodium","mg"], ["carbs","Total Carbohydrates","g"],
+    ["sugar","Sugars","g",false,true], ["protein","Protein","g"],
+  ].filter(([k]) => n[k] != null)
+   .map(([k,label,unit,big,sub]) => `<div class="nf-row${big?" nf-big":""}${sub?" nf-sub":""}"><span>${label}</span><b>${+n[k]} ${unit}</b></div>`)
+   .join("");
+  const serving = [n.serving_size ? `Serving size <b>${esc(n.serving_size)}</b>` : "",
+                   n.servings != null ? `Servings per pack <b>${+n.servings}</b>` : ""].filter(Boolean).join(" · ");
+  if(!rows && !serving) return "";
+  return `<div class="pd-nutri nf" id="pd-nf" aria-hidden="true">
+    <div class="nf-head">Nutrition Facts
+      <button type="button" class="nf-back" data-nf-toggle aria-label="Back to photo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    ${serving ? `<div class="nf-serving">${serving}</div>` : ""}
+    ${rows ? `<div class="nf-per">Amount per serving</div>${rows}` : ""}
+  </div>`;
+}
+
 function openProductDetail(id){
   const p = getProduct(id);
   const s = stockInfo(p);
   const out = !productAvailable(p);
+  const nfHtml = nutritionPanel(p.nutrition);
   const body = `
     <div class="pd-grid">
-      <div class="pd-media">${jarSVG(p.tint, p.name, 'jar', imageUrl(p))} ${p.best?`<span class="ribbon">${icon("star")} Best Seller</span>`:""}</div>
+      <!-- The nutrition label opens OVER the photo, in the same square, so the
+           pop-up keeps its size instead of growing a tall label column. -->
+      <div class="pd-media">${jarSVG(p.tint, p.name, 'jar', imageUrl(p), photoSrcset(p), "(max-width: 640px) 100vw, 560px")} ${p.best?`<span class="ribbon">${icon("star")} Best Seller</span>`:""}${nfHtml}</div>
       <div class="pd-info">
         <span class="pc-cat">${esc(p.cat)}</span>
         <div class="pc-meta" style="margin:8px 0">${starRating(p.rating, p.reviewCount)} <span>· ${p.sold.toLocaleString()} sold</span></div>
-        <p class="pd-desc">${p.long}</p>
-        <div class="pd-nutri"><b>Nutrition:</b> ${p.nutri}</div>
+        ${p.desc ? `<p class="pd-desc">${esc(p.desc)}</p>` : ""}
+        ${p.weightG || nfHtml ? `<div class="pd-weight">
+          ${p.weightG ? `<span>Net weight <b>${pdWeight(p.weightG)}</b></span>` : ""}
+          ${nfHtml ? `<button type="button" class="pd-nf-btn" data-nf-toggle aria-controls="pd-nf" aria-expanded="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v4M14 3v4"/><rect x="5" y="7" width="14" height="14" rx="2"/><path d="M9 12h6M9 16h4"/></svg>
+            <span data-nf-label>Nutrition facts</span></button>` : ""}
+        </div>` : ""}
         <span class="stock-pill ${s.cls}">${s.label}</span>
         <div class="pd-price">${peso(p.price)}</div>
         <div class="pd-actions">
           ${out?"":`<div class="stepper" data-stepper>
             <button type="button" data-step="-1" aria-label="Decrease quantity">${ICONS.minus}</button>
-            <input type="number" value="1" min="1" max="${productMax(p)}" ${qtyCapAttrs(p)} />
+            <input type="number" value="1" min="1" max="${addMax(p)}" ${qtyCapAttrs(p)} />
             <button type="button" data-step="1" aria-label="Increase quantity">${ICONS.plus}</button>
           </div>`}
           <button class="btn btn-primary" data-add-detail="${escAttr(p.id)}" ${out?"disabled":""}>${out?"Sold Out":icon("cart")+" Add to Cart"}</button>
@@ -1699,20 +1540,29 @@ function openProductDetail(id){
   openModal(p.name, body, {wide:true, onOpen:(root)=>{
     root.querySelector("[data-add-detail]")?.addEventListener("click", e=>{
       const qty = parseInt(root.querySelector(".stepper input")?.value || "1", 10);
+      /* Signed out, addToCart() swaps this popup to Sign In, so leave it open instead of jumping to the cart. */
+      if(!state.auth.loggedIn){ addToCart(e.currentTarget.dataset.addDetail, qty); return; }
       addToCart(e.currentTarget.dataset.addDetail, qty);
       closeModal(); openCart();
     });
-    /* Not awaited: the detail is complete and usable without it, and blocking
-       the modal on a second request would make every product feel slow. */
+    /* Nutrition facts: flips the photo square to the label and back. */
+    const media = root.querySelector(".pd-media"), nfBtn = root.querySelector(".pd-nf-btn");
+    root.querySelectorAll("[data-nf-toggle]").forEach(b => b.addEventListener("click", () => {
+      const on = media.classList.toggle("show-nf");
+      root.querySelector("#pd-nf")?.setAttribute("aria-hidden", String(!on));
+      if(nfBtn){
+        nfBtn.setAttribute("aria-expanded", String(on));
+        nfBtn.classList.toggle("is-on", on);
+        nfBtn.querySelector("[data-nf-label]").textContent = on ? "Show photo" : "Nutrition facts";
+      }
+    }));
+    /* Load reviews without blocking the modal. */
     loadProductReviews(p.id, root);
   }});
 }
 
-/* =================================================================
-   CHECKOUT  (Delivery/Pickup · Cash/GCash/Bank · proof-of-payment mock)
-   ================================================================= */
-/* "Edit" switch for a checkout section. Signed-in only: a guest has no saved
-   profile to lock, so their fields are always open. */
+/* ===== CHECKOUT (Delivery/Pickup, Cash/GCash/Bank) ===== */
+/* Edit switch for a checkout section (signed-in only). */
 function coEditSwitch(key){
   if(!state.auth.loggedIn) return "";
   return `<label class="co-edit" title="Turn on to change these details">
@@ -1727,17 +1577,9 @@ function openCheckout(){
   closeCart();
   const sub = cartSubtotal();
 
-  /* Credit terms are a retail-partner facility. Rendered from
-     state.auth.status, which is what shop/me.php and shop/login.php report —
-     presentation only. api/shop/checkout.php re-derives the status from the
-     customers row inside the request and validates pay_method against
-     Payments::methods($isRetailer), so a hand-crafted `net30` from a regular
-     customer is refused there. A hidden tile stops nobody; that check does. */
+  /* Credit term tiles show for retailers only (presentation; api/shop/checkout.php re-checks). */
   const isRetailer = state.auth.status === "retailer";
-  /* Three columns, not "Name x 2". The old line said what was bought and what
-     it cost in total, and left the shopper to divide one by the other to check
-     the unit price — which is the number they actually remember from the shop
-     page. */
+  /* Summary line shows name, qty x unit price, and amount. */
   const itemsHTML = state.cart.map(i=>{
     const p=getProduct(i.id);
     return `<div class="li">
@@ -1754,7 +1596,14 @@ function openCheckout(){
         <div class="co-title">Order Summary</div>
         <div class="co-summary">
           ${itemsHTML}
-          <div class="li tot"><span class="li-name">Total</span><span class="li-qty">${cartLineCount()} ${cartLineCount()===1?"product":"products"}</span><span class="li-amt">${peso(sub)}</span></div>
+          <!-- VAT breakdown from shop/quote.php (same Tax::compute() as the
+               checkout). Prices already include VAT, so it explains the
+               total rather than adding to it. -->
+          <div class="co-vat" id="co-vat" hidden></div>
+          <!-- Delivery only: our own estimate (api/core/Shipping.php), not an
+               LBC quotation. Subtotal + Estimated Delivery Fee = Grand Total. -->
+          <div class="co-ship" id="co-ship" hidden></div>
+          <div class="li tot"><span class="li-name" id="co-tot-label">Total</span><span class="li-amt" id="co-tot-amt">${peso(sub)}</span></div>
           <!-- Filled only for a retailer registered as a withholding agent — see
                the quote in onOpen below. Empty and hidden for everyone else. -->
           <div class="co-tax-note" id="co-tax-note" hidden></div>
@@ -1784,8 +1633,8 @@ function openCheckout(){
         <div class="co-title">Your Details</div>
         ${coEditSwitch("details")}
         <div class="co-lock-body" data-lock-body="details">
-          <div class="field"><label for="co-name">Full Name *</label><input class="control" id="co-name" type="text" placeholder="Juan dela Cruz" value="${escAttr(state.auth.loggedIn?state.auth.name:"")}"><span class="field-error" data-err></span></div>
-          <div class="field"><label for="co-contact">Contact Number *</label><input class="control" id="co-contact" type="tel" placeholder="09xx xxx xxxx"><span class="field-error" data-err></span></div>
+          <div class="field"><label for="co-name">Full Name *</label><input class="control" id="co-name" type="text" autocomplete="name" placeholder="Juan dela Cruz" value="${escAttr(state.auth.loggedIn?state.auth.name:"")}"><span class="field-error" data-err></span></div>
+          <div class="field"><label for="co-contact">Contact Number *</label><input class="control" id="co-contact" type="tel" autocomplete="tel" placeholder="09xx xxx xxxx"><span class="field-error" data-err></span></div>
         </div>
         <!-- The five inline style properties that used to be on this label are
              in .co-save now, and the checkbox is drawn rather than left as the
@@ -1822,7 +1671,7 @@ function openCheckout(){
           <!-- Filled by payQrHtml() for the method picked: the account to send to
                and its QR code, from Landing Page Maintenance. -->
           <div id="co-pay-qr"></div>
-          <div class="field"><label for="co-ref">Reference Number *</label><input class="control" id="co-ref" type="text" placeholder="e.g. 1234 5678 90"><span class="field-error" data-err></span></div>
+          <div class="field" id="co-ref-field"><label><span data-ref-label>Reference Number</span> *</label><input class="control" id="co-ref" type="text" maxlength="30" autocomplete="off"><span class="field-error" data-err></span></div>
           <div class="field" id="co-proof-field">
             <label for="co-proof">Payment Screenshot *</label>
             <!-- A REAL file input. What used to be here was a div with
@@ -1876,7 +1725,7 @@ function openCheckout(){
            to the bottom of the scrolling modal, with the figure they are
            agreeing to beside it. -->
       <div class="co-footer">
-        <div class="co-foot-total"><span>Total</span><b>${peso(sub)}</b></div>
+        <div class="co-foot-total"><span>Total</span><b id="co-foot-amt">${peso(sub)}</b></div>
         <button type="submit" class="btn btn-primary co-submit">Place Order</button>
       </div>
     </form>`;
@@ -1885,62 +1734,98 @@ function openCheckout(){
     /* `payment` now holds the API key, not a display string. */
     let orderType = "delivery", payment = "cash";
 
-    /* WITHHOLDING TAX. A retailer registered as a withholding agent (VAT
-       Maintenance) pays the total LESS the tax it keeps for the BIR, so it
-       needs to be told the amount to actually transfer — send the full total
-       and Payment Verification sees a screenshot that does not match. The
-       figure is the server's (shop/quote.php runs the same Tax::compute() the
-       checkout does); nobody else is asked, so a regular shopper's checkout
-       makes no extra request. */
-    if (isRetailer) {
-      EbApi.post("shop/quote.php", { items: state.cart.map(i => ({ id: i.id, qty: i.qty })) })
+    /* Withholding retailers are told the amount to actually transfer, from shop/quote.php. */
+    /* Re-quote when order type or delivery address changes; the newest answer wins. */
+    let quoteSeq = 0, quoteTimer = null;
+    const refreshQuote = () => { clearTimeout(quoteTimer); quoteTimer = setTimeout(runQuote, 250); };
+    function runQuote(){
+      const seq = ++quoteSeq;
+      const body = { items: state.cart.map(i => ({ id: i.id, qty: i.qty })), order_type: orderType, pay_method: payment };
+      if (orderType === "delivery" && typeof addr !== "undefined") body.address = addr.value();
+      EbApi.post("shop/quote.php", body)
         .then(({ data }) => {
+          if (seq !== quoteSeq) return;
           const t = data.tax, note = root.querySelector("#co-tax-note");
-          if (!note || !(t.withholdingTax > 0)) return;
-          note.innerHTML = `<div class="li"><span class="li-name">Less: withholding tax (${+t.withholdingRate}%)</span>`
-            + `<span class="li-qty">you remit to the BIR</span><span class="li-amt">− ${EbFormat.pesoExact(t.withholdingTax)}</span></div>`
-            + `<div class="li tot"><span class="li-name">Amount to pay</span><span class="li-qty">send BIR Form 2307</span>`
-            + `<span class="li-amt">${EbFormat.pesoExact(t.amountDue)}</span></div>`;
+          const money = EbFormat.pesoExact;
+          const vat = root.querySelector("#co-vat");
+          if (vat) {
+            const row = (k, v) => `<div class="li co-vat-row"><span class="li-name">${k}</span><span class="li-amt">${money(v)}</span></div>`;
+            vat.innerHTML = row("VATable Sales", t.vatableSales)
+              + row(`VAT (${+t.vatRate || 12}%)`, t.vatAmount)
+              + (t.vatExemptSales > 0 ? row("VAT-Exempt Sales", t.vatExemptSales) : "")
+              + `<div class="co-vat-note">Prices already include VAT.</div>`;
+            vat.hidden = false;
+          }
+          /* Shipping block: destination, distance, weight, zone, fee. */
+          const ship = root.querySelector("#co-ship"), q = t.shipping;
+          const goods = +(t.total - (t.shippingFee || 0)).toFixed(2);
+          if (ship) {
+            if (orderType === "delivery" && q) {
+              const kv = (k, v) => `<div class="co-ship-row"><span>${k}</span><b>${v}</b></div>`;
+              ship.innerHTML = `<div class="li co-sub-row"><span class="li-name">Subtotal</span><span class="li-amt">${money(goods)}</span></div>
+                <div class="co-ship-box">
+                  <div class="co-ship-head">Delivery estimate <small>from ${esc(q.origin || "Dagupan City")}</small></div>
+                  ${kv("Delivery Destination", q.destination ? esc(q.destination) : "Choose your address below")}
+                  ${q.distanceKm != null ? kv("Estimated Distance", `${Math.round(q.distanceKm).toLocaleString()} km`) : ""}
+                  ${kv("Total Product Weight", `${(+q.weightKg).toFixed(2)} kg`)}
+                  ${q.remote ? kv("Island / remote area fee", `+ ${money(q.remoteFee)}`) : ""}
+                  <div class="co-ship-fee"><span>Estimated Delivery Fee</span><b>${q.destination ? money(q.fee) : "—"}</b></div>
+                  ${q.destination && q.eta ? `<div class="co-ship-eta"><span>Estimated Arrival</span><b>${esc(EbFormat.etaRange(q.eta.from, q.eta.to))}</b></div>` : ""}
+                  ${q.paused ? `<div class="co-ship-alert is-paused"><strong>Deliveries to ${esc(q.destination)} are paused right now.</strong>${q.remote && q.remote.note ? ` ${esc(q.remote.note)}` : ""} You can't place a delivery there until they resume.</div>`
+                    : q.remote ? `<div class="co-ship-alert">Island / remote area — delivery depends on boat and flight schedules and the weather, so it may take longer than estimated.${q.remote.note ? ` ${esc(q.remote.note)}` : ""}</div>`
+                    : q.destination && q.eta ? `<div class="co-ship-note">Estimate only, counted Monday to Saturday${q.eta.holidays && q.eta.holidays.length ? ` and skipping ${esc(q.eta.holidays.join(", "))}` : " (no deliveries on holidays)"}, including ${q.eta.packDays} day${q.eta.packDays === 1 ? "" : "s"} to pack your order.</div>` : ""}
+                </div>`;
+              ship.hidden = false;
+            } else {
+              ship.innerHTML = ""; ship.hidden = true;
+            }
+          }
+          /* Always "Total" — the label stays put whether or not a fee is added. */
+          const amt = root.querySelector("#co-tot-amt"); if (amt) amt.textContent = money(t.total);
+          const foot = root.querySelector("#co-foot-amt"); if (foot) foot.textContent = money(t.total);
+
+          if (!note) return;
+          /* Buying on Net terms: the term's interest is added to what the retailer pays. */
+          const interest = t.termInterest > 0
+            ? `<div class="li"><span class="li-name">Add: ${esc(t.termScheme || "Net terms")} interest (${+t.termInterestRate}%)</span>`
+              + `<span class="li-qty"></span><span class="li-amt">+ ${money(t.termInterest)}</span></div>` : "";
+          if (!(t.withholdingTax > 0) && interest) {
+            note.innerHTML = interest
+              + `<div class="li tot"><span class="li-name">Amount to pay</span><span class="li-qty"></span>`
+              + `<span class="li-amt">${money(t.amountDue)}</span></div>`;
+            note.hidden = false;
+            return;
+          }
+          if (!(t.withholdingTax > 0)) {
+            /* Retailer discount missed only because the order is under the minimum item count. */
+            const sf = t.discountShortfall;
+            if (sf) {
+              note.innerHTML = `<div class="li"><span class="li-name">Add ${sf.short} more item${sf.short === 1 ? "" : "s"} to get your ${+sf.rate}% retailer discount</span>`
+                + `<span class="li-qty">minimum ${sf.minQty} items</span><span class="li-amt"></span></div>`;
+              note.hidden = false;
+            } else note.hidden = true;
+            return;
+          }
+          note.innerHTML = `<div class="li"><span class="li-name">Less: retailer discount (${+t.withholdingRate}%)</span>`
+            + `<span class="li-qty"></span><span class="li-amt">− ${money(t.withholdingTax)}</span></div>`
+            + interest
+            + `<div class="li tot"><span class="li-name">Amount to pay</span><span class="li-qty"></span>`
+            + `<span class="li-amt">${money(t.amountDue)}</span></div>`;
           note.hidden = false;
         })
-        .catch(() => { /* The checkout computes it anyway; the note is a courtesy. */ });
+        .catch(() => { /* The checkout computes it anyway; the summary is a courtesy. */ });
     }
     const addrField = root.querySelector("#address-field");
-    /* The picker's behaviour: cascade, loading, cache, prefill, errors. One
-       controller for the four dropdowns and two typed fields. */
+    /* The address picker controller for the checkout. */
     const addr = EbAddress.mount(root, "co");
+    /* Address picked or changed: re-estimate the delivery fee. */
+    addrField?.addEventListener("change", refreshQuote);
+    runQuote();
 
-    /* ---- PREFILL (decision I9) ---------------------------------------
-       A SUGGESTION, NOT AN OVERRIDE.
-
-       Rules, in the order they matter:
-         1. Identity comes from the SESSION. shop/profile.php takes no
-            customer id and no email; there is nothing to pass and nothing to
-            forge (D6, D7).
-         2. Only EMPTY fields are filled. The request is asynchronous, and a
-            shopper who starts typing their number before it lands must not
-            have it overwritten mid-keystroke — which is exactly what a naive
-            `el.value = data.contact` would do.
-         3. Every prefilled field stays editable. Nothing is disabled or
-            readonly.
-         4. Editing a prefilled field does NOT write back to the profile.
-            The checkbox does, and only if ticked. A checkout is often placed
-            for somebody else — a gift, an office delivery — and silently
-            rewriting the saved address because a customer typed a one-off
-            one is a bug that only shows up weeks later.
-
-       EMPTY CASES, all real and all handled:
-         - not signed in         no request is made
-         - no saved address      the address box is left empty and usable;
-                                 nothing announces a missing address
-         - partial address       whatever exists is joined and used
-         - request fails         logged, form untouched. A shopper cannot act
-                                 on "profile service unavailable" */
+    /* Prefill from the saved profile: identity from the session, only empty fields filled, everything stays editable, and nothing is written back unless the save box is ticked; failures are logged and the form is left untouched. */
     const prefilled = { contact: false, address: false };
 
-    /* EDIT SWITCHES. Signed in: address and details open locked (inert) on the
-       saved profile; the switch unlocks them. The save-to-profile box only
-       shows while something is unlocked — nothing locked can have changed. */
+    /* Signed in: address and details open locked on the saved profile, unlocked by the Edit switch; the save box shows only while something is unlocked. */
     const setLock = (key, locked) => {
       const body = root.querySelector(`[data-lock-body="${key}"]`);
       const sw = root.querySelector(`[data-lock="${key}"]`);
@@ -1978,24 +1863,20 @@ function openCheckout(){
           if (el.value.trim() !== "") return false;   /* never clobber typing */
           el.value = value;
           el.classList.add("is-prefilled");
-          /* The marker is a hint about where the value came from, so it goes
-             the moment the customer makes it theirs. */
+          /* Remove the prefill marker once the customer edits the field. */
           el.addEventListener("input", () => el.classList.remove("is-prefilled"), { once: true });
           return true;
         };
 
         prefilled.contact = fillIfEmpty("#co-contact", profile.contact);
-        /* The address goes through the picker's own prefill, which keeps every
-           rule above: it fills only what is still empty, walks the dropdowns in
-           order waiting for each list, stops the moment the shopper touches any
-           of them, disables nothing, and writes nothing back. */
+        /* The address uses the picker's own prefill, which follows the same rules. */
         prefilled.address = await addr.prefill(profile.address);
+        refreshQuote();
         if (!root.querySelector("#co-name").value.trim() && profile.name) {
           root.querySelector("#co-name").value = profile.name;
         }
 
-        /* An incomplete saved profile can't be ordered with locked — open
-           whichever part is missing something. */
+        /* Open any section whose saved data is incomplete. */
         if (!addr.validate(true)) { addr.clearErrors(); setLock("addr", false); }
         const n = root.querySelector("#co-name").value.trim();
         const c = root.querySelector("#co-contact").value.trim();
@@ -2011,25 +1892,11 @@ function openCheckout(){
         orderType = b.dataset.type;
         addrField.classList.toggle("hide", orderType==="pickup");
         syncPayForOrderType();
+        refreshQuote();
       });
     });
 
-    /* CASH IS A PICKUP-ONLY METHOD.
-
-       It is money handed over at the counter. On a delivery there is no
-       counter — the goods travel to the customer and the payment does not
-       travel back, so a refusal at the door leaves the shop holding both the
-       loss and the return trip. api/shop/checkout.php refuses the combination
-       outright; this keeps the form from offering it in the first place.
-
-       DISABLED RATHER THAN REMOVED. A tile that vanishes when Delivery is
-       picked reads as a glitch, and a customer who wanted to pay cash learns
-       nothing. Greyed out with its hint rewritten to "Pickup only" answers the
-       question where it is asked.
-
-       The default state needs this too: the form opens on Delivery AND Cash,
-       which is now a combination the server would reject — so this runs once
-       at wiring time, not only on change. */
+    /* Cash is pickup-only, so it is disabled with a "Pickup only" hint for delivery; this also runs once at start because the form opens on Delivery with Cash. */
     function syncPayForOrderType(){
       const cashBtn = root.querySelector('#co-payment .tg[data-pay="cash"]');
       if(!cashBtn) return;
@@ -2039,10 +1906,7 @@ function openCheckout(){
       cashBtn.title = blocked ? "Cash is available on pickup only." : "";
       const hint = cashBtn.querySelector("small");
       if(hint) hint.textContent = blocked ? "Pickup only" : "Pay when you collect";
-      /* Moved, not just disabled: leaving `payment` on a method the server will
-         reject sends the customer to a validation error they cannot see the
-         cause of. Done with a real click so the proof block and the QR follow
-         the same path they would for any other choice. */
+      /* Move off a disabled method with a real click so dependent UI updates. */
       if(blocked && payment === "cash"){
         root.querySelector('#co-payment .tg[data-pay="gcash"]')?.click();
       }
@@ -2050,34 +1914,29 @@ function openCheckout(){
 
     // payment method reveals proof fields for GCash/Bank
     const proof = root.querySelector("#proof-block");
+    /* One reference field per method (EbUI.splitRefField): GCash 13 digits, bank 6–20 letters or numbers. */
+    const coRef = EbUI.splitRefField(root.querySelector("#co-ref"), () => payment,
+      root.querySelector("#co-ref-field label"));
     root.querySelectorAll("#co-payment .tg").forEach(b=>{
       b.addEventListener("click", ()=>{
         root.querySelectorAll("#co-payment .tg").forEach(x=>x.classList.remove("active"));
         b.classList.add("active");
         payment = b.dataset.pay;
-        /* Hidden for cash and for every credit term. A Net-30 order has nothing
-           to screenshot — nothing has been paid yet — and asking for proof of a
-           payment that is not due for a month is how a retailer concludes the
-           form is broken. */
+        /* GCash and bank each have their own reference field and rules. */
+        coRef?.refresh();
+        /* A Net term adds interest to the breakdown, so re-quote. */
+        refreshQuote();
+        /* Hide the proof upload for cash and credit terms. */
         proof.classList.toggle("hide", payment === "cash" || isCreditMethod(payment));
         const qrBox = root.querySelector("#co-pay-qr");
         if(qrBox) qrBox.innerHTML = (payment === "gcash" || payment === "bank") ? payQrHtml(payment) : "";
       });
     });
 
-    /* RUN ONCE NOW, not only on change. The form opens on Delivery with Cash
-       already active — the markup ships both as the default — which is the one
-       combination the server refuses. Without this line the customer can open
-       checkout, touch nothing, and be rejected on submit for a choice the form
-       made for them. */
+    /* Run once now, since the default Delivery + Cash would be rejected. */
     syncPayForOrderType();
 
-    /* The screenshot is uploaded the moment it is chosen, and the ORDER
-       carries the path the server gives back. Uploading at submit time would
-       mean a checkout that fails halfway with the order already priced.
-
-       `proofPath` is the only thing that counts as "attached". The old boolean
-       could be true with no file anywhere. */
+    /* Upload the screenshot as soon as it is chosen; the order carries the returned path (proofPath). */
     let proofPath = null;
     const proofField = root.querySelector("#co-proof-field");
     const proofErr   = proofField.querySelector("[data-err]");
@@ -2088,26 +1947,11 @@ function openCheckout(){
     const proofName  = root.querySelector("#co-proof-name");
     const proofSize  = root.querySelector("#co-proof-size");
 
-    /* Errors go in the field's own [data-err] span, styled by .field-error like
-       every other field on this form. They used to be written into a div whose
-       colour was set from JavaScript with `style.color = "var(--danger, …)"` —
-       a token that does not exist in this stylesheet, so the fallback literal
-       was what actually rendered, in one theme's worth of red on both themes.
-       The duplicate showToast() is gone too: a message shown twice in two
-       places is not twice as clear. */
+    /* Show upload errors in the field's own [data-err] span. */
     const proofFail  = msg => { proofErr.textContent = msg; proofField.classList.add("has-error"); };
     const proofClear = ()  => { proofErr.textContent = ""; proofField.classList.remove("has-error"); };
 
-    /* Delete a screenshot that was uploaded and then removed or replaced.
-
-       EbApi.upload() writes the file on pick, so without this every discarded
-       attempt would sit in uploads/references/ for ever with no row pointing
-       at it. api/uploads/discard.php authorises on the list of paths the
-       upload endpoint issued to this session, so nothing here has to be
-       trusted with a filename.
-
-       Fire and forget: a failed cleanup leaves an orphan, which is where we
-       were before, and is not worth interrupting a checkout over. */
+    /* Delete a removed or replaced screenshot via api/uploads/discard.php (fire and forget). */
     const discardProof = path => {
       if(!path) return;
       EbApi.post("uploads/discard.php", { path })
@@ -2132,12 +1976,7 @@ function openCheckout(){
       proofCard.classList.remove("hide");
     };
 
-    /* Type and size are checked here BEFORE the request goes out, so an
-       obviously wrong file is refused instantly instead of after a round trip
-       that uploads it first. This is not the gate — api/uploads/image.php
-       re-checks both, reads the MIME from the file's own bytes rather than
-       trusting file.type, and is the only opinion that counts. This one just
-       saves the shopper the wait. Both numbers mirror that file. */
+    /* Check type and size before uploading to save time (the server re-checks). */
     const acceptProof = async file => {
       proofClear();
       if(!file) return;
@@ -2153,9 +1992,7 @@ function openCheckout(){
         return;
       }
 
-      /* Whatever is attached now is being replaced, so it is discarded — but
-         only once the new one is safely on the server. Discarding first would
-         mean a failed upload that has already thrown away the good file. */
+      /* Discard the old file only after the new one uploads. */
       const previous = proofPath;
       proofPath = null;
 
@@ -2167,10 +2004,7 @@ function openCheckout(){
         showAttached(file.name, data.bytes, imageUrl(data.path));
         discardProof(previous);
       } catch(err){
-        /* A silent failure at checkout is worse than a refusal — the shopper
-           would place the order believing the proof went with it, and staff
-           would have nothing to verify. Said plainly in the field, and
-           proofPath is left null so the submit check below stops them. */
+        /* Say plainly when the upload fails and leave proofPath empty so submit stops. */
         proofFail((err.fields && err.fields.file) || err.message);
         proofInput.value = "";
         showDropzone();
@@ -2181,9 +2015,7 @@ function openCheckout(){
 
     proofInput.addEventListener("change", () => acceptProof(proofInput.files[0]));
 
-    /* An error clears when the shopper does something about it, not only on the
-       next submit. A field still outlined in red after it has been corrected
-       teaches people to ignore the outline. */
+    /* Clear a field's error as soon as it is edited. */
     root.querySelectorAll(".field .control").forEach(el=>{
       el.addEventListener("input", ()=>{
         const f = el.closest(".field");
@@ -2193,9 +2025,7 @@ function openCheckout(){
       });
     });
 
-    /* Drag-and-drop is an ADDITION. The label still opens the picker on click
-       and on Enter, because a drop target that is the only way in excludes
-       anyone using a keyboard or a phone. */
+    /* Drag-and-drop is extra; click and Enter still open the picker. */
     ["dragenter", "dragover"].forEach(ev =>
       proofDrop.addEventListener(ev, e => {
         e.preventDefault();
@@ -2209,8 +2039,7 @@ function openCheckout(){
       const file = e.dataTransfer && e.dataTransfer.files[0];
       if(file) acceptProof(file);
     });
-    /* Without this the browser navigates away to the dropped file if the drop
-       lands anywhere in the modal but the zone — losing the whole checkout. */
+    /* Stop a stray drop from navigating away from the checkout. */
     ["dragover", "drop"].forEach(ev =>
       root.addEventListener(ev, e => { if(!proofDrop.contains(e.target)) e.preventDefault(); }));
 
@@ -2219,23 +2048,14 @@ function openCheckout(){
     proofCard.querySelector("[data-proof-remove]").addEventListener("click", () => {
       const discarded = proofPath;
       proofPath = null;
-      /* Clearing .value matters. Without it, picking the SAME file again fires
-         no change event — the input's value has not changed — and the shopper
-         is stuck looking at an empty zone that will not accept the file they
-         want. */
+      /* Clear the input so choosing the same file again still fires change. */
       proofInput.value = "";
       showDropzone();
       proofClear();
       discardProof(discarded);
     });
 
-    /* One in-flight submit at a time.
-
-       The button is disabled below once validation passes, which already
-       stopped a second click — but only from that moment, and only from the
-       button. A flag on the closure covers the gap before the disable and the
-       Enter-key path through the form, and costs one boolean. Placing an order
-       twice is not a defect anyone gets to shrug at. */
+    /* Allow only one submit at a time. */
     let submitting = false;
 
     // place order
@@ -2243,9 +2063,7 @@ function openCheckout(){
       e.preventDefault();
       if(submitting) return;
       let ok = true;
-      /* .has-error puts the state on the input as well as the message under
-         it. A red sentence below a field that looks exactly like every other
-         field makes the reader hunt for which one it belongs to. */
+      /* Mark the input itself with .has-error. */
       const fail = (sel,msg)=>{
         const f=root.querySelector(sel).closest(".field");
         f.querySelector("[data-err]").textContent=msg;
@@ -2259,30 +2077,18 @@ function openCheckout(){
       const contact = root.querySelector("#co-contact").value.trim();
       if(!name) fail("#co-name","Please enter your name.");
       if(!/^[0-9 +\-]{7,}$/.test(contact)) fail("#co-contact","Enter a valid contact number.");
-      /* The same rules Address::check applies, run here so an unfinished
-         address is flagged without a round trip. The server decides. */
+      /* Client-side address check matching Address::check (the server decides). */
       if(orderType==="delivery" && !addr.validate(true)) ok = false;
-      /* Reference number and screenshot are demanded only by the two transfer
-         methods — the same pair api/shop/checkout.php checks. Written as an
-         explicit membership test rather than `payment !== "cash"`, because
-         that form is what would have started demanding a screenshot for Net 30
-         the moment the tile was added. */
+      /* Reference number and screenshot are required only for GCash and bank. */
       if(payment === "gcash" || payment === "bank"){
-        if(!root.querySelector("#co-ref").value.trim()) fail("#co-ref","Reference number required for "+payLabel(payment)+".");
+        const refVal = root.querySelector("#co-ref").value.trim();
+        if(!refVal) fail("#co-ref","Reference number required for "+payLabel(payment)+".");
+        else if(refFormatError(payment, refVal)) fail("#co-ref", refFormatError(payment, refVal));
         if(!proofPath){ fail("#co-proof","Attach a screenshot of your payment."); }
       }
-      if(!ok){ unlockAll(); return; }   /* an error they can't reach is no help */
+      if(!ok){ unlockAll(); focusFirstError(root); return; }   /* an error they can't reach is no help */
 
-      /* THE ORDER IS NOW ACTUALLY PLACED.
-
-         This used to call showReceipt() with a locally-built object and stop.
-         The customer saw "Order Placed!", and nothing reached the staff portal —
-         no queue entry, no payment to verify, no record anywhere. The receipt
-         was the entire flow.
-
-         api/shop/checkout.php writes the order, its line items and a staff
-         notification in one transaction, prices every line from the database,
-         and returns the figures the receipt prints. */
+      /* Place the order through api/shop/checkout.php, which writes everything in one transaction and returns the receipt figures. */
       submitting = true;
       const submitBtn = root.querySelector("#checkout-form [type=submit]");
       const restore = submitBtn ? (btn => { const l = btn.textContent, d = btn.disabled;
@@ -2296,38 +2102,34 @@ function openCheckout(){
           const { data } = await EbApi.post("shop/checkout.php", {
             items: state.cart.map(i => ({ id: i.id, qty: i.qty })),
             name, contact,
-            /* No `email`. D6: the order is placed for the signed-in customer and
-               the server takes the address from the session. Sending one now
-               gets the request refused outright rather than silently ignored,
-               which is the point — a client that believes it can name the buyer
-               should be told it cannot. */
-            /* Codes, not names — the server looks the names up itself. Nothing
-               for a pickup, which stores no address. */
+            /* No email is sent; the server uses the session's account. */
+            /* Send address codes (not names), and nothing for pickup. */
             address: orderType === "delivery" ? addr.value() : null,
             notes: root.querySelector("#co-notes").value.trim(),
             order_type: orderType === "delivery" ? "delivery" : "pickup",
-            /* Straight through. See PAY_METHODS_UI for what used to be here
-               and why a chained ternary ending in "bank" had to go. */
+            /* Send the payment key as is (see PAY_METHODS_UI). */
             pay_method: payment,
             ref_num: root.querySelector("#co-ref")?.value.trim() || null,
-            /* A path, not the image. The file is already on the server. */
+            /* Send the uploaded proof's path. */
             proof_image: proofPath,
           });
           order = data;
         } catch (err) {
-          /* Out of stock, an unavailable product, a bad field — all shown
-             against the form, with the cart left intact so the shopper can
-             adjust rather than losing everything. */
+          /* Show server refusals on the form and keep the cart. */
           if (err.isValidation) {
-            /* addr_* keys belong to the picker, which marks and focuses its own
-               field; everything else goes through the form's mapping below. */
+            /* addr_* errors go to the picker; others go through the form's mapping. */
             addr.showErrors(err.fields);
             Object.entries(err.fields).filter(([f]) => !f.startsWith("addr_")).forEach(([f, msg]) => {
-              const el = root.querySelector(`#co-${f.replace("_","-")}`) || root.querySelector(`#co-${f}`);
+              /* Server field names whose input id differs. */
+              const alias = { ref_num: "ref", proof_image: "proof" }[f];
+              const el = (alias && root.querySelector(`#co-${alias}`))
+                || root.querySelector(`#co-${f.replace("_","-")}`) || root.querySelector(`#co-${f}`);
               const box = el && el.closest(".field")?.querySelector("[data-err]");
-              if (box) box.textContent = msg;
+              if (box) { box.textContent = msg; el.closest(".field").classList.add("has-error"); }
+              else showToast(msg, "info");   /* never fail silently */
             });
             if (!Object.keys(err.fields).length) showToast(err.message, "info");
+            else focusFirstError(root);
           } else {
             showToast(err.message, "info");
           }
@@ -2338,14 +2140,10 @@ function openCheckout(){
         state.cart = [];
         updateCartBadge();
 
-        /* Save back to the profile ONLY if the customer asked (I9).
-           After the order, never before: the order is what the shopper came
-           for, and a profile-save failure must not cost them the checkout.
-           Failure is reported and does not touch the receipt. */
+        /* Save to the profile only if asked, and only after the order succeeds. */
         if (root.querySelector("#co-save-profile")?.checked) {
           try {
-            /* The address only when there was one — a pickup has none to save,
-               and posting an empty one would CLEAR the saved address. */
+            /* Save the address only when there is one (pickup has none). */
             await EbApi.post("shop/profile.php", orderType === "delivery"
               ? { contact: contact, address: addr.value() }
               : { contact: contact });
@@ -2359,18 +2157,13 @@ function openCheckout(){
           id: order.id,
           name: order.name, contact: order.contact,
           orderType: order.orderType, payment: payLabel(payment),
-          /* The raw key as well as the label: the invoice ticks CASH SALES or
-             CHARGE SALES from it, and a label is not something to branch on. */
+          /* Include the raw payment key so the invoice ticks Cash or Charge Sales. */
           payMethod: payment,
           /* Null unless the buyer is a retailer — see Orders::buyerTinSql(). */
           tin: order.tin || null,
           /* The stored VAT breakdown — the invoice prints it as the server decided it. */
           tax: order.tax || null,
-          /* Null unless the server opened a receivable. The scheme and the due
-             date come from the RESPONSE, not from the tile that was clicked:
-             the due date is computed by the database, and printing a date the
-             browser worked out from its own clock is how a receipt and a
-             statement come to disagree by a day. */
+          /* Credit details (scheme and database due date) come from the response, or null. */
           credit: order.credit || null,
           address: order.address, notes: root.querySelector("#co-notes").value.trim(),
           items: order.items.map(i => ({ ...getProduct(i.id), name: i.name, price: i.price, qty: i.qty })),
@@ -2383,24 +2176,16 @@ function openCheckout(){
   }});
 }
 
-/* =================================================================
-   RECEIPT (soft-copy)
-   ================================================================= */
+/* ===== RECEIPT (soft copy) ===== */
 function showReceipt(order){
-  /* Use the order number the server assigned. txId() minted a random local id
-     that matched nothing in the database — a customer quoting it to staff would
-     have been quoting a number nobody could look up. The fallback covers only
-     the case where this is somehow called without a placed order. */
+  /* Use the server's order number. */
   const id = order.id || txId();
 
-  /* THE SAME SALES INVOICE THE CASHIER PRINTS — assets/js/core/invoice.js.
-     A customer holding a different-looking document from the one on the
-     counter is a customer asking which one is real. */
+  /* The same Sales Invoice the cashier prints (core/invoice.js). */
   const invoice = EbInvoice.fromOrder({
     id, type: "online", tin: order.tin, tax: order.tax, name: order.name, address: order.address, items: order.items,
     total: order.total, payMethod: order.payMethod,
-    /* A Date, not toISOString(): that formats in UTC, so an order confirmed
-       before 8am in Manila would print yesterday's date on the invoice. */
+    /* Pass a Date (not toISOString()) so early-morning orders show the right date. */
     placedAt: order.placedAt || new Date(),
   });
   EbInvoice.ensureStyles();
@@ -2429,11 +2214,7 @@ function showReceipt(order){
         <button class="btn btn-primary" id="receipt-done" type="button">Done</button>
       </div>
     </div>`;
-  /* Local copy only. api/shop/checkout.php deletes the customer's cart_items
-     rows inside the same transaction that writes the order, so the server is
-     already empty by the time this runs — and a checkout that failed did not
-     touch the cart at all. This line just brings the drawer into line with
-     what the database already says. */
+  /* Clear the local cart copy; the server already emptied it with the order. */
   state.cart = [];
   updateCartBadge(); renderCart();
   openModal("Sales Invoice", body, {wide:true, onOpen:(root)=>{
@@ -2443,11 +2224,31 @@ function showReceipt(order){
   showToast("Order placed successfully!", "success");
 }
 
-/* =================================================================
-   AUTH (login / register) — UI-only mock
-   ================================================================= */
+/* ===== AUTH (login / register) ===== */
 function pwToggle(){
   return `<button type="button" class="toggle-eye" data-eye aria-label="Show password">${ICONS.eye}</button>`;
+}
+/* Password rules for new passwords, mirroring Auth::passwordProblem() in api/core/Auth.php. */
+const PW_RULES = [
+  { id: "len",   label: "At least 8 characters",            test: v => v.length >= 8 },
+  { id: "upper", label: "One uppercase letter (A–Z)",       test: v => /[A-Z]/.test(v) },
+  { id: "lower", label: "One lowercase letter (a–z)",       test: v => /[a-z]/.test(v) },
+  { id: "num",   label: "One number (0–9)",                 test: v => /[0-9]/.test(v) },
+  { id: "sym",   label: "One symbol (e.g. ! @ # $ %)",      test: v => /[^A-Za-z0-9]/.test(v) },
+];
+/* Put the rule checklist under a new-password input and tick items as they are met; returns a function giving the first unmet rule (or null). */
+function mountPwChecklist(input){
+  if(!input) return () => null;
+  const anchor = input.closest('.auth-input-group, .pw-row, .pw-wrap') || input;
+  const ul = document.createElement('ul');
+  ul.className = 'pw-rules';
+  ul.setAttribute('aria-live', 'polite');
+  ul.innerHTML = PW_RULES.map(r => `<li data-rule="${r.id}"><span class="pw-rule-ic" aria-hidden="true"></span>${r.label}</li>`).join('');
+  anchor.insertAdjacentElement('afterend', ul);
+  const paint = () => PW_RULES.forEach(r => ul.querySelector(`[data-rule="${r.id}"]`).classList.toggle('is-met', r.test(input.value)));
+  input.addEventListener('input', paint);
+  paint();
+  return () => PW_RULES.find(r => !r.test(input.value)) || null;
 }
 function strengthScore(v){
   let s=0; if(v.length>=8)s++; if(/[A-Z]/.test(v))s++; if(/[0-9]/.test(v))s++; if(/[^A-Za-z0-9]/.test(v))s++; return s;
@@ -2554,7 +2355,8 @@ function openAuth(tab='login', hint=null){
           <p>Create an account for faster ordering and delivery updates.</p>
         </div>
         <form id="reg-form" novalidate>
-          <!-- First + last name, stored separately (migration 019). -->
+          <!-- First, middle (optional) and last name, stored separately (migrations 019, 039); the name shown
+               everywhere uses only the middle initial: "Juan D. Dela Cruz". -->
           <div class="auth-2col">
             <div class="auth-field">
               <label for="rg-first">First Name *</label>
@@ -2565,13 +2367,22 @@ function openAuth(tab='login', hint=null){
               <span class="field-error" data-err></span>
             </div>
             <div class="auth-field">
-              <label for="rg-last">Last Name *</label>
+              <label for="rg-middle">Middle Name <span class="auth-opt">(optional)</span></label>
               <div class="auth-input-group">
                 <span class="auth-input-icon" aria-hidden="true">${ICONS.user}</span>
-                <input class="auth-input" id="rg-last" type="text" placeholder="dela Cruz" autocomplete="family-name"/>
+                <input class="auth-input" id="rg-middle" type="text" placeholder="Dizon" autocomplete="additional-name"/>
               </div>
               <span class="field-error" data-err></span>
             </div>
+          </div>
+          <div class="auth-field">
+            <label for="rg-last">Last Name *</label>
+            <div class="auth-input-group">
+              <span class="auth-input-icon" aria-hidden="true">${ICONS.user}</span>
+              <input class="auth-input" id="rg-last" type="text" placeholder="Dela Cruz" autocomplete="family-name"/>
+            </div>
+            <span class="field-error" data-err></span>
+            <small class="auth-name-preview" id="rg-name-preview" hidden></small>
           </div>
           <div class="auth-field">
             <label for="rg-contact">Contact Number *</label>
@@ -2602,11 +2413,15 @@ function openAuth(tab='login', hint=null){
             <label for="rg-pass">Password *</label>
             <div class="auth-input-group">
               <span class="auth-input-icon" aria-hidden="true">${_lockIcon}</span>
-              <input class="auth-input auth-input-pw" id="rg-pass" type="password" placeholder="At least 8 characters" autocomplete="new-password"/>
+              <input class="auth-input auth-input-pw" id="rg-pass" type="password" placeholder="Create a strong password" autocomplete="new-password"/>
               ${eyeBtn}
             </div>
             <div class="auth-strength-wrap"><i id="rg-strength"></i></div>
             <span class="strength-label" id="rg-strength-lbl"></span>
+            <!-- What the password needs (same rules as Auth::passwordProblem on the server); each item ticks as it is met. -->
+            <ul class="pw-rules" id="rg-pw-rules" aria-live="polite">
+              ${PW_RULES.map(r => `<li data-rule="${r.id}"><span class="pw-rule-ic" aria-hidden="true"></span>${r.label}</li>`).join("")}
+            </ul>
             <span class="field-error" data-err></span>
           </div>
           <div class="auth-field">
@@ -2616,6 +2431,11 @@ function openAuth(tab='login', hint=null){
               <input class="auth-input auth-input-pw" id="rg-confirm" type="password" placeholder="Re-enter password" autocomplete="new-password"/>
               ${eyeBtn}
             </div>
+            <span class="field-error" data-err></span>
+          </div>
+          <!-- Age and Terms consent, required (shop/register.php checks agree_terms too); the link opens assets/js/public/terms.js. -->
+          <div class="auth-field">
+            <label class="tc-agree"><input type="checkbox" id="rg-terms"/><span>I am at least 18 years old (or have my parent or guardian's consent) and I agree to the <a href="#" data-terms="customer">Terms and Conditions</a>, including how my personal data is used.</span></label>
             <span class="field-error" data-err></span>
           </div>
           <button type="submit" class="auth-submit">Continue ${_authArrow}</button>
@@ -2629,24 +2449,15 @@ function openAuth(tab='login', hint=null){
     // Mark modal for CSS overrides (close btn colour, no title, zero body padding)
     root.closest('#modal')?.classList.add('is-auth');
 
-    /* The Create Account tab's address picker. Mounted when the modal opens,
-       not when the tab is shown, so its region list is already there by the
-       time somebody switches tabs. */
+    /* Mount the Create Account address picker when the modal opens. */
     const rgAddr = EbAddress.mount(root, "rg");
+    /* Terms reader for the consent link (loaded only when the form opens). */
+    import("./terms.js").then(m => m.wireTermsLinks(root)).catch(() => {});
 
-    // forgot password — no backend yet, point to Facebook
-    root.querySelector('[data-forgot]')?.addEventListener('click', ()=>{
-      showToast('Message us on Facebook to reset your password.', 'success');
-    });
+    // forgot password — emailed code, then a new password (shop/password-reset.php)
+    root.querySelector('[data-forgot]')?.addEventListener('click', ()=>showForgot(root));
 
-    /* ── Pill tab switcher ──
-       The pill itself is NOT moved from here any more. It used to be measured
-       with getBoundingClientRect() and written into left/width on the next
-       animation frame, which read the modal's opening `scale(.96)` as if it
-       were layout and left the pill 4% short of the tab — or, on a frame
-       before the modal had any layout, collapsed it into the corner. It is
-       positioned in CSS off `.auth-tab.active` now (see .auth-tab-slide in
-       styles.css), so the only thing this has to do is move the class. */
+    /* Tab switcher: just move the active class; the pill is positioned by CSS. */
     const tabBtns = root.querySelectorAll('.auth-tab');
     tabBtns.forEach(btn=>btn.addEventListener('click', ()=>{
       const t = btn.dataset.atab;
@@ -2679,6 +2490,8 @@ function openAuth(tab='login', hint=null){
       bar.style.background = strengthColors[sc];
       lbl.textContent  = this.value ? strengthLabels[sc] : '';
       lbl.style.color  = strengthColors[sc];
+      const v = this.value;
+      PW_RULES.forEach(r => root.querySelector(`#rg-pw-rules [data-rule="${r.id}"]`)?.classList.toggle("is-met", r.test(v)));
     });
 
     /* ── Login submit ── */
@@ -2687,30 +2500,21 @@ function openAuth(tab='login', hint=null){
       let ok=true;
       root.querySelectorAll('#login-form [data-err]').forEach(x=>x.textContent='');
       const fail=(sel,msg)=>{ root.querySelector(sel).closest('.auth-field').querySelector('[data-err]').textContent=msg; ok=false; };
-      /* A new submission supersedes any notice from the last one, and clears
-         its timer — two intervals ticking over one element would race. */
+      /* A new submission clears any previous notice and its timer. */
       stopLockCountdown(root);
       const email = root.querySelector('#lg-email').value.trim();
       const pass  = root.querySelector('#lg-pass').value;
-      if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail('#lg-email','Enter a valid email.');
-      if(pass.length<6) fail('#lg-pass','Password too short.');
+      /* Sign-in only checks that something sensible was entered; password length rules belong to Create Account, not here. */
+      if(!email) fail('#lg-email','Enter your email address.');
+      else if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail('#lg-email','Enter a valid email address, like you@email.com.');
+      if(!pass) fail('#lg-pass','Enter your password.');
       if(!ok) return;
 
       const btn = root.querySelector('#login-form [type=submit]');
       const label = btn ? btn.textContent : '';
       if(btn){ btn.disabled = true; btn.textContent = 'Signing in…'; }
 
-      /* Staff sign-in is the server's decision now.
-
-         This used to search a STAFF_ACCOUNTS array holding every staff
-         password in plaintext — in a file served to every visitor — and then
-         hand the matched account to the portal through sessionStorage, which
-         the portal trusted. Both halves are gone: credentials are checked
-         against bcrypt hashes in MySQL, and identity rides in an httponly
-         cookie this page cannot read.
-
-         A 401 means "not a staff account", so the customer path runs instead,
-         preserving the old order of precedence. */
+      /* Try staff sign-in first via api/auth/login.php; a 401 means not a staff account, so the customer path runs. */
       try {
         const user  = await EbSession.login(email, pass);
         const route = STAFF_ROUTES[user.role];
@@ -2722,26 +2526,18 @@ function openAuth(tab='login', hint=null){
         return;
       } catch(err){
         if(err.code === 'FORBIDDEN'){
-          /* A genuine staff account that may not sign in — archived, or no
-             role assigned. Saying so beats quietly logging them in as a
-             customer. */
+          /* A real staff account that may not sign in (archived or no role) gets a clear message. */
           fail('#lg-email', err.message);
           return;
         }
+        if(err.isAuth && err.fields && err.fields.password){
+          /* A staff account with a wrong password: say so here rather than trying the customer path. */
+          fail('#lg-pass', err.fields.password);
+          const pw = root.querySelector('#lg-pass'); pw.value = ''; pw.focus();
+          return;
+        }
         if(err.isRateLimited){
-          /* FALL THROUGH, do not stop here.
-
-             This probe is speculative: the storefront tries the staff endpoint
-             on every sign-in so a staff member can enter from the public site.
-             For a customer's address it therefore fails every single time, and
-             those failures fill the STAFF bucket for that email. Returning here
-             would mean four storefront attempts lock a shopper out of the shop
-             on a portal counter, for an account they do not have.
-
-             The staff lock is still real and still enforced — the portal's own
-             sign-in page calls auth/login.php directly and treats 429 as final.
-             Here it only means "this is not a staff route", so the customer
-             path runs and reports its own state. */
+          /* Fall through to the customer path on a staff lockout too, since this staff probe is speculative (the portal's own sign-in treats 429 as final). */
         }
         if(err.code === 'NETWORK' || err.code === 'TIMEOUT'){
           showToast(err.message, "info");
@@ -2749,30 +2545,11 @@ function openAuth(tab='login', hint=null){
         }
         /* 401 falls through to the customer path below. */
       } finally {
-        /* NOT while a lockout is counting down. This `finally` runs after the
-           catch, so an unconditional re-enable undoes the disable
-           startLockCountdown just applied and hands back a button whose next
-           press is guaranteed to be refused. The countdown re-enables it
-           itself when the wait reaches zero. */
+        /* Do not re-enable the button while a lockout countdown is running. */
         if(btn){ btn.textContent = label; if(!lockTimer) btn.disabled = false; }
       }
 
-      /* Customer login — checked against the customers table.
-
-         This used to be a mock: it took the local part of whatever email was
-         typed, title-cased it, and called that a signed-in customer. Any
-         address with a six-character password got an account menu bearing that
-         name. Nothing was verified and no record was consulted.
-
-         api/shop/login.php verifies the password against the bcrypt hash on
-         the customer row and puts the customer id in its own session key --
-         separate from the staff key, so a shopper can never satisfy a
-         permission check. shop/my-orders.php reads that key and takes no id
-         parameter, which is why the mock could not actually reach anyone
-         else's orders; it just claimed a name it had not earned.
-
-         The staff attempt above ran first and fell through on 401, so the
-         order of precedence is unchanged. */
+      /* Customer sign-in via api/shop/login.php (bcrypt, separate session key from staff). */
       if(btn){ btn.disabled = true; btn.textContent = 'Signing in...'; }
       try {
         const { data } = await EbApi.post("shop/login.php", { email, password: pass });
@@ -2784,28 +2561,20 @@ function openAuth(tab='login', hint=null){
             fail('#lg-' + (f === 'password' ? 'pass' : 'email'), msg));
         } else if(err.isRateLimited){
           startLockCountdown(root, err.retryAfter, err.message);
+        } else if(err.isAuth && err.fields && err.fields.password){
+          /* Registered email, wrong password: message under the password, which is cleared for the retry. */
+          fail('#lg-pass', err.fields.password);
+          const pw = root.querySelector('#lg-pass'); pw.value = ''; pw.focus();
+        } else if(err.isAuth && err.fields && err.fields.email){
+          /* Email not registered: message under the email, which stays selected for correcting. */
+          fail('#lg-email', err.fields.email);
+          root.querySelector('#lg-email').select();
         } else {
-          /* THE SERVER'S OWN WORDS, not a copy of them.
-
-             This used to hardcode "Email or password is incorrect." and throw
-             away err.message. That is how the advice added in
-             Auth::attemptCustomer — "if you have not set a password for this
-             email yet, use Sign Up" — would have been written on the server
-             and never shown to anyone. It is also how the two could drift
-             apart without either looking wrong on its own.
-
-             Still one message for a wrong password, an unknown email and a
-             record with no password: distinguishing them would tell a stranger
-             which addresses are registered here. The server decides the
-             wording; this renders it. */
+          /* Show the server's own message (archived account and similar). */
           fail('#lg-email', err.message);
         }
       } finally {
-        /* NOT while a lockout is counting down. This `finally` runs after the
-           catch, so an unconditional re-enable undoes the disable
-           startLockCountdown just applied and hands back a button whose next
-           press is guaranteed to be refused. The countdown re-enables it
-           itself when the wait reaches zero. */
+        /* Do not re-enable the button while a lockout countdown is running. */
         if(btn){ btn.textContent = label; if(!lockTimer) btn.disabled = false; }
       }
     });
@@ -2816,8 +2585,9 @@ function openAuth(tab='login', hint=null){
       let ok=true;
       root.querySelectorAll('#reg-form [data-err]').forEach(x=>x.textContent='');
       const fail=(sel,msg)=>{ root.querySelector(sel).closest('.auth-field').querySelector('[data-err]').textContent=msg; ok=false; };
-      const first   = root.querySelector('#rg-first').value.trim();
-      const last    = root.querySelector('#rg-last').value.trim();
+      const first   = properName(root.querySelector('#rg-first').value);
+      const middle  = properName(root.querySelector('#rg-middle')?.value || "");
+      const last    = properName(root.querySelector('#rg-last').value);
       const contact = root.querySelector('#rg-contact').value.trim();
       const email   = root.querySelector('#rg-email').value.trim();
       const pw      = root.querySelector('#rg-pass').value;
@@ -2828,34 +2598,30 @@ function openAuth(tab='login', hint=null){
       if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail('#rg-email','Enter a valid email.');
       /* Region through barangay, as the server's Address::LOCATION requires. */
       if(!rgAddr || !rgAddr.validate("location")) ok = false;
-      if(pw.length<8) fail('#rg-pass','Use at least 8 characters.');
+      const missing = PW_RULES.find(r => !r.test(pw));
+      if(missing) fail('#rg-pass', `Your password needs: ${missing.label.toLowerCase()}.`);
       if(cf!==pw)  fail('#rg-confirm','Passwords do not match.');
+      const agreed = root.querySelector('#rg-terms').checked;
+      if(!agreed)  fail('#rg-terms','Please confirm your age and agree to the Terms and Conditions to continue.');
       if(!ok) return;
 
-      /* Creates a real account. This used to call signIn(name) and nothing
-         else — no record was written, so there was nothing to sign back into
-         and the "account" vanished when localStorage was cleared.
-
-         An email matching a seeded customer claims that record instead of
-         creating a duplicate, so their existing order history follows them. */
-      /* STEP 1 of 2: the server validates and emails a code. No account exists
-         until the code is confirmed (showSignupOtp → shop/register-verify.php). */
+      /* Create a real account (claiming a seeded record with the same email). */
+      /* Step 1 of 2: the server validates and emails a code; the account is created after verification. */
       const submitBtn = root.querySelector('#reg-form .auth-submit');
       const label = submitBtn.innerHTML;
       submitBtn.disabled = true; submitBtn.textContent = "Sending code…";
       try {
         const { data } = await EbApi.post("shop/register.php", {
-          first_name: first, last_name: last, email, password: pw, contact, address: rgAddr ? rgAddr.value() : null,
+          first_name: first, middle_name: middle, last_name: last, email, password: pw, contact, address: rgAddr ? rgAddr.value() : null,
+          agree_terms: agreed,
         });
         showSignupOtp(root, data);
       } catch(err){
         if(err.isValidation){
-          /* addr_* keys are the picker's; it marks its own fields. Handing them
-             to fail() would look for an #rg-addr_region that does not exist
-             and throw inside the error handler. */
+          /* addr_* errors belong to the picker. */
           rgAddr?.showErrors(err.fields);
           Object.entries(err.fields).filter(([f]) => !f.startsWith('addr_')).forEach(([f,msg]) =>
-            fail('#rg-' + (f === 'password' ? 'pass' : f === 'first_name' || f === 'name' ? 'first' : f === 'last_name' ? 'last' : f), msg));
+            fail('#rg-' + (f === 'password' ? 'pass' : f === 'first_name' || f === 'name' ? 'first' : f === 'last_name' ? 'last' : f === 'middle_name' ? 'middle' : f === 'agree_terms' ? 'terms' : f), msg));
         } else {
           fail('#rg-email', err.message);
         }
@@ -2870,47 +2636,33 @@ function openAuth(tab='login', hint=null){
 function openLogin(hint=null)    { openAuth('login',    hint); }
 function openRegister(hint=null) { openAuth('register', hint); }
 
-/* ONE place that builds state.auth, because there were two and they disagreed.
+/* The account whose data this page loaded (first signed-in customer seen). On account pages, signing in as a
+   different customer reloads the page, so the previous account's orders, history and profile never stay on screen. */
+let authPageAccount = null;
+const AUTH_RELOAD_PAGES = /\/profile\/|become-partner\.html/;
 
-   bootstrapCustomer() built it with five keys including `status`; signIn() took
-   three positional strings and built it with four, so `status` was `undefined`
-   for the entire session of anyone who signed in through the modal. Reload the
-   page and the restore path filled it in — which is why the Payment Schemes
-   link on the profile looked intermittent rather than broken, and why it was a
-   shape problem rather than a logic problem.
-
-   Building it in a function means a new field is added once. Taking the whole
-   customer object rather than a fourth positional argument means adding one
-   does not change any call site's argument order — three positional strings
-   was already one too many to read at a glance. */
+/* One function builds state.auth from the whole customer object, so every sign-in path produces the same shape. */
 function setAuthState(customer){
+  const newId = customer ? (customer.id || null) : null;
+  if(newId){
+    if(authPageAccount && newId !== authPageAccount && AUTH_RELOAD_PAGES.test(location.pathname)){
+      location.reload();
+      return;
+    }
+    authPageAccount = newId;
+  }
   state.auth = customer
     ? {
         loggedIn: true,
         name:   customer.name  || "",
         email:  customer.email || "",
         id:     customer.id    || null,
-        /* Drives the Payment Schemes link on the profile pages and the credit
-           tiles at checkout. Presentation in both cases: shop/my-payments.php
-           and shop/checkout.php each re-derive it from the database. */
+        /* status drives the Payment Schemes link and credit tiles (presentation; the server re-checks). */
         status: customer.status || null,
       }
     : { loggedIn:false, name:"", email:"", id:null, status:null };
 
-  /* Announce it. The three account pages gate their whole content on "is this
-     person signed in?", and each ran that check exactly once, on window load,
-     against whenAuthReady().
-
-     That is correct for a page opened while already signed in and wrong for
-     the case those pages actually offer: the guard panel has a Sign In button
-     that opens the modal. Signing in through it left the page still showing
-     "Sign in to view this" over content the visitor was now entitled to, until
-     they reloaded. eb:auth-ready fires once per page load and had already
-     fired, so nothing was listening for the thing that had just happened.
-
-     Fired from here rather than from signIn(), so signing OUT is announced on
-     the same channel — the reverse case put a signed-out visitor in front of
-     somebody else's order history until they navigated away. */
+  /* Announce auth changes (sign in and sign out) so account pages update without a reload. */
   try {
     window.dispatchEvent(new CustomEvent("eb:auth-changed", {
       detail: { loggedIn: state.auth.loggedIn, status: state.auth.status },
@@ -2919,17 +2671,7 @@ function setAuthState(customer){
 }
 
 /* simulate signed-in state — swap navbar Login for account menu */
-/* Reflect a signed-in customer in the UI.
-
-   `state.auth` is now a cache of what the server said, not the source of truth.
-   It used to BE the account: localStorage["eb-auth"] held a display name, and
-   "logged in" meant that string existed — no password, no record, nothing
-   linking an order to a person. The email is kept alongside so checkout can
-   attach the order to the right customer.
-
-   Takes the `customer` object the endpoint returned, whole. It used to take
-   (name, email, id) as three strings — see setAuthState() above for why that
-   is what dropped `status` on the floor. */
+/* Show a signed-in customer; state.auth is a cache of the server's answer. */
 function signIn(customer){
   setAuthState(customer);
   const name = state.auth.name;
@@ -2938,19 +2680,7 @@ function signIn(customer){
   renderAccount();
   showToast(`Welcome, ${name}!`, "success");
 
-  /* The account's saved cart, then the add that was waiting on this sign-in —
-     in that order, and never at the same time.
-
-     pendingCartAdd is replayed AFTER the load, not before it and not
-     alongside it. addToCart() merges into whatever line already exists, so
-     replaying first would have the load land on top of it and the item the
-     shopper explicitly asked for would silently vanish; running both at once
-     is two writes racing for the same cart_items row.
-
-     There is deliberately NO "you have N items waiting" toast. The badge
-     already says so, on every page, without stacking a second notification on
-     top of the welcome. The load itself stays — it is what puts the number on
-     the badge and the lines in the drawer. */
+  /* Load the saved cart first, then replay the add that was waiting on sign-in (never at the same time). */
   (async () => {
     await loadServerCart();
 
@@ -2964,17 +2694,9 @@ function signIn(customer){
 async function signOut(){
   setAuthState(null);
   try { localStorage.removeItem("eb-name"); localStorage.removeItem("eb-auth"); } catch(_){}
-  /* End the server session too — clearing local state alone would leave the
-     cookie valid, and the next page load would sign straight back in. */
+  /* Also end the server session. */
   try { await EbApi.post("auth/logout.php", {}); } catch(_){}
-  /* Clear the local copy and redraw the drawer with it — leaving the lines on
-     screen after the session ends shows the next person at this machine what
-     the last one was buying.
-
-     The SERVER rows stay. The cart belongs to the account and surviving a
-     sign-out is the whole point of storing it there; signing out is not
-     "empty my cart", and treating it as such would make the feature useless
-     to anyone who shares a computer. */
+  /* Clear the local cart on sign-out (the server copy stays with the account). */
   state.cart = [];
   updateCartBadge();
   renderCart();
@@ -2982,82 +2704,50 @@ async function signOut(){
   showToast("Signed out.", "info");
 }
 
-/* Ask the server who is signed in, and reconcile the cached copy with it.
+/* Signed out because the same account signed in on another device or browser (cookie left by api/core/Auth.php). */
+function noticeSignedOutElsewhere(){
+  if(!/(?:^|;\s*)eb_signed_out=elsewhere/.test(document.cookie)) return;
+  document.cookie = "eb_signed_out=; Max-Age=0; path=/; SameSite=Lax";
+  document.cookie = "eb_signed_out=; Max-Age=0; path=" + (location.pathname.split("/public/")[0] + "/") + "; SameSite=Lax";
+  setTimeout(() => showToast("You were signed out because your account was signed in on another device or browser.", "info"), 400);
+}
 
-   A localStorage flag that says "logged in" while the server disagrees is worse
-   than no flag: the page renders an account menu, then every action fails. */
+/* Ask the server who is signed in and update the cached state. */
 async function bootstrapCustomer(){
+  noticeSignedOutElsewhere();
   try {
     const { data } = await EbApi.get("shop/me.php");
-    /* Through setAuthState(), so this and signIn() cannot produce two
-       different shapes again — which is exactly what they did, and why a
-       retailer who signed in through the modal never saw the Payment Schemes
-       link until they reloaded. */
+    /* Use setAuthState() so both paths produce the same shape. */
     setAuthState(data.customer);
     EbApi.setCsrf(data.csrf);
-    /* D8: a display name for first paint, and nothing else. The id and email
-       used to be cached here too — that is identity, and identity in
-       localStorage is precisely what this project already got wrong: a
-       hand-edited entry rendered a signed-in navbar. Nothing reads this back
-       as truth; it exists so the header does not flicker. */
+    /* Cache only a display name for first paint, never id or email. */
     try { localStorage.setItem("eb-name", data.customer.name || ""); } catch(_){}
   } catch(err){
-    /* D8: any error renders as signed out — a 500, a timeout or a response we
-       cannot parse says nothing about who this is, and "nobody" is the only
-       safe reading of nothing. Clearing only on 401 left the previous value in
-       place, which was safe purely because the initialiser is signed-out. That
-       is a guarantee living in a distant line rather than here. */
+    /* Any error means signed out. */
     setAuthState(null);
     try { localStorage.removeItem("eb-name"); localStorage.removeItem("eb-auth"); } catch(_){}
   }
   renderAccount();
 
-  /* Announce that the server has answered.
-
-     Pages that gate their content on "is this person signed in?" cannot read
-     state.auth at window.load — bootstrapCustomer() is asynchronous and has
-     usually not resolved yet, so the flag is still its fail-closed initial
-     `false` (D8). public/profile/profile.html sampled it exactly once and
-     showed a signed-in customer the "please sign in" panel with the whole
-     profile hidden: the page was correctly wired and displayed the wrong
-     answer, which is the hardest kind of bug to see in a screenshot.
-
-     `EB_AUTH_READY` is set as well as dispatched, so a listener attached after
-     this has already run is not left waiting for an event that will never come
-     again. */
+  /* Announce that the server answered (also set EB_AUTH_READY for late listeners). */
   window.EB_AUTH_READY = true;
   window.dispatchEvent(new CustomEvent("eb:auth-ready", { detail: { loggedIn: state.auth.loggedIn } }));
 
-  /* The cart is on the account, so it cannot be fetched until the server has
-     said which account this is. init() renders an empty drawer and a zero
-     badge before this resolves — correct for the moment it runs, since nobody
-     is signed in yet as far as the page knows — and loadServerCart() redraws
-     both the moment there is something real to draw. */
+  /* Load the cart once the account is known. */
   if(state.auth.loggedIn) loadServerCart();
 }
 
-/* Resolve once the server has said who this is. Pages awaiting an answer use
-   this rather than guessing from a flag that is only eventually correct. */
+/* Resolve once the server has said who this is. */
 function whenAuthReady(){
   if (window.EB_AUTH_READY) return Promise.resolve(state.auth.loggedIn);
   return new Promise(resolve => {
     window.addEventListener("eb:auth-ready", e => resolve(e.detail.loggedIn), { once: true });
-    /* A bootstrap that never resolves — the request hung past its timeout and
-       the catch somehow did not run — must not leave the page blank for ever.
-       Falling back to signed-out matches D8. */
+    /* Fall back to signed out if the bootstrap never resolves. */
     setTimeout(() => resolve(state.auth.loggedIn), 20000);
   });
 }
 
-/* =================================================================
-   CUSTOMER NOTIFICATIONS — the bell (api/shop/notifications.php)
-   -----------------------------------------------------------------
-   Only while a customer is signed in. Staff change an order's status,
-   verify a payment or move a return along → a row lands in the
-   customer's feed (api/core/CustomerNotify.php) → the badge counts it.
-   Checked on load, when the panel opens, and every minute while the
-   tab is visible.
-   ================================================================= */
+/* ===== CUSTOMER NOTIFICATIONS: the bell (api/shop/notifications.php) for signed-in customers, checked on load, when opened and every minute while visible ===== */
 let _bellTimer = null;
 let _bellData = { items: [], unread: 0 };
 
@@ -3084,7 +2774,7 @@ function renderBell(){
           <b>Notifications</b>
           <button type="button" class="bell-readall" id="bell-readall">Mark all read</button>
         </div>
-        <div class="bell-list" id="bell-list"><div class="bell-empty">Loading…</div></div>
+        <div class="bell-list" id="bell-list">${window.EbUI ? EbUI.skeletonBlock(3) : ""}</div>
         <a class="bell-all" href="${EbFormat.imageUrl("/public/profile/history.html#notifications")}">View all in History</a>
       </div>`;
     slot.parentNode.insertBefore(bell, slot);
@@ -3119,8 +2809,7 @@ async function loadBell(){
 }
 
 function bellAgo(ts, ageSeconds){
-  /* The server's own age for the row — never the browser clock against a
-     timestamp written in the database's timezone. */
+  /* Use the server's age for each row, not the browser clock. */
   const s = ageSeconds != null ? ageSeconds
           : (Date.now() - new Date(String(ts).replace(" ", "T")).getTime()) / 1000;
   if(s < 60) return "just now";
@@ -3172,8 +2861,7 @@ function drawBell(){
 
 function renderAccount(){
   const slot = $("#account-slot");
-  /* Preview mode removes the account surface entirely, so there is
-     nothing to render into. */
+  /* Preview mode has no account surface to render into. */
   if(!slot) return;
   renderBell();
   if(state.auth.loggedIn){
@@ -3206,27 +2894,10 @@ function renderAccount(){
       const a=b.dataset.acc; pop.classList.remove("open"); btn.classList.remove("open");
       if(a==="logout") signOut();
       else {
-        /* THE DIRECTORY IS `profile/`, NOT `MyProfile/`.
-
-           These three lines pointed at a folder that does not exist in this
-           project — a leftover from the layout before the restructure, when
-           public/MyProfile/ was the account area. Clicking My Orders or Profile
-           in the account menu gave Apache's 404 from every page on the site:
-
-               /elishabay/public/MyProfile/my-orders.html
-
-           Broken twice over, in fact. `inSub` tested the path for '/MyProfile/',
-           which never matched anything either — so from within the account area
-           itself the base stayed '' and the link resolved to
-           public/profile/MyProfile/my-orders.html, a second 404.
-
-           The test is now anchored: it asks whether the CURRENT FILE sits
-           directly inside a profile/ directory, rather than whether the string
-           appears anywhere in the path. */
+        /* Account links point to public/profile/, detected by whether the current file is directly inside a profile/ folder. */
         const inProfileDir = /\/profile\/[^/]*$/.test(window.location.pathname);
         const base  = inProfileDir ? '' : 'profile/';
-        /* Dashboard is the account area's front door — the summary the other
-           three pages are drilldowns from. */
+        /* Dashboard is the account area's home page. */
         if(a==="dashboard") window.location.href = base + "dashboard.html";
         if(a==="orders")    window.location.href = base + "my-orders.html";
         if(a==="profile")   window.location.href = base + "profile.html";
@@ -3239,38 +2910,14 @@ function renderAccount(){
   }
 }
 
-/* =================================================================
-   THEME
-   ================================================================= */
+/* ===== THEME ===== */
 function applyTheme(t){
   state.theme = t;
   document.documentElement.setAttribute("data-theme", t);
   try { localStorage.setItem("eb-theme", t); } catch(_){}
 }
 
-/* =================================================================
-   PHONE FIELDS TAKE A PHONE NUMBER
-   -----------------------------------------------------------------
-   Every contact-number field on the storefront is type="tel" — the
-   registration form, the retailer application, checkout, the profile
-   page — and type="tel" only changes the phone keypad; a desktop
-   keyboard could still type "adasdas" into it. The server already
-   refused that (register.php, b2b/apply.php and checkout.php all check
-   /^[0-9 +\-()]{7,..}$/), but only after the shopper filled in the rest
-   of a long form and pressed submit.
-
-   This drops anything outside that SAME character set as it is typed,
-   pasted or autofilled — digits, space, + - ( ) — so the field cannot
-   hold a value the server is going to throw back. One delegated
-   listener rather than one per form, because the register and checkout
-   fields are built by JS after load and would otherwise need wiring
-   wherever they are rendered.
-
-   The caret is put back where the shopper was typing: a filter that
-   jumps the cursor to the end on every rejected key is worse than no
-   filter when someone is correcting the middle of a number. Skipped
-   mid-composition, because rewriting the value under an IME breaks
-   the composition; it runs again when composition ends. */
+/* Phone fields accept only digits, space, + - ( ) as typed, pasted or autofilled (matching the server's check), keeping the caret in place and skipping during IME composition. */
 const PHONE_REJECT = /[^0-9 +\-()]/g;
 function sanitizePhone(el){
   const v = el.value;
@@ -3291,63 +2938,53 @@ function wirePhoneInputs(){
   });
 }
 
-/* =================================================================
-   Generic stepper delegation (cards + product detail)
-   ================================================================= */
+/* ===== Stepper delegation (cards and product detail) ===== */
 function wireSteppers(){
   document.addEventListener("click", e=>{
     const btn = e.target.closest("[data-step]");
     if(!btn) return;
     const input = btn.closest(".stepper").querySelector("input");
     let v = parseInt(input.value||"1",10) + parseInt(btn.dataset.step,10);
-    const max = parseInt(input.max||"99",10);
+    const max = parseInt(input.max||String(CART_MAX_QTY),10);
     v = Math.max(1, Math.min(v, max));
     input.value = v;
   });
+  /* Typing a quantity: anything above what is available snaps to the available stock, with a note saying so. */
+  document.addEventListener("input", e=>{
+    const input = e.target.closest(".stepper input[type=number]");
+    if(!input) return;
+    const max = parseInt(input.max||String(CART_MAX_QTY),10);
+    const n = parseInt(input.value, 10);
+    if(Number.isFinite(n) && n > max){
+      input.value = max;
+      /* The popup's box allows 99 per add (add again for more); the cart's own box allows up to the stock. */
+      const inCart = !!input.closest("[data-cart-stepper]");
+      showToast(inCart ? `Only ${max} available.` : `You can add up to ${max} — that is all that is available.`, "info");
+    }
+  });
 }
 
-/* =================================================================
-   Scroll helpers / smooth anchors / reveal / sticky nav / parallax
-   ================================================================= */
+/* ===== Scroll helpers, smooth anchors, reveal, sticky nav, parallax ===== */
 function scrollToId(sel){
   const el = $(sel); if(!el) return;
   const y = el.getBoundingClientRect().top + window.scrollY - 64;
   window.scrollTo({top:y, behavior:"smooth"});
 }
 
-/* The shop is a PAGE, not an anchor on this one.
-
-   Every control that wanted to reach the shop called scrollToId("#shop"), and
-   no element with id="shop" has ever existed anywhere in this project. The
-   shop is public/shop.html, which index.html reaches with <a href="shop.html">.
-   scrollToId() opens with `const el = $(sel); if(!el) return;`, so those
-   clicks did nothing at all — no navigation, no error, no clue.
-
-   The URL is resolved against the APPLICATION ROOT rather than the current
-   directory. The cart drawer is on seven pages at two different depths
-   (public/*.html and public/profile/*.html), so a bare "shop.html" would 404
-   from My Orders. EbFormat.APP_BASE is derived from the core module's own URL
-   for exactly this purpose; BASE_PATH at the top of this file is the same
-   derivation from this script's URL and is the fallback if the bridge has not
-   run. */
+/* The shop is its own page (shop.html), resolved from the app root so it works from any depth. */
 function shopUrl(){
   const base = (window.EbFormat && EbFormat.APP_BASE) || BASE_PATH || "/";
   return base + "public/shop.html";
 }
 
-/* Reaching the shop from anywhere. On the shop page itself, reloading it to
-   land where you already are is worse than useless — scroll the grid into
-   view instead. #product-grid exists only on shop.html, which makes it the
-   test for "am I already there". */
+/* Already on the shop page: scroll to the grid instead of reloading. */
 function goToShop(){
   closeCart();
   if($("#product-grid")){ scrollToId("#product-grid"); return; }
   window.location.href = shopUrl();
 }
 /* ---- tubelight indicator ---- */
-/* `instant` places it with no slide — used on page load, when the fonts land
-   and on resize. Animating those made the underline bounce in from the left
-   edge on every page change. */
+/* instant positions the indicator without sliding (on load, font load and resize). */
 function moveNavIndicator(linkEl, instant){
   const ind = $("#nav-indicator");
   const nav = $("#navlinks");
@@ -3362,16 +2999,14 @@ function moveNavIndicator(linkEl, instant){
   linkEl.classList.add("active");
 }
 function initNavIndicator(){
-  // On dedicated pages (shop.html etc.), a .page-active link is already marked —
-  // just position the indicator there and skip scroll-spy.
+  // On dedicated pages, position the indicator on the .page-active link and skip scroll-spy.
   const pageActive = document.querySelector('.nav-links a.page-active');
   const settle = () => { const a = document.querySelector('.nav-links a.active, .nav-links a.page-active'); if(a) moveNavIndicator(a, true); };
   if(document.fonts && document.fonts.ready) document.fonts.ready.then(settle);
   window.addEventListener("resize", settle, {passive:true});
   if(pageActive){ moveNavIndicator(pageActive, true); return; }
 
-  // find which section is in view and highlight the matching link
-  // hrefs must match the actual <a href="..."> values in the nav
+  // Highlight the nav link for the section in view (hrefs must match).
   const sections = [
     {id:"home",    href:"index.html"},
     {id:"best",    href:"#best"},
@@ -3413,8 +3048,7 @@ function wireSmoothScroll(){
   });
 }
 function wirePageLinks(){
-  // Nav links that navigate to a separate page (not anchor scrolls).
-  // Slide indicator + animate page out, then navigate.
+  // Links to other pages: slide the indicator, animate out, then navigate.
   $$(".nav-links a").forEach(a => {
     const href = a.getAttribute("href");
     if(!href || href.startsWith("#")) return; // anchor links handled by wireSmoothScroll
@@ -3422,8 +3056,7 @@ function wirePageLinks(){
       e.preventDefault();
       moveNavIndicator(a);
       $("#navlinks")?.classList.remove("open");
-      /* Already on that page (Home on the landing, Shop on the shop): scroll to
-         the top instead of reloading the whole site. */
+      /* Already on that page: scroll to top instead of reloading. */
       const here = location.pathname.split("/").pop() || "index.html";
       if(href.split("#")[0] === here){ window.scrollTo({top:0, behavior:"smooth"}); return; }
       window.location.href = href;   /* no exit animation: it only delayed the load */
@@ -3448,9 +3081,7 @@ function wireParallax(){
   // parallax removed — accordion replaces the old hero jar
 }
 
-/* =================================================================
-   HERO ACCORDION  (interactive image accordion)
-   ================================================================= */
+/* ===== HERO ===== */
 const HERO_PANELS = [
   { title:"Pesto Bangus",       tint:"#3f8f4f", bg:"linear-gradient(160deg,#2d6a3f,#1a4a2a)" },
   { title:"Adobo Bangus",       tint:"#5a3a22", bg:"linear-gradient(160deg,#6b4226,#3d2515)" },
@@ -3459,30 +3090,8 @@ const HERO_PANELS = [
   { title:"Ba-yo Signature",    tint:"#b6702a", bg:"linear-gradient(160deg,#a06020,#5c3812)" },
 ];
 
-/* ---- hero slider (right side of hero) ----
-   A FIFO queue that runs left-to-right toward the panel.
-
-   `order` holds product indices. order[0] is in the big panel and
-   order[1] is "next up" — the rightmost tile, sitting against the
-   panel edge. Reading the strip left to right you get order[3],
-   order[2], order[1], i.e. furthest-away first.
-
-   Advancing slides the whole rail one tile to the right: the rightmost
-   tile travels into the panel, everything shifts along, and a new tile
-   enters from the left. The rail carries a fourth tile (order[4]) off
-   the left edge for exactly that purpose, and rests one tile-width to
-   the left so that tile is hidden until it is needed.
-
-   Placeholder gradients stand in until real photos exist: add
-   img:"path/to/photo.jpg" to a HERO_PANELS entry and the panel and its
-   tile both switch to the photo automatically. */
-/* Timings, all in sync with styles.css:
-     HERO_SLIDE_MS   .ht-rail.is-moving  transform  .7s
-     HERO_PANEL_MS   .hs-slide           opacity    .55s
-   The panel swap is kicked off HERO_PANEL_LEAD_MS into the slide so the
-   two finish together: 150 + 550 = 700. Previously the panel only began
-   fading after the slide had fully finished and then took .8s of its own,
-   which read as the big image lagging well behind the tile. */
+/* Hero slider is a left-to-right queue: order[0] is in the panel, order[1] is the next-up tile nearest it, and an off-screen fourth tile enters from the left on each advance. */
+/* Timings matching styles.css: the panel fade starts HERO_PANEL_LEAD_MS into the 0.7s slide so both finish together. */
 const HERO_SLIDE_MS      = 700;
 const HERO_PANEL_LEAD_MS = 150;
 const HERO_CYCLE_MS      = 7000;
@@ -3501,13 +3110,13 @@ function renderHeroSlider(){
   rail.className = "ht-rail";
   thumbs.appendChild(rail);
 
-  function art(panel){
-    /* imageUrl(): panel.img is an application-root-relative path from
-       content/get.php now, not a data URL, and this page sits one level down
-       from the project root. */
+  function art(panel, first){
+    /* panel.img is an app-root-relative path, resolved with imageUrl(). */
     const src = imageUrl(panel.img);
     return src
-      ? '<img src="'+src+'" alt="'+panel.title+'" draggable="false">'
+      /* The first slide is fetched first (it is the largest thing on screen); srcset lets phones use the 800px copy. */
+      ? '<img src="'+src+'"' + (photoSrcset(panel.img) ? ' srcset="'+photoSrcset(panel.img)+'" sizes="(max-width: 960px) 100vw, 75vw"' : '') +
+        ' fetchpriority="'+(first ? 'high' : 'low')+'" decoding="async" alt="'+panel.title+'" draggable="false">'
       : '<div class="hs-ph" style="position:absolute;inset:0;background:'+panel.bg+';display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px">' +
           '<span class="ph-icon" aria-hidden="true">'+ICONS.camera+'</span>' +
           '<span class="ph-label">'+panel.title+'</span>' +
@@ -3515,21 +3124,38 @@ function renderHeroSlider(){
   }
 
   /* Panels are built once; only the .active class moves between them. */
-  HERO_PANELS.forEach(function(panel){
+  HERO_PANELS.forEach(function(panel, idx){
     const slide = document.createElement("div");
     slide.className = "hs-slide";
-    slide.innerHTML = art(panel) + '<span class="hs-caption">'+panel.title+'</span>';
+    slide.innerHTML = art(panel, idx === 0) + '<span class="hs-caption">'+panel.title+'</span>';
+    /* Phones/tablets show the whole photo; a blurred copy fills the space beside it. */
+    const im = slide.querySelector("img");
+    if(im) slide.style.setProperty("--hs-bg", 'url("' + im.getAttribute("src").replace(/"/g, "%22") + '")');
     track.appendChild(slide);
   });
   const slides = $$(".hs-slide", track);
+
+  /* Place the product-name ribbon just above the quote using offsetTop (unaffected by animations), re-measured after fonts load. */
+  (function placeCaption(){
+    const slider = track.closest(".hero-slider");
+    const ov = slider && slider.querySelector(".hs-overlay");
+    const tag = ov && ov.querySelector(".hero-tagline");
+    if(!tag) return;
+    const set = () => slider.style.setProperty("--cap-bottom",
+      Math.max(0, slider.clientHeight - (ov.offsetTop + tag.offsetTop) + 14) + "px");
+    if(window.ResizeObserver){ new ResizeObserver(set).observe(slider); new ResizeObserver(set).observe(ov); }
+    window.addEventListener("resize", set);
+    if(document.fonts && document.fonts.ready) document.fonts.ready.then(set);
+    set();
+  })();
+
 
   /* order[0] is whatever belongs in the big panel. */
   function paintPanel(){
     slides.forEach((s,i)=> s.classList.toggle("active", i === order[0]));
   }
 
-  /* Rebuild the rail at rest. Left to right: incoming, then the queue
-     with "next up" last, nearest the panel. */
+  /* Rebuild the rail at rest: incoming tile, then the queue with next-up nearest the panel. */
   function paintRail(){
     const n = order.length;
     rail.classList.remove("is-moving");
@@ -3544,7 +3170,7 @@ function renderHeroSlider(){
         (depth === 1 ? "Up next: " : "Show ") + panel.title);
       tile.setAttribute("aria-hidden", pos === 0 ? "true" : "false");
       tile.tabIndex = pos === 0 ? -1 : 0;   /* the off-screen tile isn't reachable */
-      const tileSrc = imageUrl(panel.img);
+      const tileSrc = EbFormat.thumbUrl(panel.img, 400);   /* tiles are small */
       tile.innerHTML = tileSrc
         ? '<img src="'+tileSrc+'" alt="" draggable="false">'
         : '<span class="ht-ph" style="background:'+panel.bg+'"></span>';
@@ -3561,9 +3187,7 @@ function renderHeroSlider(){
     busy = true;
     n = n || 1;
 
-    /* Rotate the queue up front, then run the tile slide and the panel
-       cross-fade together. The rail keeps showing the pre-rotation tiles
-       until it is rebuilt at the end, so the two stay visually in step. */
+    /* Rotate the queue, then run the tile slide and panel fade together. */
     for(let i = 0; i < n; i++) order.push(order.shift());
 
     rail.classList.add("is-moving");                       /* slide right */
@@ -3580,13 +3204,7 @@ function renderHeroSlider(){
     timer = setInterval(function(){ advance(1); }, HERO_CYCLE_MS);
   }
 
-  /* Cut the panel's notch to match the tile that overlaps it.
-
-     The strip is flex-sized, so only the browser knows the tile's real box —
-     measure it and hand the numbers to the mask in styles.css. NOTCH_RING is
-     the gap left between tile and cut. Below 960px the grid is one column and
-     the strip sits above the panel rather than over it, so the notch
-     collapses to nothing. */
+  /* Size the panel's notch from the real tile box (none below 960px). */
   const NOTCH_RING = 12;
   function syncNotch(){
     if(!slider) return;
@@ -3601,10 +3219,7 @@ function renderHeroSlider(){
     const p = slider.getBoundingClientRect();
     const t = tile.getBoundingClientRect();
 
-    /* Only cut where the tile genuinely sits over the panel. Checking the
-       horizontal axis alone is not enough: in the single-column layout the
-       strip spans the same x range as the panel but sits well above it, which
-       would punch a hole into empty artwork. */
+    /* Only cut the notch when the tile actually overlaps the panel. */
     const intersects = t.right  > p.left + 1 && t.left < p.right &&
                        t.bottom > p.top  + 1 && t.top  < p.bottom;
     if(!intersects) return clear();
@@ -3635,62 +3250,14 @@ function renderHeroSlider(){
   });
 }
 
-/* renderHeroAccordion() was here — 34 lines building a hover-and-click image
-   accordion for the hero.
+/* The unused hero accordion was removed (its element never existed); the slider is the hero. */
 
-   Removed because #hero-accordion does not exist in any HTML file in this
-   project, and never has as far as the code shows. Line two of the function was
-   `const wrap = $("#hero-accordion"); if(!wrap) return;` — so it returned
-   immediately, every time, and rendered 0 panels. Verified on the live page
-   before removal: `document.querySelectorAll('.acc-panel').length === 0`.
+/* ===== INIT ===== */
 
-   The hero the site ACTUALLY shows is the slider — renderHeroSlider(), four
-   thumbnails, working — which is a different component and is untouched. The
-   accordion was a second, unused one.
-
-   Deleted on the owner's instruction after the two were distinguished. If an
-   accordion hero is wanted later it is a design decision, not a restoration. */
-
-/* =================================================================
-   INIT
-   ================================================================= */
-
-/* =================================================================
-   LANDING CONTENT  +  PREVIEW MODE
-   -----------------------------------------------------------------
-   THE localStorage BRIDGE IS GONE.
-
-   It worked like this: the Super Admin's Landing Page module wrote
-   localStorage["eb-landing-content"], and this page read it back and
-   patched itself. Same origin, so it functioned — inside one browser.
-   An edit made by an administrator was invisible to every actual
-   visitor, which is the only audience the screen has.
-
-   It was later demoted to "a first-paint cache, not the source of
-   truth", which was better and still wrong in one specific way that
-   produced defect 3.3: hero images were never sent to the server at
-   all, so the cache was the ONLY place they existed. The admin saw
-   the photo in the preview iframe because the preview ran in the same
-   browser and read the same key. Log out and it was gone.
-
-   Both ends are removed. content/get.php is the only source. The cost
-   is that the hero photos appear a beat after first paint instead of
-   instantly; the benefit is that what the administrator sees in the
-   preview is what a visitor in Manila sees.
-   ================================================================= */
+/* ===== LANDING CONTENT + PREVIEW MODE: content/get.php is the only source (the old localStorage bridge is gone) ===== */
 window.EB_LANDING = null;
 
-/* One-time cleanup of the retired key.
-
-   Removing the code that WROTE localStorage["eb-landing-content"] does not
-   remove what it already wrote. Every browser that ever opened the admin still
-   holds that blob — up to several megabytes of it, because hero photos used to
-   be base64'd into it — and it will sit there indefinitely with nothing left
-   that can read or clear it.
-
-   Deleting data the user did not ask us to delete deserves a sentence of
-   justification: this key was written by this application, is dead in this
-   version, and is not a user document. */
+/* One-time cleanup of the retired eb-landing-content localStorage key. */
 try { localStorage.removeItem("eb-landing-content"); } catch(_){}
 
 /* Fetch the landing content from the database and apply it. */
@@ -3701,39 +3268,19 @@ async function fetchLandingContent(){
     applyLandingContent();
     if (typeof renderFaqs === "function") renderFaqs();
     if (typeof renderHeroSlider === "function") renderHeroSlider();
-    /* The carousel too. init() renders it once BEFORE this request resolves,
-       when EB_LANDING is still null — so it falls back to the `best` flag and
-       shows those three products. Without this line the administrator's chosen
-       list never reached the storefront: saving five products still produced
-       exactly three cards, and they were the wrong three.
-
-       loadShopCatalog() re-renders on its own completion, which covers the
-       opposite order (catalogue after content). Both callers are needed because
-       the two requests race, and renderBestSellers() reads PRODUCTS and
-       EB_LANDING at call time, so running it twice is correct, not wasteful. */
+    /* Re-render the carousel once landing content arrives (the two requests race). */
     if (typeof renderBestSellers === "function") renderBestSellers();
     return true;
   } catch(err){
-    /* The page still renders its shipped copy; a visitor cannot act on
-       "content service unavailable", so this is logged, not shown. */
+    /* Log, do not show, a content load failure. */
     console.warn("[landing] content unavailable:", err.message);
     return false;
   }
 }
 
-/* Patch the DOM hooks the page already ships with (#lp-live-*). Called
-   before the render functions so FAQ/hero/product overrides land first. */
+/* Apply landing content to the page hooks before the render functions run. */
 function applyLandingContent(){
-  /* Uses whatever is already in memory, falling back to the cache only if
-     nothing has been loaded yet.
-
-     This used to call loadLandingContent() unconditionally, which re-read
-     localStorage — so the fresh copy fetchLandingContent() had just taken from
-     the API was immediately replaced by the cached one. It happened to work
-     because the cache is written a line earlier, but a failed write (quota
-     exceeded, private browsing) would have silently applied stale content over
-     fresh, and the symptom would be an administrator's edit not appearing with
-     no error anywhere. */
+  /* Use the content already in memory. */
   const c = window.EB_LANDING;
   if(!c) return;
 
@@ -3741,6 +3288,28 @@ function applyLandingContent(){
     const el = $(sel);
     if(el && typeof val === "string" && val.trim()) el.textContent = val;
   };
+  /* Hero text: the tagline in quotes with its highlighted word in italics, the line under it, and the two stats. */
+  if(c.heroText){
+    const h = c.heroText, esc = s => String(s).replace(/[&<>"]/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[ch]));
+    const tag = $("#lp-live-tagline");
+    if(tag && h.tagline){
+      let html = esc(h.tagline);
+      if(h.highlight){
+        const i = h.tagline.toLowerCase().indexOf(h.highlight.toLowerCase());
+        if(i >= 0) html = esc(h.tagline.slice(0, i)) + "<em>" + esc(h.tagline.slice(i, i + h.highlight.length)) + "</em>" + esc(h.tagline.slice(i + h.highlight.length));
+      }
+      tag.innerHTML = "&ldquo;" + html + "&rdquo;";
+    }
+    const lead = $("#lp-live-lead");
+    if(lead) lead.textContent = h.lead || "";
+    [["#lp-live-stat1", h.stat1_value, h.stat1_label], ["#lp-live-stat2", h.stat2_value, h.stat2_label]].forEach(([sel, v, l]) => {
+      const el = $(sel);
+      if(!el) return;
+      el.hidden = !(v || l);
+      el.querySelector("b").textContent = v || "";
+      el.querySelector("span").textContent = l || "";
+    });
+  }
   setText("#lp-live-about",   c.about);
   setText("#lp-live-vision",  c.vision);
   setText("#lp-live-mission", c.mission);
@@ -3760,58 +3329,35 @@ function applyLandingContent(){
     }
     const fb = $("#lp-live-facebook");
     if(fb && c.contact.facebook){
-      fb.textContent = c.contact.facebook;
+      /* Only the Facebook link changes; the button keeps its label. */
       fb.href = /^https?:/.test(c.contact.facebook)
         ? c.contact.facebook : "https://" + c.contact.facebook;
     }
   }
 
-  /* FAQ list — replaced wholesale, so removing an entry in the admin
-     actually removes it here. renderFaqs() reads FAQS afterwards. */
+  /* Replace the FAQ list as a whole so removed entries disappear. */
   if(Array.isArray(c.faqs) && c.faqs.length){
     FAQS = c.faqs.filter(f => f && f.q && f.a);
     FAQS_LOADED = true;
   }
 
-  /* Hero slide photos, matched to HERO_PANELS by title.
-     `image` is the current key; `img` is read too so a cached older response
-     still resolves. Both are paths — imageUrl() turns them into a src. */
+  /* Hero slide photos (image, or legacy img). */
+  /* Match slides by position, since the editor can rename them. */
   if(Array.isArray(c.hero)){
-    c.hero.forEach(function(entry){
-      if(!entry) return;
+    c.hero.forEach(function(entry, i){
+      const panel = HERO_PANELS[i];
+      if(!entry || !panel) return;
+      if(entry.title) panel.title = entry.title;
       const path = entry.image || entry.img || "";
-      if(!path) return;
-      const panel = HERO_PANELS.find(p => p.title === entry.title);
-      if(panel) panel.img = path;
+      if(path) panel.img = path;
     });
   }
 
-  /* The `productImages` branch that used to sit here is gone.
-
-     It read c.productImages[p.id] and assigned p.img. content/get.php has never
-     returned a `productImages` key and no table backs one — the Landing Page
-     editor had a per-product photo picker writing to an in-memory object with
-     no endpoint, no column and no reader. Two halves of a feature that were
-     never joined, and the only thing that ever set p.img on this page.
-
-     A product has ONE photo and it lives on the product, set in Product
-     Maintenance and served by shop/products.php as `image`. */
+  /* A product's photo lives on the product (the old productImages branch was removed). */
 }
 
-/* -----------------------------------------------------------------
-   PREVIEW MODE  (?preview=1)
-
-   The admin's "View Live Page" opens this page in an iframe. Without
-   this the visitor login modal was reachable from inside the admin,
-   so a Super Admin could sign in as a customer over and over without
-   ever leaving their own session.
-
-   Preview keeps the page fully browsable — only the account surface
-   is removed, so edits can still be checked in context.
-   ----------------------------------------------------------------- */
-/* The flag also rides on window.name, which survives navigation inside the
-   iframe — clicking Shop or the logo loads a page without ?preview=1, and
-   that used to bring back the login button and cart. */
+/* Preview mode (?preview=1) for the admin's iframe: the page stays browsable but the account and cart controls are removed. */
+/* The preview flag also rides on window.name so it survives navigation inside the iframe. */
 const PREVIEW_NAME = "eb-preview";
 function isPreviewMode(){
   try {
@@ -3820,10 +3366,7 @@ function isPreviewMode(){
   } catch(_){ return false; }
 }
 
-/* Who is looking at this preview. The admin passes it on the URL; the
-   sessionStorage hand-off is a fallback for a preview opened some other
-   way. Returns "" rather than guessing, so the badge degrades to a plain
-   "Preview mode" instead of naming the wrong person. */
+/* Who is previewing (from the URL or sessionStorage), or "". */
 function previewIdentity(){
   try {
     const q    = new URLSearchParams(location.search);
@@ -3844,15 +3387,13 @@ function applyPreviewMode(){
   document.documentElement.classList.add("eb-preview");
   try { window.name = PREVIEW_NAME + "|" + encodeURIComponent(previewIdentity()); } catch(_){}
 
-  /* Remove the account/cart surface entirely rather than hiding it, so
-     nothing can be clicked or tabbed to. */
+  /* Remove the account and cart elements entirely. */
   ["#account-slot", "#cart-btn", "#cart-btn-mob"].forEach(function(sel){
     const el = $(sel);
     if(el) el.remove();
   });
 
-  /* Belt and braces: neutralise the auth entry points in case another
-     code path (a CTA, a deep link) tries to open them. */
+  /* Also disable the auth entry points in case something tries to open them. */
   if(typeof openAuth === "function") openAuth = function(){};
   if(typeof openLogin === "function") openLogin = function(){};
   if(typeof openRegister === "function") openRegister = function(){};
@@ -3865,11 +3406,7 @@ function applyPreviewMode(){
   document.body.appendChild(chip);
 }
 
-/* Load the live catalogue. Failure is deliberately quiet on the storefront:
-   a shopper cannot act on "the API is down", and the seeded copy still renders
-   a browsable page. It is logged, and the checkout endpoint re-prices
-   everything from the database anyway, so a stale price here cannot become a
-   wrong charge. */
+/* Load the live catalogue (failures are logged quietly; checkout re-prices on the server anyway). */
 async function loadShopCatalog(){
   try {
     const { data } = await EbApi.get("shop/products.php");
@@ -3884,9 +3421,18 @@ async function loadShopCatalog(){
   }
 }
 
+/* Category chips from the products' categories; a missing selected category falls back to All. */
+function renderCatChips(){
+  const el = $("#cat-chips");
+  const cats = [...new Set(PRODUCTS.map(p => p.cat).filter(Boolean))];
+  if(cats.length) CATEGORIES = ["All", ...cats];
+  if(!CATEGORIES.includes(state.filter.category)) state.filter.category = "All";
+  if(el) el.innerHTML = CATEGORIES.map(c =>
+    `<button class="chip ${c === state.filter.category ? "active" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("");
+}
+
 function init(){
-  /* Admin overrides first: they replace FAQS, hero photos and the
-     featured product list that the render calls below depend on. */
+  /* Apply admin overrides first, since the renders below depend on them. */
   applyLandingContent();
   applyPreviewMode();
 
@@ -3915,31 +3461,20 @@ function init(){
   // data-icon spans
   $$("[data-icon]").forEach(el=>{ el.innerHTML = ICONS[el.dataset.icon] || ""; });
 
-  // category chips (from CATEGORIES)
-  const catChipsEl = $("#cat-chips");
-  if(catChipsEl) catChipsEl.innerHTML = CATEGORIES.map((c,i)=>`<button class="chip ${i===0?"active":""}" data-cat="${c}">${c}</button>`).join("");
+  // category chips (from CATEGORIES, then from the loaded catalogue)
+  renderCatChips();
 
   // render content
   renderBestSellers();
   renderProducts();
 
-  /* Re-render once the real catalogue lands. Rendering twice is cheap and
-     avoids holding the whole page back on one request. */
+  /* Re-render once the real catalogue arrives. */
   loadShopCatalog().then(ok => {
-    if (ok) { renderBestSellers(); renderProducts(); }
+    CATALOG_READY = true;
+    renderCatChips(); renderBestSellers(); renderProducts();
   });
 
-  /* Pick up a staff session if one exists.
-
-     Nothing on the storefront needs an identity — but CSRF protection applies
-     to any request made WITH a session, and a staff member who is signed into
-     the portal and then browses the shop in the same browser has one. Without
-     this, their checkout was refused 403 while an anonymous shopper's went
-     through: the more privileged visitor was the only one who could not buy
-     anything. Bootstrapping here fetches the token so the request carries it.
-
-     Anonymous visitors get a 401 from me.php, which bootstrap() treats as the
-     ordinary "not signed in" case and swallows. */
+  /* Pick up an existing staff session so its CSRF token is available for checkout (anonymous visitors just get a 401). */
   if (window.EbSession) {
     EbSession.bootstrap().catch(() => {});
   }
@@ -3977,7 +3512,7 @@ function init(){
 
   // modal close
   $("#modal-close")?.addEventListener("click", closeModal);
-  $("#modal-scrim")?.addEventListener("click", e=>{ if(e.target===$("#modal-scrim")) closeModal(); });
+  wireBackdropClose($("#modal-scrim"), () => $("#modal"));
   document.addEventListener("keydown", e=>{
     if(e.key==="Escape"){ closeModal(); closeCart(); $("#navlinks")?.classList.remove("open"); }
   });
@@ -4005,7 +3540,20 @@ function init(){
 
   // hamburger
   const ham=$("#hamburger");
-  ham?.addEventListener("click", ()=>{ const o=$("#navlinks").classList.toggle("open"); ham.setAttribute("aria-expanded",o); });
+  ham?.addEventListener("click", e=>{ e.stopPropagation(); $("#navlinks").classList.toggle("open"); });
+  /* Menu scroll lock and aria-expanded follow the .open class. */
+  const navEl = $("#navlinks");
+  if(navEl && ham){
+    new MutationObserver(()=>{
+      const o = navEl.classList.contains("open");
+      ham.setAttribute("aria-expanded", o);
+      document.documentElement.classList.toggle("nav-menu-open", o);
+    }).observe(navEl, { attributes: true, attributeFilter: ["class"] });
+    /* A tap outside the open menu (and outside the header) closes it. */
+    document.addEventListener("click", e=>{
+      if(navEl.classList.contains("open") && !e.target.closest("#navlinks, #hamburger")) navEl.classList.remove("open");
+    });
+  }
 
   // delegated: add-to-cart, open detail (grid + best sellers)
   document.addEventListener("click", e=>{
@@ -4033,11 +3581,7 @@ function init(){
       const wrap=step.closest("[data-cart-stepper]"); const id=wrap.dataset.cartStepper;
       const input=wrap.querySelector("input");
       const next = parseInt(input.value||"1",10) + parseInt(step.dataset.cstep,10);
-      /* Minus at one means "I do not want this". setQty() clamps the floor to
-         1 — correctly, because that clamp is what protects the typed number
-         input, where 0 is not a quantity — so asking it for 0 put the line
-         straight back and the button looked broken. The decision belongs
-         here, where the intent is known, not in the clamp. */
+      /* Minus at one removes the line. */
       if(next < 1){ removeFromCart(id); return; }
       setQty(id, next);
       return;
@@ -4051,44 +3595,42 @@ function init(){
     const id  = input.closest("[data-cart-stepper]").dataset.cartStepper;
     const raw = input.value.trim();
     const n   = parseInt(raw, 10);
-    /* Cleared, or typed down to zero, is the same instruction the minus button
-       gives at one. Snapping back to 1 answered a question nobody asked. */
+    /* Clearing the field or typing 0 also removes the line. */
     if(raw === "" || !Number.isFinite(n) || n < 1){ removeFromCart(id); return; }
     setQty(id, n);
   });
 
-  /* A #contact-form submit handler was here, reading #cf-name, #cf-email and
-     #cf-msg. None of those four elements has ever existed in any HTML file in
-     this project — the optional chaining meant it silently bound to nothing.
+  /* The unused contact form handler was removed (no such form exists); partner applications use become-partner.html. */
 
-     Its own comment said "JS validation only — no real submit": it called
-     form.reset() and showed "Message sent — we'll get back to you!" while
-     sending nothing anywhere. Had the markup existed, it would have lied to
-     every customer who used it.
-
-     Removed on the owner's instruction, once it was established that this was
-     NOT the partner-registration feature. That is a separate page —
-     public/become-partner.html — which now genuinely submits, via
-     api/b2b/apply.php, and emails the applicant. The Contact section on the
-     landing page stays as it is: address, phone and email, no form. */
+  /* Invitation link from staff (api/core/CustomerInvite.php): open sign-up with the name and email filled in.
+     Sign-up still verifies the email with a code, then attaches the password to the record staff created. */
+  const inv = new URLSearchParams(location.search);
+  if(inv.get("invite") === "1" && inv.get("email") && typeof openRegister === "function"){
+    const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+    const invName = (inv.get("name") || "").trim();
+    openRegister(`Welcome${invName ? ", " + esc(invName.split(/\s+/)[0]) : ""}! Our team added you as a customer — create your password below to finish your account.`);
+    setTimeout(() => {
+      const email = document.getElementById("rg-email");
+      if(email){ email.value = inv.get("email"); }
+      const parts = invName.split(/\s+/).filter(Boolean);
+      const first = document.getElementById("rg-first"), last = document.getElementById("rg-last");
+      if(first && parts.length) first.value = parts.length > 1 ? parts.slice(0, -1).join(" ") : parts[0];
+      if(last && parts.length > 1) last.value = parts[parts.length - 1];
+      document.getElementById(parts.length ? "rg-contact" : "rg-first")?.focus();
+    }, 0);
+    /* Drop the details from the address bar so a refresh or shared link does not reopen it. */
+    history.replaceState(null, "", location.pathname);
+  }
 }
 
 document.addEventListener("DOMContentLoaded", init);
 
-/* =================================================================
-   V2 ENHANCEMENTS — Stats counter, parallax orbs, footer links
-   ================================================================= */
+/* ===== Extras: stats counter, parallax orbs, footer links ===== */
 
 /* ── Animated stat counters ── */
-/* animateCounter() was here. Its only caller was initCounters(), removed just
-   below for a #stats-bar that does not exist. */
+/* animateCounter() was removed with its only caller. */
 
-/* initCounters() was here — an IntersectionObserver that animated .stat-num
-   counters when #stats-bar scrolled into view.
-
-   Removed: #stats-bar exists in no HTML file, so the observer was never
-   attached and no counter ever animated. animateCounter() above is its only
-   caller and goes with it. */
+/* initCounters() was removed because #stats-bar does not exist. */
 
 /* ── Parallax: hero orbs drift slightly on scroll ── */
 (function initOrbParallax() {

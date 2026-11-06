@@ -1,59 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET  /api/shop/profile.php   — the signed-in customer's saved details
- * POST /api/shop/profile.php   — update them
- *
- * Requires a CUSTOMER session. Identity comes from the session and only from
- * the session (D6, D7). There is no `customer_id` parameter and no `email`
- * parameter; supplying one changes nothing, because nothing reads them. That is
- * the same rule shop/checkout.php enforces, and for the same reason: an
- * endpoint that lets the client name the account is an endpoint that lets any
- * client edit any account.
- *
- * WHAT THIS REPLACES
- * ------------------
- * public/profile/profile.html has had a Delivery Address form, a Personal Info
- * form and a password form since the beginning. All three were mocks: the
- * submit handler validated a field was non-empty, called
- * showToast("Address saved!") and wrote nothing. No endpoint existed. A
- * customer could "save" their address every day for a year and the database
- * would never hear about it.
- *
- * ONE address (see db/migrations/005). Not an address book — that is a feature
- * with unasked questions attached, and the request was "prefill the customer's
- * saved address".
- *
- * Password changes are NOT handled here. That needs the current password
- * re-verified and belongs in its own endpoint with its own rate limiting; a
- * profile save that could also change credentials is a different security
- * problem wearing a form's clothes.
- *
- * SENSITIVE FIELDS NEED AN EMAILED CODE
- * ------------------------------------
- * The Scope says "the system sends a verification code to the registered email
- * whenever the user attempts to change important account details", and
- * profile.html has always carried the hint "A verification code will be sent to
- * confirm email changes" under the email input. The mechanism did not exist.
- *
- * Important here means EMAIL and CONTACT NUMBER — the two ways an account is
- * reached and recovered. Name and address save immediately, as they always
- * have: getting those wrong is an inconvenience, not a route to taking the
- * account over.
- *
- * THIS REVERSES A DECISION RECORDED IN THIS FILE.
- * The note on the name field used to read "but never the email, which is the
- * login identifier and the key other records join on. Changing it is an
- * account-recovery operation, not a profile edit." That was correct while there
- * was no way to prove the request came from the account holder rather than from
- * somebody holding a stolen session — an endpoint that lets a session move the
- * account to a new address is an account takeover with extra steps.
- *
- * The code closes exactly that gap, and it is sent to the address ALREADY ON
- * FILE, never to the proposed one. Somebody who has taken a session cannot
- * receive it; the real owner does, and finds out an attempt was made.
- */
+/** GET/POST /api/shop/profile.php reads or updates the signed-in customer's own details (no customer id or email parameter): name and address save immediately, while email and contact changes need a code sent to the email already on file. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -69,9 +17,7 @@ $row = Database::one(
     [$customer['id']]
 );
 if ($row === null) {
-    /* The session names a customer that no longer exists — archived or deleted
-       mid-session. Treated as signed out rather than as a 404, because that is
-       what it is. */
+    /* A session whose customer no longer exists is treated as signed out. */
     Response::unauthenticated('Your account is no longer available. Sign in again.');
 }
 
@@ -86,10 +32,7 @@ $in = Response::input();
 $fields = [];
 $errors = [];
 
-/* Contact number. Same pattern shop/checkout.php validates against, so a number
-   accepted at checkout is accepted here and vice versa — two different rules
-   for one field is how a customer ends up unable to save what they just
-   successfully ordered with. */
+/* Contact number uses the same pattern as checkout. */
 /* `$pending` is what needs a code; `$fields` is what saves now. */
 $pending = [];
 
@@ -99,16 +42,14 @@ if (array_key_exists('contact', $in)) {
         $errors['contact'] = 'Enter a valid contact number.';
     } else {
         $contact = $contact !== '' ? $contact : null;
-        /* Only a real change is held back. Re-saving the address panel posts
-           the contact number unchanged, and demanding a code for that would
-           make the page unusable. */
+        /* Only a real change to the contact number needs a code. */
         if ($contact !== $row['contact']) {
             $pending['contact'] = $contact;
         }
     }
 }
 
-/* Email. Refused outright before this — see the header note. */
+/* Email change (now allowed behind a code). */
 if (array_key_exists('email', $in)) {
     $email = trim((string) $in['email']);
     if ($email === '') {
@@ -116,10 +57,7 @@ if (array_key_exists('email', $in)) {
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL) || mb_strlen($email) > 100) {
         $errors['email'] = 'Enter a valid email address.';
     } elseif (strcasecmp($email, (string) $row['email']) !== 0) {
-        /* Checked now so the customer is not made to wait for a code before
-           being told the address is taken. Checked AGAIN when the code is
-           accepted — somebody else can register it in the ten minutes between,
-           and customers.email is UNIQUE. */
+        /* Check the new email is free now, and again when the code is accepted. */
         $taken = Database::scalar(
             'SELECT id FROM customers WHERE email = ? AND id <> ?',
             [$email, $customer['id']]
@@ -132,20 +70,7 @@ if (array_key_exists('email', $in)) {
     }
 }
 
-/* Address — through Address::resolve, the same rule checkout, registration
-   and the retailer form use.
-
-   It was five independent free-text fields, each "optional and independently
-   clearable". That suited five text boxes and does not suit a picker: a city
-   chosen without its barangay is not a partial address, it is a question with
-   no answer, and a saved one would prefill half a checkout. So now it is all or
-   nothing — entirely empty clears the saved address, anything started must be
-   finished — and the NAMES are looked up from the codes here, never taken from
-   the request.
-
-   Before the PSGC data is loaded, resolve() accepts the one free-text line the
-   form falls back to. It is kept in addr_street, which is what that column held
-   before it had a barangay beside it. */
+/* Address via Address::resolve (all or nothing, names from codes); before the location data loads, a free-text line is stored in addr_street. */
 if (isset($in['address']) && is_array($in['address'])) {
     $a = Address::resolve($in['address'], false);
     $legacy = $a !== null && $a['barangay_code'] === null;
@@ -163,16 +88,14 @@ if (isset($in['address']) && is_array($in['address'])) {
     ];
 }
 
-/* First + last name (My Profile). Joined into `name`, which the block below
-   validates and saves as before; the halves are stored after the update. */
+/* First and last name are joined into name and the halves saved after the update. */
 $nm = CustomerName::fromInput($in, $errors);
 if ($nm !== null) {
-    if (isset($errors['first_name']) || isset($errors['last_name'])) unset($in['name']);
+    if (isset($errors['first_name']) || isset($errors['last_name']) || isset($errors['middle_name'])) unset($in['name']);
     else $in['name'] = $nm['full'];
 }
 
-/* Name. Saves immediately — getting it wrong is an inconvenience, not a route
-   to taking the account over. Email is handled above, behind a code. */
+/* Name saves immediately; email needs a code (above). */
 if (array_key_exists('name', $in)) {
     $name = trim((string) $in['name']);
     if ($name === '') {
@@ -191,9 +114,7 @@ if ($fields === [] && $pending === []) {
     Response::badRequest('Nothing to save.');
 }
 
-/* The non-sensitive half saves now, even when a code is also being issued: a
-   customer who fixed their street and their email in one submission should not
-   lose the street because the email needs confirming. */
+/* Save the non-sensitive fields now even if a code is also being sent. */
 if ($fields !== []) {
     $set    = implode(', ', array_map(static fn(string $c): string => "$c = ?", array_keys($fields)));
     $params = array_values($fields);
@@ -201,21 +122,13 @@ if ($fields !== []) {
 
     Database::run("UPDATE customers SET $set WHERE id = ?", $params);
     if ($nm !== null && isset($fields['name'])) {
-        CustomerName::write($customer['id'], $nm['first'], $nm['last']);
+        CustomerName::write($customer['id'], $nm['first'], $nm['last'], $nm['middle']);
     }
 }
 
-/* No audit row.
-   audit_logs records STAFF actions against the business's data — its actor
-   columns are a staff name and a users.id foreign key, and every existing row
-   is an employee doing something. A customer editing their own address is not
-   that, and writing it here with a NULL actor_user_id would quietly turn the
-   staff audit trail into a general activity log that the Audit screen then
-   pages through. Worth its own table if customer activity needs recording;
-   not worth corrupting this one. */
+/* No audit row, because audit_logs is for staff actions only. */
 
-/* The same column list as the read at the top — profilePayload() needs every
-   one of them, and a second, shorter list here is how the two drift apart. */
+/* Same column list as the read at the top, for profilePayload(). */
 $row = Database::one(
     'SELECT id, name, email, contact,
             addr_street, addr_barangay, addr_city, addr_province, addr_zip, addr_region,
@@ -224,24 +137,17 @@ $row = Database::one(
     [$customer['id']]
 );
 
-/* ------------------------------------------------------------------
-   Nothing sensitive changed — done.
-   ------------------------------------------------------------------ */
+/* Nothing sensitive changed, so we are done. */
 if ($pending === []) {
     Response::ok(profilePayload($row) + ['requiresVerification' => false]);
 }
 
-/* ------------------------------------------------------------------
-   Something sensitive changed. Issue a code; write nothing.
-   ------------------------------------------------------------------ */
+/* Something sensitive changed: send a code and save nothing yet. */
 const VC_PURPOSE = 'profile_change';
 const VC_TTL     = 600;   /* seconds a code stays usable */
 const VC_RESEND  = 60;    /* seconds before another may be issued */
 
-/* An unconsumed, unexpired code issued moments ago is reused rather than
-   replaced. Otherwise the Resend button, or an impatient second submit, mints a
-   new code and silently invalidates the one already in the customer's inbox —
-   they then type the code they can see and are told it is wrong. */
+/* Reuse a still-valid recent code, so a resend does not invalidate the one already in the inbox. */
 $live = Database::one(
     "SELECT id, created_at, expires_at FROM verification_codes
       WHERE customer_id = ? AND purpose = ? AND consumed_at IS NULL AND expires_at > NOW()
@@ -259,16 +165,14 @@ if ($live !== null && (time() - strtotime((string) $live['created_at'])) < VC_RE
     ]);
 }
 
-/* Any older code for this purpose is dead the moment a new one is issued — two
-   live codes for one change means the earlier one is a second key. */
+/* Any older code for the same change becomes invalid once a new one is issued. */
 Database::run(
     "UPDATE verification_codes SET consumed_at = NOW()
       WHERE customer_id = ? AND purpose = ? AND consumed_at IS NULL",
     [$customer['id'], VC_PURPOSE]
 );
 
-/* random_int, not rand(): this is a credential, and a predictable one is not a
-   check at all. Zero-padded so 004212 is six digits and not four. */
+/* random_int (not rand) for an unpredictable 6-digit code, zero-padded. */
 $code   = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
 $ticket = 'vc-' . bin2hex(random_bytes(5));
 
@@ -277,25 +181,13 @@ Database::run(
         (id, customer_id, purpose, code_hash, payload, attempts, expires_at)
      VALUES (?, ?, ?, ?, ?, 0, NOW() + INTERVAL ? SECOND)',
     [$ticket, $customer['id'], VC_PURPOSE,
-     /* Hashed for the same reason a password is — see db/migrations/006.
-
-        password_hash() directly, NOT Auth::hashPassword(). That helper enforces
-        the account password policy (Auth::PASSWORD_MIN, currently 8) and a
-        six-digit code fails it. Lowering PASSWORD_MIN to accommodate a code
-        would weaken every real password in the system to make one unrelated
-        thing fit — the length rule and the hashing are separate concerns, and
-        only the hashing applies here.
-
-        A code's strength comes from being random, single-use, five-attempt
-        capped and ten-minute lived, not from its length. */
+     /* Hash the code with password_hash() directly (not Auth::hashPassword, whose length rule a 6-digit code would fail); its strength comes from being random, single-use, 5 attempts and 10 minutes. */
      password_hash($code, PASSWORD_BCRYPT),
      json_encode($pending, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
      VC_TTL]
 );
 
-/* Sent to the address ON FILE, never to the proposed one. Somebody who has
-   taken a session cannot receive it; the real owner does, and learns an attempt
-   was made. */
+/* Send the code to the email on file, never the new one, so a hijacked session cannot receive it. */
 $mailed = Mailer::send(
     (string) $row['email'],
     (string) $row['name'],
@@ -309,18 +201,11 @@ $out = profilePayload($row) + [
     'expiresIn' => VC_TTL,
     'resent'    => true,
     'emailed'   => $mailed,
-    /* Distinguishes real delivery from the log transport, exactly as
-       api/b2b/decide.php does. The page says which rather than claiming an
-       email was sent when it was written to storage/mail/. */
+    /* Report whether the email was really sent or only logged. */
     'mailLive'  => Mailer::isLive(),
 ];
 
-/* The code itself, ONLY on a development install with no real mail configured.
-   Reuses app.debug — the flag that already decides whether internal detail
-   leaves this server — rather than inventing a second switch that could be left
-   on independently. Never returned when mail is live, whatever debug says: an
-   install that can actually deliver has no excuse to put a live credential in
-   an HTTP response. */
+/* Return the code only on a dev install with app.debug on and no real mail, never when mail is live. */
 if (!Mailer::isLive() && (Database::config()['app']['debug'] ?? false)) {
     $out['devCode'] = $code;
 }
@@ -328,11 +213,7 @@ if (!Mailer::isLive() && (Database::config()['app']['debug'] ?? false)) {
 Response::ok($out);
 
 
-/**
- * The code email. Says what is being changed, because "here is a code" with no
- * context is indistinguishable from a phishing attempt — and if the customer did
- * not request it, naming the change is what tells them something is wrong.
- */
+/** The code email says what change is being made, so an unexpected one is recognisable. */
 function profileChangeCodeEmail(string $name, string $code, array $pending): string
 {
     $e = static fn(?string $v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
@@ -361,20 +242,10 @@ function profileChangeCodeEmail(string $name, string $code, array $pending): str
 }
 
 
-/**
- * The response shape, used by both verbs so a save returns exactly what a
- * fresh read would.
- *
- * `address.line` is the joined single-line form the checkout textarea wants.
- * Assembled here rather than in the browser: the checkout and the profile page
- * would otherwise each have their own idea of how to join five fields, and the
- * order would store whichever one happened to run.
- */
+/** The profile response shape, used for both GET and POST, including address.line for checkout. */
 function profilePayload(array $row): array
 {
-    /* Composed by Address::compose — the same function that writes
-       orders.address — so the line the checkout prefills and the line an
-       invoice later prints are joined by one rule, not two. */
+    /* Built with Address::compose, the same rule used for order addresses. */
     $a = [
         'street'           => $row['addr_street'],
         'barangay'         => $row['addr_barangay'],
@@ -400,16 +271,13 @@ function profilePayload(array $row): array
             'province' => $row['addr_province'],
             'zip'      => $row['addr_zip'],
             'region'   => $row['addr_region'],
-            /* The codes the picker chose them from. The picker prefills its
-               dropdowns from THESE; a saved address with no codes (typed before
-               the location data existed) prefills the street line only. */
+            /* The saved PSGC codes the picker prefills from (older addresses only prefill the street). */
             'region_code'   => $row['addr_region_code'],
             'province_code' => $row['addr_province_code'],
             'city_code'     => $row['addr_city_code'],
             'barangay_code' => $row['addr_barangay_code'],
             'line'     => $line,
-            /* So the client never has to infer "is there an address?" from
-               whether a joined string is empty. */
+            /* A flag so the client does not have to guess whether an address exists. */
             'hasAny'   => $hasAny,
         ],
     ];

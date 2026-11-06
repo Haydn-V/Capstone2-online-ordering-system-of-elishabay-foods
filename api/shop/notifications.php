@@ -1,17 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * The signed-in customer's notification bell (migration 018).
- *
- *   GET  /api/shop/notifications.php
- *        → { items: [...latest 30], unread: n }
- *   POST /api/shop/notifications.php   { "action": "read", "id": 12 }
- *                                      { "action": "read_all" }
- *
- * Scoped by the session; takes no customer id. A mark-read for somebody
- * else's row simply matches nothing.
- */
+/** GET/POST /api/shop/notifications.php: the signed-in customer's bell (latest 30 unread, or mark one/all read), scoped by session (migration 018). */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -36,8 +26,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-/* ?all=1 — the History page: read ones too, further back. The bell leaves
-   it off and gets unread only (read ones drop off the bell). */
+CustomerNotify::dueReminders((string) $customer['id']);
+
+/* ?all=1 (History page) also returns read ones; the bell shows unread only. */
 $all = ($_GET['all'] ?? '') === '1';
 $rows = Database::all(
     'SELECT id, type, title, message, link, order_id, return_id, is_read, created_at,
@@ -64,8 +55,7 @@ Response::ok([
         'returnId'  => $r['return_id'],
         'read'      => (bool) $r['is_read'],
         'createdAt' => $r['created_at'],
-        /* Measured on the database clock that stamped it — the browser's clock
-           and timezone need not match the server's. */
+        /* Age is measured on the database clock, not the browser's. */
         'ageSeconds'=> max(0, (int) $r['age_seconds']),
     ], $rows),
     'unread' => $unread,

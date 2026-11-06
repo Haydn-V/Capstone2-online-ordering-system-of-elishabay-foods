@@ -1,34 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Revenue — the one definition of money the business has received.
- *
- * D2 made "completed orders only" the rule, so pending and on-hold orders
- * stopped counting as earnings. That was right for a sale paid at the time and
- * wrong for one sold on Net 30/60/90 terms: a completed Net 60 order counted its
- * whole total on the day it was placed, whether or not a peso had arrived, and
- * the Sales Report could not be matched against a retailer's own receipts.
- *
- * Since 2026-09-11 revenue has two parts:
- *
- *   1. ORDERS PAID AT THE TIME — completed, and not on credit terms. Counted on
- *      the order's date, for its total. Unchanged.
- *   2. PAYMENTS TOWARD NET ACCOUNTS — each VERIFIED row in credit_payments,
- *      counted on its own paid_date, for its own amount. A ₱13,330 Net 60 order
- *      paid in three transfers is three amounts on three dates.
- *
- * A credit ORDER never counts as revenue; its payments do.
- *
- * LEGACY payments (settled before payment tracking existed — migration 013)
- * are excluded from DATED revenue: when that money arrived was never recorded,
- * and inventing a date would put it into a month it may not belong to. They do
- * count toward a customer's lifetime spend, which has no date.
- *
- * Every reader of revenue — reports/sales.php, the dashboard, customer spend and
- * the orders list — uses this class. The JavaScript mirror is isRevenue() plus
- * receivedBetween() in assets/js/portal/engine.js.
- */
+/** Revenue is the one definition of money received: completed non-credit orders count on the order date, and each verified Net-account payment counts on its own paid date (credit orders themselves never count); mirrored in JS by isRevenue()/receivedBetween() in engine.js. */
 final class Revenue
 {
     /** Order statuses that count, for an order paid at the time. */
@@ -43,10 +16,7 @@ final class Revenue
         return array_keys(Payments::CREDIT);
     }
 
-    /**
-     * Orders that are revenue in themselves: completed, and not on credit
-     * terms. Returns [sql, params] against `$alias`.
-     */
+    /** Orders that count as revenue themselves (completed and not on credit), returned as [sql, params]. */
     public static function clause(string $alias = 'o'): array
     {
         $st = implode(',', array_fill(0, count(self::STATUSES), '?'));
@@ -57,23 +27,31 @@ final class Revenue
         ];
     }
 
+    /** The Sales Report export's sale set, as [sql, params]: a completed order paid at the time, or a Net order once
+        accepted (it committed stock). Shared by api/reports/sales-export.php and api/reports/net-income.php. */
+    public static function saleClause(string $alias = 'o'): array
+    {
+        $credit = self::creditMethods();
+        $ph     = implode(',', array_fill(0, count($credit), '?'));
+        return [
+            "(({$alias}.status = 'completed' AND {$alias}.method NOT IN ($ph))
+              OR ({$alias}.method IN ($ph) AND {$alias}.status IN ('accepted','shipping','delivered','completed')))",
+            array_merge($credit, $credit),
+        ];
+    }
+
     /** Net-account payments that are dated revenue: verified, and not legacy. */
     public static function creditClause(string $alias = 'cp'): array
     {
         return ["{$alias}.status = 'verified' AND {$alias}.source <> 'legacy'", []];
     }
 
-    /**
-     * A customer's lifetime spend: orders paid at the time, plus every verified
-     * payment toward their Net accounts (legacy included — that money arrived).
-     * `$customerExpr` is the SQL naming the customer id: a column such as
-     * `c.id`, or `?` — in which case bind the id before AND after the params.
-     */
+    /** A customer's lifetime spend: paid-at-sale orders plus all verified Net payments; with a ? placeholder bind the id before and after the params. */
     public static function spendSql(string $customerExpr): array
     {
         [$c, $p] = self::clause('o');
         return [
-            "((SELECT COALESCE(SUM(o.total), 0) FROM orders o
+            "((SELECT COALESCE(SUM(" . Payments::dueSql('o') . "), 0) FROM orders o
                 WHERE o.customer_id = {$customerExpr} AND $c)
               + (SELECT COALESCE(SUM(cp.amount), 0) FROM credit_payments cp
                   WHERE cp.customer_id = {$customerExpr} AND cp.status = 'verified'))",
@@ -87,51 +65,22 @@ final class Revenue
         return ["{$alias}.status IN ($ph)", self::REFUNDED_STATUSES];
     }
 
-    /**
-     * What each product sold in a period: units and revenue, ranked.
-     *
-     * ONE COPY. The Sales Report's "Best Sellers in Period" and the inventory
-     * dashboard's "Product Rankings" ask the same question of the same rows and
-     * differ only in what they order by — the report by revenue, because it is
-     * deciding what earned; the dashboard by units, because it is deciding what
-     * to reorder. Two hand-written copies of this query would agree on the day
-     * they were written and drift the first time either was touched, which is
-     * the failure this file exists to prevent.
-     *
-     * UNITS AND REVENUE ARE ON THE SAME CLOCK, and it is the money's.
-     *
-     * They were not, briefly, and the Units column paid for it. Revenue moved to
-     * the payment's date when Net terms arrived; units stayed on the order's. A
-     * Net 60 order placed in July and paid in September then showed September
-     * revenue against ZERO September units — a best seller that sold nothing —
-     * while the July report showed its units earning nothing. Both halves were
-     * individually defensible and the row was unreadable.
-     *
-     * So a payment buys a SHARE of its order: the same proportion of each line's
-     * units as of its money. ₱6,665 against a ₱13,330 order of 100 jars is 50
-     * jars and half the revenue, in the period the money arrived. Paid in three
-     * transfers, the jars arrive in three pieces too.
-     *
-     * A part-paid Net order therefore contributes a FRACTION of a jar per line.
-     * Rounding is left to the caller and belongs at the end, once the pieces
-     * have been added up — rounding each line first drifts the total away from
-     * the units the order actually holds.
-     *
-     * @param ?string $from  YYYY-MM-DD, or null for no lower bound
-     * @param ?string $to    YYYY-MM-DD, or null for no upper bound
-     * @param string  $rank  'revenue' or 'units' — what to order by
-     * @param int     $limit how many rows to return
-     *
-     * @return list<array{id:string, name:string, units:string, revenue:string}>
-     */
+    /** The day a refund comes off revenue: when it was paid out (030), else the request date. */
+    public static function refundDateSql(string $alias = 'r'): string
+    {
+        return Database::hasColumn('product_returns', 'processed_at')
+            ? "DATE(COALESCE({$alias}.processed_at, {$alias}.received_date))"
+            : "DATE({$alias}.received_date)";
+    }
+
+    /** Units and revenue per product for a period, ranked by revenue or units; a Net order's units are counted in proportion to its payments, in the period the money arrived. */
     public static function productTotals(
         ?string $from,
         ?string $to,
         string $rank = 'revenue',
         int $limit = 10
     ): array {
-        /* An identifier cannot be bound, so it is chosen from a whitelist and
-           never interpolated from the request. */
+        /* The sort column comes from a whitelist, since identifiers cannot be bound. */
         $order = $rank === 'units' ? 'units DESC, revenue DESC' : 'revenue DESC, units DESC';
         $limit = max(1, min(100, $limit));
 

@@ -1,28 +1,16 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/users/save.php
- * Body: { "id": "emp-03" (omit to create), "name", "email", "role_id",
- *         "password" (required on create, optional on update), "avatar" }
- *
- * Requires users.manage.
- *
- * This endpoint hands out access to the system, so it is the one place where
- * being strict matters most:
- *
- *   - passwords are hashed here and never stored, logged or echoed back
- *   - a blank password on update means "leave it alone", not "clear it"
- *   - the role must exist, and only rbac.manage holders may grant a role that
- *     itself holds rbac.manage — otherwise any user manager could quietly
- *     promote themselves to full control
- *   - you cannot change your own role or archive yourself
- */
+/** POST /api/users/save.php (Super Admin only) creates or updates staff accounts: passwords are hashed and never echoed, blank on update keeps the old one, only rbac.manage holders can grant roles with rbac.manage, and you cannot change your own role or archive yourself. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
 Response::requireMethod('POST');
-$actor = Rbac::require('users.manage');
+$actor = Rbac::require('employees.manage');
+/* Adding or editing employee accounts is for the Super Admin only; other roles with employees.manage can still archive. */
+if ((int) ($actor['is_system'] ?? 0) !== 1) {
+    Response::forbidden('Only the Super Admin can add or edit employee accounts.');
+}
 
 $in = Response::input();
 $isUpdate = !empty($in['id']);
@@ -39,9 +27,7 @@ if ($role === null) {
     Response::validation('Check the highlighted fields.', ['role_id' => 'That role does not exist.']);
 }
 
-/* Privilege escalation guard. A Super Admin holds every permission including
-   rbac.manage; an Admin holds users.manage but not rbac.manage. Without this
-   check an Admin could create a Super Admin account and sign into it. */
+/* Stops an Admin from creating a Super Admin account (privilege escalation). */
 $roleGrantsRbac = (int) $role['is_system'] === 1 || (bool) Database::scalar(
     'SELECT COUNT(*) FROM role_permissions rp
        JOIN permissions p ON p.id = rp.permission_id
@@ -52,8 +38,7 @@ if ($roleGrantsRbac && !Rbac::has('rbac.manage')) {
     Response::forbidden("You cannot assign the {$role['name']} role — it carries permission management.");
 }
 
-/* Email is the login identifier, so a duplicate would be a second account
-   nobody can reach. Excludes itself on update. */
+/* Email (the login) must be unique, excluding itself. */
 $clash = Database::scalar('SELECT COUNT(*) FROM users WHERE email = ? AND id <> ?',
     [$data['email'], $in['id'] ?? '']);
 if ($clash) {
@@ -78,17 +63,13 @@ if ($isUpdate) {
         Response::notFound('That account does not exist.');
     }
 
-    /* Changing your own role is how an account locks itself out mid-session,
-       or quietly grants itself more. Either way it should be somebody else's
-       decision. */
+    /* You cannot change your own role. */
     if ($existing['id'] === $actor['id'] && (int) $existing['role_id'] !== (int) $data['role_id']) {
         Response::forbidden('You cannot change your own role. Ask another administrator.');
     }
 
     if ($password !== '') {
-        /* One rule, one hash (Auth::hashPassword). This was the length check
-           and the bcrypt call written out inline — twice in this file alone,
-           again in shop/register.php, and about to be a fourth time. */
+        /* Hash with Auth::hashPassword (one rule for every password). */
         Database::run('UPDATE users SET password = ? WHERE id = ?',
             [Auth::hashPassword($password), $existing['id']]);
     }

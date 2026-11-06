@@ -1,42 +1,20 @@
 "use strict";
 
-/* ============================================================
-   VAT MAINTENANCE — Super Admin only
-   ------------------------------------------------------------
-   Everything that decides what a Sales Invoice says about tax, in one
-   place: the VAT rate, which products are VAT-exempt, the senior
-   citizen / PWD discount rules, which retailers withhold tax, and the
-   period summary a VAT return is built from.
-
-   WHO CAN SEE IT. vat.manage is a SYSTEM_ONLY permission
-   (api/core/Rbac.php). Super Admin holds it; the Roles & Permissions
-   screen shows it locked for every other role and the server refuses
-   to grant it. Every endpoint behind this screen (api/vat/*) checks the
-   permission AND the system role. Hiding this module from the sidebar
-   is presentation; those checks are the control.
-
-   WHAT A CHANGE HERE DOES. It applies to sales made after it is saved.
-   Every order stores the breakdown it was sold with (migration 014),
-   so no invoice already issued changes — which is also why none of the
-   tax arithmetic lives in this file. It lives in api/core/Tax.php, run
-   at the moment of sale.
-   ============================================================ */
+/* ===== VAT MAINTENANCE (Super Admin only, enforced by api/vat/*): VAT rate, exempt products, retailer discounts and the period summary; changes apply only to future sales ===== */
 
 const VAT_TABS = [
   { id: "rules",       label: "Rules" },
   { id: "products",    label: "Product Tax Types" },
-  { id: "withholding", label: "Withholding Agents" },
+  { id: "withholding", label: "Retailer Discount" },
   { id: "summary",     label: "VAT Summary" },
 ];
 
 const vatState = { tab: "rules", data: null, from: null, to: null };
 
-/* Always two decimals. peso() drops the centavos on a round amount, and tax
-   figures are the ones that have to reconcile to the centavo. */
+/* Always two decimals for tax figures. */
 const vatMoney = n => EbFormat.pesoExact(n);
 
-/* A setting read back from the server as a plain number for an input:
-   "12" rather than "12.00", so the field shows what was typed. */
+/* Show settings as typed ("12", not "12.00"). */
 function vatNum(n){
   const v = Number(n);
   return Number.isFinite(v) ? String(+v.toFixed(2)) : "";
@@ -57,9 +35,7 @@ function vatRenderTabs(){
   });
 }
 
-/* The live figure beside the tab row. Each tab that has one sets it; every
-   render starts by clearing it, so a count never outlives the tab it
-   describes. */
+/* Live figure beside the tabs, cleared on each render. */
 function vatSetMeta(text){
   const el = $("#vat-tab-meta");
   if(el) el.textContent = text || "";
@@ -70,6 +46,8 @@ async function renderVat(){
   if(!content) return;
   vatRenderTabs();
   vatSetMeta("");
+  const headActions = $("#vat-head-actions");
+  if(headActions) headActions.innerHTML = "";
 
   if(!hasPerm("vat.manage")){
     content.innerHTML = `<div class="alert-empty"><strong>Super Admin only</strong>VAT Maintenance can only be opened by the Super Admin.</div>`;
@@ -78,7 +56,7 @@ async function renderVat(){
 
   if(vatState.tab === "summary"){ vatRenderSummary(); return; }
 
-  content.innerHTML = `<div class="state-cell"><span class="spinner" aria-hidden="true"></span> Loading…</div>`;
+  content.innerHTML = EbUI.skeletonBlock(7);
   try {
     const { data } = await EbApi.get("vat/get.php");
     vatState.data = data;
@@ -92,53 +70,65 @@ async function renderVat(){
 }
 
 /* ------------------------------------------------------------------ Rules */
+/* A number field with its unit (% or ₱) drawn inside the box. */
+function vatInput(id, value, unit, attrs, { prefix = false } = {}){
+  return `<div class="vat-input${prefix ? " is-prefix" : ""}">
+    <input class="control" type="number"${id ? ` id="${id}"` : ""} value="${value}" ${attrs}/>
+    <span class="vat-unit" aria-hidden="true">${unit}</span>
+  </div>`;
+}
+/* The portal's on/off switch in a full-width strip (same as the POS). */
+function vatSwitch(id, checked, label, hint){
+  return `<label class="vat-check pos-check vat-switch">
+    <span class="switch">
+      <input type="checkbox" role="switch" id="${id}" ${checked ? "checked" : ""}/>
+      <span class="switch-track"><span class="switch-thumb"></span></span>
+    </span>
+    <span class="vat-switch-text"><b>${label}</b>${hint ? `<small>${hint}</small>` : ""}</span>
+  </label>`;
+}
+
 function vatRenderRules(){
   const r = vatState.data.rules;
+  const icPct  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>`;
   $("#vat-content").innerHTML = `
-    <div class="vat-grid">
-      <div class="panel">
-        <div class="panel-header"><span class="panel-title">Value-added tax</span></div>
-        <div class="field">
-          <label for="vat-rate">VAT rate (%)</label>
-          <input class="control" type="number" id="vat-rate" min="0" max="50" step="0.01" value="${vatNum(r.vatRate)}"/>
-          <span class="field-hint">Charged on VATable products. Shelf prices include it.</span>
-          <span class="field-error" data-vat-err="vatRate"></span>
-        </div>
-        <div class="field">
-          <label for="vat-wht-default">Default withholding rate (%)</label>
-          <input class="control" type="number" id="vat-wht-default" min="0" max="50" step="0.01" value="${vatNum(r.withholdingDefaultRate)}"/>
-          <span class="field-hint">Filled in when you register a new withholding agent. Each agent keeps its own rate.</span>
-          <span class="field-error" data-vat-err="withholdingDefaultRate"></span>
-        </div>
+    <div class="vat-rules">
+      <div class="vat-grid vat-grid-single">
+        <section class="panel vat-card">
+          <header class="vat-card-head">
+            <span class="vat-card-ic" aria-hidden="true">${icPct}</span>
+            <div><h3 class="panel-title">Value-added tax</h3><p class="vat-card-sub">Rates used on every Sales Invoice.</p></div>
+          </header>
+          <div class="vat-card-body">
+            <div class="vat-row">
+            <div class="field">
+              <label for="vat-rate">VAT rate</label>
+              ${vatInput("vat-rate", vatNum(r.vatRate), "%", 'min="0" max="50" step="0.01"')}
+              <span class="field-hint">Charged on VATable products. Shelf prices already include it.</span>
+              <span class="field-error" data-vat-err="vatRate"></span>
+            </div>
+            <div class="field">
+              <label for="vat-wht-default">Default retailer discount</label>
+              ${vatInput("vat-wht-default", vatNum(r.withholdingDefaultRate), "%", 'min="0" max="50" step="0.01"')}
+              <span class="field-hint">Pre-filled when you turn on the discount for a retailer. Each retailer keeps its own rate.</span>
+              <span class="field-error" data-vat-err="withholdingDefaultRate"></span>
+            </div>
+            </div>
+          </div>
+        </section>
       </div>
 
-      <div class="panel">
-        <div class="panel-header"><span class="panel-title">Senior citizens &amp; PWD</span></div>
-        <label class="vat-check">
-          <input type="checkbox" id="vat-sc-enabled" ${r.scPwdEnabled ? "checked" : ""}/>
-          <span>Offer senior citizen and PWD discounts at the POS</span>
-        </label>
-        <div class="field">
-          <label for="vat-sc-rate">Discount (%)</label>
-          <input class="control" type="number" id="vat-sc-rate" min="0" max="100" step="0.01" value="${vatNum(r.scPwdDiscountRate)}"/>
-          <span class="field-hint">Taken off the amount net of VAT.</span>
-          <span class="field-error" data-vat-err="scPwdDiscountRate"></span>
-        </div>
-        <label class="vat-check">
-          <input type="checkbox" id="vat-sc-exempt" ${r.scPwdVatExempt ? "checked" : ""}/>
-          <span>Discounted sales are VAT-exempt</span>
-        </label>
-        <span class="field-hint vat-check-hint">On: no VAT on the sale (RA 9994 / RA 10754). Off: VAT is charged on the discounted amount.</span>
-        <div class="field">
-          <label for="vat-sc-cap">Weekly discount limit per ID (₱)</label>
-          <input class="control" type="number" id="vat-sc-cap" min="0" step="0.01" value="${vatNum(r.scPwdWeeklyCap)}"/>
-          <span class="field-hint">The most discount one ID can receive Monday to Sunday. 0 means no limit.</span>
-          <span class="field-error" data-vat-err="scPwdWeeklyCap"></span>
-        </div>
+      <div class="vat-savebar" id="vat-savebar">
+        <span class="vat-savebar-note" id="vat-savebar-note">Changes apply to sales made after saving. Issued invoices never change.</span>
+        <button class="btn btn-gold" id="vat-save-rules">Save rules</button>
       </div>
-    </div>
+    </div>`;
 
-    <button class="btn btn-gold" id="vat-save-rules">Save rules</button>`;
+  /* The bar shows unsaved changes. */
+  const bar = $("#vat-savebar"), note = $("#vat-savebar-note"), idle = note.textContent;
+  const markDirty = () => { bar.classList.add("is-dirty"); note.textContent = "You have unsaved changes."; };
+  const markClean = () => { bar.classList.remove("is-dirty"); note.textContent = idle; };
+  $$("#vat-content .vat-rules input").forEach(el => el.addEventListener(el.type === "checkbox" ? "change" : "input", markDirty));
 
   $("#vat-save-rules").addEventListener("click", async (e) => {
     $$("[data-vat-err]").forEach(el => { el.textContent = ""; });
@@ -149,12 +139,9 @@ function vatRenderRules(){
         rules: {
           vatRate:                $("#vat-rate").value,
           withholdingDefaultRate: $("#vat-wht-default").value,
-          scPwdEnabled:           $("#vat-sc-enabled").checked,
-          scPwdDiscountRate:      $("#vat-sc-rate").value,
-          scPwdVatExempt:         $("#vat-sc-exempt").checked,
-          scPwdWeeklyCap:         $("#vat-sc-cap").value,
         },
       });
+      markClean();
       toast(data.changed && data.changed.length
         ? `VAT rules saved: ${data.changed.length} change${data.changed.length === 1 ? "" : "s"}.`
         : "Nothing changed.", "ok");
@@ -174,8 +161,7 @@ function vatRenderRules(){
 function vatRenderProducts(){
   const rows = vatState.data.products;
   const exempt = rows.filter(p => p.taxType === "exempt").length;
-  /* A live figure, so it stays — beside the tab rather than at the end of the
-     paragraph it used to close. */
+  /* Live figure beside the tab. */
   vatSetMeta(`${exempt} of ${rows.length} product${rows.length === 1 ? "" : "s"} exempt`);
   $("#vat-content").innerHTML = `
     <div class="table-wrap"><table class="data-table">
@@ -213,49 +199,126 @@ function vatRenderProducts(){
   });
 }
 
-/* ------------------------------------------------------------ Withholding */
+/* ------------------------------------------------------- Retailer discount */
+/* Stored as withholding_agents (the rate taken off a retailer's sale); one switch turns it on/off for everyone and one Save applies every change. */
 function vatRenderWithholding(){
   const { retailers, rules } = vatState.data;
-  const agents = retailers.filter(c => c.withholdingRate !== null).length;
-  vatSetMeta(`${agents} withholding agent${agents === 1 ? "" : "s"}`);
+  const countMeta = () => {
+    const n = retailers.filter(c => c.withholdingRate !== null).length;
+    vatSetMeta(`${n} retailer${n === 1 ? "" : "s"} with discount`);
+  };
+  countMeta();
+  const initials = n => String(n || "?").trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase();
+  const allOn = retailers.length > 0 && retailers.every(c => c.withholdingRate !== null);
   $("#vat-content").innerHTML = `
-    ${retailers.length ? `<div class="table-wrap"><table class="data-table">
-      <thead><tr><th>Retailer</th><th>BIR TIN</th><th style="width:190px">Withholds</th><th style="width:130px">Rate (%)</th><th style="width:110px"></th></tr></thead>
+    ${retailers.length ? `<div class="vat-rules">
+      ${vatSwitch("vat-disc-all", allOn, "Retailer discount for all retailers", "Turns the discount on or off for every retailer below. Press Save changes to apply.")}
+      <div class="vat-disc-min">
+        <span class="vat-disc-min-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg></span>
+        <div class="vat-disc-min-text">
+          <label for="vat-disc-min">Minimum items per order</label>
+          <small id="vat-disc-min-hint">Retailers get their discount only when an order has at least this many items. 0 = no minimum.</small>
+          <span class="field-error" data-vat-err="withholdingMinQty"></span>
+        </div>
+        <div class="vat-disc-min-field">
+          <input class="control" type="number" id="vat-disc-min" value="${rules.withholdingMinQty || 0}" min="0" max="100000" step="1" inputmode="numeric" aria-describedby="vat-disc-min-hint"/>
+          <span class="vat-disc-min-unit" aria-hidden="true">items</span>
+        </div>
+      </div>
+      <div class="table-wrap vat-agents"><table class="data-table">
+      <thead><tr><th>Retailer</th><th>BIR TIN</th><th style="width:230px">Retailer discount</th><th style="width:150px">Rate</th></tr></thead>
       <tbody>${retailers.map(c => {
         const on = c.withholdingRate !== null;
-        return `<tr data-vat-agent="${escHtml(c.id)}">
-          <td class="td-name">${escHtml(c.name)}<div class="muted" style="font-size:.75rem">${escHtml(c.email || "")}</div></td>
-          <td class="mono-sm">${c.tin ? escHtml(c.tin) : `<span class="muted">—</span>`}</td>
-          <td><label class="vat-check vat-check-inline"><input type="checkbox" data-vat-on ${on ? "checked" : ""}/><span>Withholding agent</span></label></td>
-          <td><input class="control" type="number" min="0.01" max="50" step="0.01" data-vat-rate
-                     value="${on ? vatNum(c.withholdingRate) : vatNum(rules.withholdingDefaultRate)}" ${on ? "" : "disabled"}
-                     aria-label="Withholding rate for ${escHtml(c.name)}"/></td>
-          <td><button class="btn btn-ghost btn-sm" data-vat-save-agent>Save</button></td>
+        return `<tr data-vat-agent="${escHtml(c.id)}" class="${on ? "is-agent" : ""}">
+          <td><div class="vat-who">
+            <span class="vat-avatar" aria-hidden="true">${escHtml(initials(c.name))}</span>
+            <div><div class="td-name">${escHtml(c.name)}</div><div class="vat-email">${escHtml(c.email || "")}</div></div>
+          </div></td>
+          <td>${c.tin ? `<span class="vat-tin">${escHtml(c.tin)}</span>` : `<span class="muted">No TIN</span>`}</td>
+          <td><label class="vat-agent-toggle">
+            <span class="switch"><input type="checkbox" role="switch" data-vat-on ${on ? "checked" : ""} aria-label="Retailer discount for ${escHtml(c.name)}"/>
+              <span class="switch-track"><span class="switch-thumb"></span></span></span>
+            <span class="vat-agent-state" data-vat-state>${on ? "On" : "Off"}</span>
+          </label></td>
+          <td>${vatInput("", on ? vatNum(c.withholdingRate) : vatNum(rules.withholdingDefaultRate), "%",
+                `min="0.01" max="50" step="0.01" data-vat-rate ${on ? "" : "disabled"} aria-label="Discount rate for ${escHtml(c.name)}"`)}</td>
         </tr>`;
       }).join("")}</tbody>
-    </table></div>` : `<div class="alert-empty"><strong>No retailers yet</strong>Approved retail partners appear here.</div>`}`;
+    </table></div>
+    </div>` : `<div class="alert-empty"><strong>No retailers yet</strong>Approved retail partners appear here.</div>`}`;
+  if(!retailers.length) return;
+  $("#vat-head-actions").innerHTML = `<button class="btn btn-gold" id="vat-disc-save" disabled>Save changes</button>`;
 
-  $$("[data-vat-agent]").forEach(row => {
-    const on   = row.querySelector("[data-vat-on]");
-    const rate = row.querySelector("[data-vat-rate]");
-    on.addEventListener("change", () => { rate.disabled = !on.checked; });
-    row.querySelector("[data-vat-save-agent]").addEventListener("click", async (e) => {
-      const restore = EbUI.busy(e.currentTarget, "Saving…");
-      const customer = retailers.find(c => c.id === row.dataset.vatAgent);
+  const rows = $$("[data-vat-agent]");
+  const master = $("#vat-disc-all");
+  /* Save lights up only once something has changed. */
+  const saveBtn = $("#vat-disc-save");
+  const markDirty = () => { saveBtn.disabled = false; };
+  const markClean = () => { saveBtn.disabled = true; };
+  const paintRow = (row, on) => {
+    row.querySelector("[data-vat-rate]").disabled = !on;
+    row.querySelector("[data-vat-state]").textContent = on ? "On" : "Off";
+    row.classList.toggle("is-agent", on);
+  };
+  const syncMaster = () => { master.checked = rows.every(r => r.querySelector("[data-vat-on]").checked); };
+
+  master.addEventListener("change", () => {
+    rows.forEach(row => { row.querySelector("[data-vat-on]").checked = master.checked; paintRow(row, master.checked); });
+    markDirty();
+  });
+  rows.forEach(row => {
+    const on = row.querySelector("[data-vat-on]");
+    on.addEventListener("change", () => { paintRow(row, on.checked); syncMaster(); markDirty(); });
+    row.querySelector("[data-vat-rate]").addEventListener("input", markDirty);
+  });
+  $("#vat-disc-min").addEventListener("input", markDirty);
+
+  /* One Save for the whole table: only rows that differ from what is stored are sent. */
+  $("#vat-disc-save").addEventListener("click", async (e) => {
+    const changed = rows.map(row => {
+      const c = retailers.find(x => x.id === row.dataset.vatAgent);
+      const on = row.querySelector("[data-vat-on]").checked;
+      const rate = row.querySelector("[data-vat-rate]").value;
+      const was = c.withholdingRate;
+      const same = on ? (was !== null && +rate === +was) : was === null;
+      return same ? null : { c, rate: on ? rate : null };
+    }).filter(Boolean);
+    const minEl = $("#vat-disc-min");
+    const minChanged = String(+minEl.value) !== String(+(rules.withholdingMinQty || 0));
+    if(!changed.length && !minChanged){ markClean(); toast("Nothing changed.", "ok"); return; }
+    const restore = EbUI.busy(e.currentTarget, "Saving…");
+    let saved = 0;
+    const failed = [];
+    $$('[data-vat-err="withholdingMinQty"]').forEach(el => { el.textContent = ""; });
+    if(minChanged){
       try {
-        const { data } = await EbApi.post("vat/save.php", {
-          section: "withholding",
-          customer_id: row.dataset.vatAgent,
-          rate: on.checked ? rate.value : null,
-        });
-        if(customer) customer.withholdingRate = data.withholdingRate;
-        toast(data.withholdingRate === null
-          ? `${customer ? customer.name : "Retailer"} no longer withholds tax.`
-          : `${customer ? customer.name : "Retailer"} withholds ${vatNum(data.withholdingRate)}%.`, "ok");
+        await EbApi.post("vat/save.php", { section: "rules", rules: { withholdingMinQty: minEl.value } });
+        rules.withholdingMinQty = +minEl.value;
+        saved++;
       } catch(err){
-        toast(err.message, "err");
-      } finally { restore(); }
-    });
+        const msg = (err.fields && err.fields.withholdingMinQty) || err.message;
+        const el = $('[data-vat-err="withholdingMinQty"]'); if(el) el.textContent = msg;
+        failed.push(`Minimum items: ${msg}`);
+      }
+    }
+    for(const { c, rate } of changed){
+      try {
+        const { data } = await EbApi.post("vat/save.php", { section: "withholding", customer_id: c.id, rate });
+        c.withholdingRate = data.withholdingRate;
+        saved++;
+      } catch(err){
+        failed.push(`${c.name}: ${err.message}`);
+      }
+    }
+    restore();
+    saveBtn.disabled = false;
+    countMeta();
+    if(failed.length){
+      toast(`Saved ${saved} of ${changed.length + (minChanged ? 1 : 0)}. ${failed[0]}`, "err");
+    } else {
+      markClean();
+      toast(`Retailer discount saved: ${saved} change${saved === 1 ? "" : "s"}.`, "ok");
+    }
   });
 }
 
@@ -271,7 +334,7 @@ function vatRenderSummary(){
       <div class="field"><label for="vat-to">To</label><input class="control" type="date" id="vat-to" value="${vatState.to}"/></div>
       <button class="btn btn-gold" id="vat-summary-go">Show</button>
     </div>
-    <div id="vat-summary-body"><div class="state-cell"><span class="spinner" aria-hidden="true"></span> Loading…</div></div>`;
+    <div id="vat-summary-body">${EbUI.skeletonBlock(7)}</div>`;
 
   $("#vat-summary-go").addEventListener("click", () => {
     vatState.from = $("#vat-from").value;
@@ -288,7 +351,7 @@ async function vatLoadSummary(){
     body.innerHTML = `<div class="state-cell state-error"><strong>Check the dates.</strong><br><small>The start date is after the end date.</small></div>`;
     return;
   }
-  body.innerHTML = `<div class="state-cell"><span class="spinner" aria-hidden="true"></span> Loading…</div>`;
+  body.innerHTML = EbUI.skeletonBlock(7);
   let data;
   try {
     ({ data } = await EbApi.get("vat/summary.php", { from: vatState.from, to: vatState.to }));
@@ -308,21 +371,18 @@ async function vatLoadSummary(){
       ${card("Output VAT", vatMoney(t.outputVat), "VAT charged on invoices")}
       ${card("VAT-Exempt Sales", vatMoney(t.vatExemptSales))}
       ${card("Zero-Rated Sales", vatMoney(0), "export sales — not handled")}
-      ${card("Senior Citizen Discounts", vatMoney(data.scPwd.senior.discount), `${data.scPwd.senior.count} sale${data.scPwd.senior.count === 1 ? "" : "s"}`)}
-      ${card("PWD Discounts", vatMoney(data.scPwd.pwd.discount), `${data.scPwd.pwd.count} sale${data.scPwd.pwd.count === 1 ? "" : "s"}`)}
-      ${card("Tax Withheld by Buyers", vatMoney(t.withholdingTax), `${t.withholdingCount} sale${t.withholdingCount === 1 ? "" : "s"} · collect BIR Form 2307`)}
+      ${card("Retailer Discounts", vatMoney(t.withholdingTax), `${t.withholdingCount} sale${t.withholdingCount === 1 ? "" : "s"}`)}
       ${card("Invoices", t.invoices.toLocaleString(), `${vatMoney(t.totalSales)} total sales`)}
     </div>
     ${data.months.length ? `<div class="table-wrap"><table class="data-table">
       <thead><tr><th>Month</th><th class="num">Invoices</th><th class="num">VATable Sales</th><th class="num">Output VAT</th>
-        <th class="num">VAT-Exempt</th><th class="num">SC/PWD Discounts</th><th class="num">Withheld</th><th class="num">Total Sales</th></tr></thead>
+        <th class="num">VAT-Exempt</th><th class="num">Retailer Discount</th><th class="num">Total Sales</th></tr></thead>
       <tbody>${data.months.map(m => `<tr>
         <td>${escHtml(new Date(m.month + "-01T00:00:00").toLocaleDateString("en-PH", { year: "numeric", month: "long" }))}</td>
         <td class="num-cell">${m.invoices}</td>
         <td class="num-cell">${vatMoney(m.vatableSales)}</td>
         <td class="num-cell"><strong>${vatMoney(m.outputVat)}</strong></td>
         <td class="num-cell">${vatMoney(m.vatExemptSales)}</td>
-        <td class="num-cell">${vatMoney(m.scPwdDiscount)}</td>
         <td class="num-cell">${vatMoney(m.withholdingTax)}</td>
         <td class="num-cell">${vatMoney(m.totalSales)}</td>
       </tr>`).join("")}</tbody>

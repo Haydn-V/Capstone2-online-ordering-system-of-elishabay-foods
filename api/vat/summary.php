@@ -1,24 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/vat/summary.php?from=YYYY-MM-DD&to=YYYY-MM-DD
- *
- * The figures a VAT return is built from, for a period: VATable sales, output
- * VAT, VAT-exempt sales, senior/PWD discounts and tax withheld by buyers — as a
- * total and month by month.
- *
- * SUPER ADMIN ONLY — see get.php.
- *
- * WHICH ORDERS COUNT: every order whose invoice exists and still stands — any
- * status except cancelled, dated by the order (the invoice date). This is not
- * the Sales Report's revenue rule, and on purpose: VAT is owed on the sale when
- * it is invoiced, whether a Net 60 retailer has paid yet or not, while revenue
- * waits for the money. The two reports answer different questions.
- *
- * The figures are summed from what each order STORED at the sale, so a rule
- * changed in VAT Maintenance never reshapes a past period.
- */
+/** GET /api/vat/summary.php (Super Admin only) totals VAT-return figures for a period from what each non-cancelled order stored, dated by invoice date (unlike revenue, which waits for payment). */
 
 require __DIR__ . '/../core/bootstrap.php';
 

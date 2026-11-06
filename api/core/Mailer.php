@@ -1,38 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Mailer — outbound email.
- *
- * WHY THIS IS HAND-WRITTEN
- * ------------------------
- * This project has no Composer and no vendor/ directory; it is plain PHP by
- * design. Pulling in a dependency manager to send one kind of email would be a
- * larger change to the project than the feature itself, so this is a small SMTP
- * client — enough of RFC 5321 to authenticate and deliver, and nothing more.
- *
- * PHP's own mail() is deliberately not used. It shells out to sendmail, which
- * XAMPP ships unconfigured, and its failure mode is to return true having
- * delivered nothing.
- *
- * TWO TRANSPORTS, AND WHY THE SECOND EXISTS
- * -----------------------------------------
- *   'smtp' — real delivery.
- *   'log'  — writes the complete message to storage/mail/ and reports success.
- *
- * The log transport is not a stub for unfinished work. A B2B approval must not
- * fail because nobody has entered SMTP credentials yet, and an installation
- * without them should still be able to demonstrate and test the whole flow.
- * What it must never do is *pretend*: every log-transport send is recorded, the
- * response says which transport ran, and the staff screen shows it.
- *
- * MAIL IS NEVER PART OF A TRANSACTION
- * -----------------------------------
- * send() does not throw. A decision on a partner application is a database fact;
- * whether the notification email reached them is a separate, best-effort thing.
- * Rolling back an approval because a mail server timed out would be the wrong
- * trade every time. Callers commit first, then send, and report the outcome.
- */
+/** Mailer: a small hand-written SMTP client (no Composer, and mail() is unreliable on XAMPP) with an 'smtp' transport that really sends and a 'log' transport that saves to storage/mail/; send() never throws, so callers commit first and email after. */
 
 final class Mailer
 {
@@ -60,20 +29,14 @@ final class Mailer
         ];
     }
 
-    /** Whether real delivery is configured. The UI says so rather than guessing. */
+    /** Whether real email delivery is configured, so the UI can say so. */
     public static function isLive(): bool
     {
         $c = self::config();
         return $c['transport'] === 'smtp' && $c['host'] !== '';
     }
 
-    /**
-     * Send one message. Returns true on success.
-     *
-     * `$html` is the body. A plain-text alternative is generated from it rather
-     * than asked for, because two hand-maintained copies of the same message
-     * drift and the text one is the copy nobody looks at.
-     */
+    /** Send one message (true on success), generating the plain-text version from the HTML body. */
     public static function send(string $toEmail, string $toName, string $subject, string $html): bool
     {
         self::$lastError = '';
@@ -84,9 +47,7 @@ final class Mailer
             return false;
         }
 
-        /* Header injection: a newline in a name or subject would let the caller
-           add its own headers — a Bcc, a different From. Stripped, not escaped,
-           because a line break has no legitimate place in either. */
+        /* Strip newlines from names and the subject to prevent email header injection. */
         $toName  = self::oneLine($toName);
         $subject = self::oneLine($subject);
 
@@ -98,7 +59,7 @@ final class Mailer
             }
             return self::sendLog($toEmail, $subject, $message);
         } catch (Throwable $e) {
-            /* Never propagates. The caller has already committed. */
+            /* Never throws, because the caller has already committed. */
             self::$lastError = $e->getMessage();
             error_log('[mail] ' . $e->getMessage());
             return false;
@@ -122,8 +83,7 @@ final class Mailer
             'Date: ' . date('r'),
             'From: ' . $from,
             'To: ' . $to,
-            /* Non-ASCII in a subject must be encoded or it arrives as mojibake —
-               business names here contain ñ and é. */
+            /* Encode non-ASCII subjects (names with ñ, é) so they do not arrive garbled. */
             'Subject: ' . self::encodeHeader($subject),
             'Message-ID: <' . bin2hex(random_bytes(12)) . '@elishabay.ph>',
             'MIME-Version: 1.0',
@@ -161,9 +121,7 @@ final class Mailer
         return trim((string) $t);
     }
 
-    /* ------------------------------------------------------------------
-       Log transport
-       ------------------------------------------------------------------ */
+    /* Log transport */
     private static function sendLog(string $toEmail, string $subject, string $message): bool
     {
         $dir = dirname(__DIR__, 2) . '/storage/mail';
@@ -179,9 +137,7 @@ final class Mailer
         return $ok;
     }
 
-    /* ------------------------------------------------------------------
-       SMTP transport
-       ------------------------------------------------------------------ */
+    /* SMTP transport */
     private static function sendSmtp(array $c, string $toEmail, string $message): bool
     {
         $host    = (string) $c['host'];
@@ -189,8 +145,7 @@ final class Mailer
         $timeout = (int) $c['timeout'];
         $enc     = strtolower((string) $c['encryption']);
 
-        /* Implicit TLS (port 465) wraps the socket from the first byte;
-           STARTTLS (587) upgrades a plain connection mid-session. */
+        /* Port 465 uses TLS from the start; port 587 upgrades with STARTTLS. */
         $dsn = ($enc === 'ssl' ? 'ssl://' : '') . $host;
 
         $sock = @stream_socket_client("$dsn:$port", $errno, $errstr, $timeout);
@@ -209,8 +164,7 @@ final class Mailer
                 if (!stream_socket_enable_crypto($sock, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
                     throw new RuntimeException('STARTTLS negotiation failed.');
                 }
-                /* EHLO again: the server's capability list after the upgrade is
-                   the one that counts, and some refuse AUTH before it. */
+                /* Send EHLO again after the TLS upgrade, because some servers only allow AUTH after it. */
                 self::cmd($sock, 'EHLO ' . self::heloName(), 250);
             }
 
@@ -224,8 +178,7 @@ final class Mailer
             self::cmd($sock, 'RCPT TO:<' . $toEmail . '>', 250);
             self::cmd($sock, 'DATA', 354);
 
-            /* Dot-stuffing: a line consisting of a single "." ends DATA, so any
-               body line starting with one is doubled. */
+            /* Dot-stuffing: double any leading "." so it does not end the message early. */
             $payload = preg_replace('/^\./m', '..', $message);
             fwrite($sock, $payload . "\r\n.\r\n");
             self::expect($sock, 250);

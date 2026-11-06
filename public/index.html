@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta
       name="description"
       content="Elisha Bay — Premium Deboned Bangus & Bottled Gourmet from Dagupan City. Order for pickup or delivery."
@@ -12,7 +12,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
 
@@ -139,7 +139,10 @@
         <div class="hero-canvas" aria-hidden="true">
           <div class="jar-glow"></div>
           <div class="jar-glow jar-glow-2"></div>
-          <img class="hero-fish-bg" src="../assets/img/bgfish.png" alt="" draggable="false" />
+          <img class="hero-fish-bg" src="../assets/img/bgfish-1600.webp"
+               srcset="../assets/img/bgfish-800.webp 800w, ../assets/img/bgfish-1600.webp 1600w"
+               sizes="(max-width: 640px) 88vw, 62vw" width="1600" height="1489"
+               alt="" draggable="false" decoding="async" fetchpriority="low" />
         </div>
 
         <div class="container hero-inner">
@@ -157,11 +160,7 @@
               </div>
 
               <div class="hero-bottom reveal d1">
-                <!-- Up-next queue. The strip shows the products waiting
-                     behind the one in the panel; advancing moves the leftmost
-                     tile into the panel and pushes the outgoing product to the
-                     back. Click a tile to pull it forward. Built by
-                     renderHeroSlider() from HERO_PANELS. -->
+                <!-- Up-next queue of hero tiles, built by renderHeroSlider() from HERO_PANELS; click a tile to bring it forward. -->
                 <div class="hero-thumbs" id="hero-thumbs" aria-label="Up next"></div>
 
                 <div class="hero-ctas">
@@ -208,21 +207,19 @@
               >
                 <div class="hs-track" id="hs-track"></div>
 
-                <!-- Tagline sits over the image; .hs-scrim keeps it legible
-                     whichever product is showing. -->
+                <!-- Tagline over the image; .hs-scrim keeps it readable. -->
                 <div class="hs-scrim" aria-hidden="true"></div>
                 <div class="hs-overlay">
-                  <!-- Craft stats ride at the top of the overlay so they can
-                       never collide with the tagline at any width. -->
+                  <!-- Craft stats sit at the top of the overlay so they never hit the tagline. -->
                   <div class="hero-stats" aria-label="At a glance">
-                    <div class="hero-stat"><b>100%</b><span>Natural</span></div>
-                    <div class="hero-stat"><b>9+</b><span>years of craft</span></div>
+                    <div class="hero-stat" id="lp-live-stat1"><b>100%</b><span>Natural</span></div>
+                    <div class="hero-stat" id="lp-live-stat2"><b>9+</b><span>years of craft</span></div>
                   </div>
 
-                  <p class="hero-tagline">
+                  <p class="hero-tagline" id="lp-live-tagline">
                     &ldquo;Every Mouthful is <em>Delightful</em>.&rdquo;
                   </p>
-                  <p class="hero-lead">
+                  <p class="hero-lead" id="lp-live-lead">
                     Every product starts with fresh, locally-sourced milkfish
                     &mdash; hand-deboned or bottled in small batches.
                   </p>
@@ -283,19 +280,11 @@
             </p>
           </div>
         </div>
-        <!-- renderBestsellers() builds .bs-carousel > .bsc-stage + .bsc-nav
-             in here. Do NOT wrap this in .bs-carousel/.bsc-stage as well:
-             the duplicate nesting made the real stage a 206px-wide flex item
-             (the cards only looked right because they overflow it), so any
-             clip or mask on the stage cropped the whole carousel. -->
+        <!-- renderBestsellers() builds the carousel inside here; do not add another .bs-carousel/.bsc-stage wrapper. -->
         <div id="bestsellers-track"></div>
       </section>
 
-      <!-- ===== ABOUT — always-dark cinematic section =====
-           About Us now comes BEFORE the traceability promo. The markup moved,
-           not just the visual order: reordering two sections with CSS leaves
-           the reading order — which is what a keyboard, a screen reader and
-           the browser's own find-next follow — in the old sequence. -->
+      <!-- ===== ABOUT: always-dark section, placed before the traceability promo in the markup (not just visually) ===== -->
       <section class="about-section" id="about">
         <div class="about-cinema-bg" aria-hidden="true">
           <span class="cinema-word">BANGUS</span>
@@ -818,25 +807,6 @@
     <script defer src="../assets/js/public/modal-shell.js"></script>
     <script defer src="../assets/js/public/address-picker.js"></script>
     <script defer src="../assets/js/public/site.js"></script>
-    <!-- A third copy of applyLandingContent() used to live here as an inline
-         script: it read localStorage["eb-landing-content"] and patched the
-         About/Vision/Mission text, the contact block and the whole FAQ list
-         straight into the DOM.
-
-         Removed for three reasons, in order of seriousness:
-
-           1. It read browser storage. An administrator's edit reached only
-              their own browser — the audience the screen exists for never saw
-              it. That is the same root cause as defect 3.3.
-           2. It was the THIRD implementation of the same patching logic
-              (site.js applyLandingContent(), site.js renderFaqs(), and this),
-              and the three had already drifted: this one rendered FAQ text as
-              raw innerHTML while renderFaqs() escapes it.
-           3. Being inline and synchronous, it ran before site.js and its
-              result was then overwritten by whatever the server returned —
-              so it was a flash of stale content on every load.
-
-         assets/js/public/site.js fetches content/get.php and applies it. One
-         implementation, server-backed. -->
+    <!-- The old inline localStorage content patch was removed; site.js loads content from content/get.php. -->
   </body>
 </html>

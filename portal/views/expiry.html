@@ -3,27 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <title>expiry module</title>
-  <!-- ============================================================
-       MODULE PARTIAL — section id="mod-expiry".
-
-       Wrapped as a complete HTML document ON PURPOSE.
-
-       Dev servers inject a live-reload script into every .html file
-       they serve, placed just before the closing body tag. A bare
-       fragment has no closing body tag, so VS Code Live Server falls
-       back to injecting before the first closing svg tag instead —
-       which lands inside the Elisha Bay logo mark, corrupts the
-       parse, and leaves the portal showing "Portal failed to load".
-
-       With a real body element the injection lands harmlessly at the
-       end, and Core/module-loader.js strips every script element
-       before using this markup.
-
-       Keep the html/head/body wrapper. Also avoid writing a literal
-       closing body, head or svg tag anywhere in a comment in these
-       files — Live Server matches raw text and will inject there,
-       breaking the comment and everything after it.
-       ============================================================ -->
+  <!-- Module partial for section mod-expiry, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
   </head>
   <body>
 <!-- ── EXPIRATION MONITORING ── -->
@@ -38,8 +18,7 @@
       <h2>Expiration Monitoring</h2>
     </div>
   </div>
-  <!-- Was an anonymous div carrying the toolbar layout as inline style, so it
-       could never pick up a shared change. Same row as every other screen now. -->
+  <!-- Uses the shared toolbar row. -->
   <div class="view-toolbar view-toolbar-filters">
     <div
       class="search-box"
@@ -63,9 +42,7 @@
         aria-label="Search expiry"
       />
     </div>
-    <!-- In the toolbar row rather than on a line of its own: it is a key to
-         the STATUS column and reads as part of the same band as the filter
-         that uses the same four words. -->
+    <!-- The status legend sits in the toolbar row as a key to the STATUS column. -->
     <div class="inv-legend">
       <span class="inv-legend-item"
         ><span class="inv-dot inv-out"></span> Expired</span

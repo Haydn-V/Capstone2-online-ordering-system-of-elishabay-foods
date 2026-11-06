@@ -1,20 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/returns/advance.php
- * Body: { "id": "RET-…", "status": "eligible", "note"?, "refund_amount"?,
- *         "refund_method"?, "rejected_reason"? }
- *
- * Requires orders.returns.
- *
- * Same principle as orders/status.php: RETURN_STATUS_STEP in engine.js decides
- * which buttons the screen shows, and that is a rendering decision. The
- * pipeline is enforced here.
- *
- * A return that jumps straight to `processed` skips eligibility assessment and
- * approval — which is how a refund gets paid on a claim nobody checked.
- */
+/** POST /api/returns/advance.php (needs orders.returns) enforces the return pipeline on the server so no step (like approval) can be skipped. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -30,9 +17,7 @@ $data = Validate::check($in)
 
 $note = trim((string) ($in['note'] ?? '')) ?: null;
 
-/* received → validated → (eligible | ineligible) → (approved | rejected) → processed
-   Ineligible and rejected are terminal: the claim was refused, and reversing
-   that should be a new claim rather than an edit of this one. */
+/* received → validated → eligible/ineligible → approved/rejected → processed; ineligible and rejected are final. */
 const RETURN_FLOW = [
     'received'   => ['validated', 'rejected'],
     'validated'  => ['eligible', 'ineligible'],
@@ -67,8 +52,7 @@ if (!in_array($to, $allowed, true)) {
                   $from, $to, $from, implode(', ', $allowed)));
 }
 
-/* Refusing a claim without saying why leaves the customer with no answer and
-   the next staff member with no context. */
+/* Refusing a claim requires a reason. */
 if (in_array($to, ['rejected', 'ineligible'], true)) {
     $reason = trim((string) ($in['rejected_reason'] ?? '')) ?: $note;
     if ($reason === null) {
@@ -80,8 +64,7 @@ if (in_array($to, ['rejected', 'ineligible'], true)) {
     $reason = null;
 }
 
-/* The lines being returned: from the request (migration 016), or the single
-   product a pre-016 return carries. */
+/* The returned lines come from the request (migration 016) or from the single product of an older return. */
 $lines = Returns::itemsFor([$ret['id']])[$ret['id']] ?? [[
     'productId' => $ret['product_id'], 'qty' => (int) $ret['qty'], 'subtotal' => null,
 ]];
@@ -91,12 +74,10 @@ $refundMethod = null;
 $refundReceipt = null;
 
 if ($to === 'processed') {
-    /* Money is leaving the business here, so the amount and the method are
-       both required and the amount is validated rather than accepted. */
+    /* Processing a refund requires a validated amount and method. */
     $paid = Validate::check($in)
         ->decimal('refund_amount', 'Refund amount', 0)
-        /* No cash refunds: the money goes to the account the customer gave,
-           and the receipt below is the customer's proof it was sent. */
+        /* No cash refunds; the money goes to the customer's account, and the receipt is their proof. */
         ->in('refund_method', ['gcash', 'bank'], 'Refund method')
         ->values();
     $refundAmount = $paid['refund_amount'];
@@ -111,8 +92,7 @@ if ($to === 'processed') {
         }
     }
 
-    /* A refund larger than the line was worth is either a typo or a leak. The
-       original line price is what the customer actually paid. */
+    /* The refund cannot exceed what the customer actually paid for the line. */
     $linePaid = $lines[0]['subtotal'] !== null
         ? array_sum(array_column($lines, 'subtotal'))
         : Database::scalar(
@@ -126,6 +106,16 @@ if ($to === 'processed') {
             number_format($refundAmount, 2), number_format((float) $linePaid, 2)
         ));
     }
+}
+
+/* Large refunds: at or above the threshold, only an Admin or the Super Admin may approve or process. */
+if (in_array($to, ['approved', 'processed'], true)
+    && Returns::isLarge((float) $refundAmount)
+    && !Returns::canHandleLarge($user)) {
+    Response::forbidden(sprintf(
+        'Refunds of ₱%s or more must be approved and processed by an Admin or the Super Admin.',
+        number_format(Returns::largeThreshold(), 2)
+    ));
 }
 
 $eligibility = match ($to) {
@@ -154,41 +144,17 @@ try {
     if ($refundReceipt !== null) {
         Database::run('UPDATE product_returns SET refund_receipt = ? WHERE id = ?', [$refundReceipt, $ret['id']]);
     }
+    /* The day the refund comes off revenue (030). */
+    if ($to === 'processed' && Database::hasColumn('product_returns', 'processed_at')) {
+        Database::run('UPDATE product_returns SET processed_at = NOW() WHERE id = ?', [$ret['id']]);
+    }
 
-    /* Physically returned goods go back on the shelf only once the refund is
-       actually processed — not at approval, when the jar may still be with the
-       customer. Marked as a `return` adjustment so it shows in the inventory
-       log with its reason rather than appearing as unexplained stock. */
+    /* Returned goods are never put back in stock (they are damaged or unsellable); a refunded unit
+       only comes off the sold count. Stock and batch quantities stay as they are. */
     if ($to === 'processed') {
-        /* Stock::reverseSale, not a bare stock increment.
-           ----------------------------------------------
-           This used to be `UPDATE products SET stock = stock + ?` and NOTHING
-           ELSE — `sold` was left where it was, so a returned unit counted as
-           sold for ever. Meanwhile orders/status.php, restoring stock for a
-           CANCELLED order, wrote `sold = GREATEST(sold - ?, 0)`.
-
-           Two implementations of "the goods came back, reverse the sale",
-           written months apart, agreeing on the stock half and disagreeing on
-           the other. Found by the Phase 4 duplicate-write sweep.
-
-           It was not cosmetic. products.sold drives the Fast/Slow/Non-Moving
-           classification on the Inventory Report, the default sort on the
-           public storefront, the "N sold" printed on every product card, and
-           the Landing editor's Best Sellers ranking and its price x sold
-           revenue column. A heavily returned product read as Fast Moving,
-           sorted to the front of the shop, and advertised its returns to
-           customers as sales.
-
-           Money already got this right — reports/sales.php nets refunds out of
-           revenue. Units did not. The two ledgers disagreed. */
-        foreach ($lines as $line) {   /* one per product on the request */
-            Stock::reverseSale($line['productId'], (int) $line['qty']);
-            Database::run(
-                'INSERT INTO inventory_adjustments (date, product_id, qty, type, reason, batch_code)
-                 VALUES (CURDATE(), ?, ?, ?, ?, NULL)',
-                [$line['productId'], $line['qty'], 'return',
-                 sprintf('Customer return %s refunded (order %s).', $ret['id'], $ret['order_id'])]
-            );
+        foreach ($lines as $line) {   /* one per product or batch on the request */
+            Database::run('UPDATE products SET sold = GREATEST(sold - ?, 0) WHERE id = ?',
+                [(int) $line['qty'], $line['productId']]);
         }
     }
 
@@ -209,8 +175,7 @@ try {
     throw $e;
 }
 
-/* Tell the customer (their bell in the storefront header). After the commit:
-   a notification that fails must never undo the change itself. */
+/* Notify the customer after the commit, so a failed notification never undoes the change. */
 CustomerNotify::returnStatus($ret['id'], $to, $reason ?? null);
 
 Response::ok([
@@ -218,5 +183,5 @@ Response::ok([
     'from'        => $from,
     'status'      => $to,
     'allowedNext' => RETURN_FLOW[$to] ?? [],
-    'stockReturned' => $to === 'processed' ? array_sum(array_column($lines, 'qty')) : 0,
+    'stockReturned' => 0,   /* returned goods are not restocked */
 ]);

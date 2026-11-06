@@ -1,19 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/inventory/adjustments.php
- *
- * Query: ?page=1&limit=10&product_id=&type=disposal|return&search=
- *
- * The stock adjustment log. Requires inventory.report — reading the log is a
- * reporting act; making an entry needs inventory.manage and goes through
- * adjust.php.
- *
- * The product name is joined rather than stored on the row, so renaming a
- * product does not leave the log describing something that no longer exists
- * under that name.
- */
+/** GET /api/inventory/adjustments.php (needs inventory.report) lists the stock adjustment log, joining product names so renames stay current. */
 
 require __DIR__ . '/../core/bootstrap.php';
 

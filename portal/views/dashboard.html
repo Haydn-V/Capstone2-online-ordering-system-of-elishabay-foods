@@ -3,27 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <title>dashboard module</title>
-  <!-- ============================================================
-       MODULE PARTIAL — section id="mod-dashboard".
-
-       Wrapped as a complete HTML document ON PURPOSE.
-
-       Dev servers inject a live-reload script into every .html file
-       they serve, placed just before the closing body tag. A bare
-       fragment has no closing body tag, so VS Code Live Server falls
-       back to injecting before the first closing svg tag instead —
-       which lands inside the Elisha Bay logo mark, corrupts the
-       parse, and leaves the portal showing "Portal failed to load".
-
-       With a real body element the injection lands harmlessly at the
-       end, and Core/module-loader.js strips every script element
-       before using this markup.
-
-       Keep the html/head/body wrapper. Also avoid writing a literal
-       closing body, head or svg tag anywhere in a comment in these
-       files — Live Server matches raw text and will inject there,
-       breaking the comment and everything after it.
-       ============================================================ -->
+  <!-- Module partial for section mod-dashboard, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
   </head>
   <body>
 <!-- ── DASHBOARD ── -->
@@ -57,20 +37,7 @@
         RBAC
         <span class="dash-shortcut-badge">Admin</span>
       </button>
-      <!-- Payment Schemes is four clicks deep: Online Transactions, its drawer,
-           then the item. The people who chase Net 30/60/90 money go there
-           daily, so it earns a shortcut beside RBAC.
-
-           data-perm hides it from anyone without payments.manage, the same
-           permission that gates the sidebar item and the endpoints behind it —
-           applyRBAC() does the hiding, Rbac::require() in PHP does the
-           protecting. data-mod is read by initSidebar(), so this button needs
-           no JavaScript of its own.
-
-           QUIETER THAN THE RBAC BUTTON ON PURPOSE. Two solid gold buttons side
-           by side would each halve the other's pull, and the gold is already
-           spoken for: it matches .nav-item-rbac so the two routes to RBAC read
-           as one thing. -->
+      <!-- Payment Schemes shortcut, shown only with payments.manage and styled quieter than the gold RBAC button (initSidebar() wires data-mod). -->
       <button
         class="dash-shortcut-btn is-quiet"
         data-mod="payments"
@@ -92,14 +59,19 @@
       </button>
     </div>
   </div>
-  <!-- TWO DASHBOARDS, ONE SECTION.
-       renderDashboard() decides which panels to show from the permissions the
-       signed-in user holds — see isInventoryDashboard() in engine.js for the
-       exact rule. The panels that belong to only one of the two carry an id and
-       are hidden by class, rather than living in a second module: the greeting,
-       the tile grid, the notifications panel and the stock panel are the same
-       thing for both readers and would otherwise exist twice. -->
+  <!-- One section for both dashboards: renderDashboard() shows or hides panels by permission (see isInventoryDashboard() in engine.js). -->
   <div class="stat-grid" id="dash-stats"></div>
+  <!-- Online orders waiting for approval, shown to anyone with orders.accept and filled by renderApprovalPanel() in engine.js. -->
+  <div class="panel hide" id="dash-approval-panel" style="margin-bottom: 20px">
+    <div class="panel-header">
+      <span class="panel-title">Orders Waiting for Approval</span>
+      <button class="btn btn-ghost btn-sm" data-goto="ordersqueue" data-filter-status="pending" data-perm="orders.accept">
+        Open Queue
+      </button>
+    </div>
+    <div class="appr-stats" id="dash-appr-stats"></div>
+    <div class="appr-list" id="dash-appr-list"></div>
+  </div>
   <div class="dash-grid">
     <div>
       <div class="panel" id="dash-sales-panel" style="margin-bottom: 20px">
@@ -173,10 +145,7 @@
           ></svg>
         </div>
       </div>
-      <!-- "Stock Levels" for a manager, "Stock Overview" for an inventory
-           user, who has no sales chart above it and reads this as the main
-           graph on the page. Same bars, same data — renderDashboard() sets the
-           title, because the heading is the only part that differs. -->
+      <!-- Titled "Stock Levels" for managers and "Stock Overview" for inventory users (set by renderDashboard()). -->
       <div class="panel">
         <div class="panel-header">
           <span class="panel-title" id="dash-stock-title">Stock Levels</span>
@@ -192,17 +161,7 @@
       <div class="notif-list" id="dash-notifs"></div>
     </div>
   </div>
-  <!-- PRODUCT RANKINGS — the inventory reader's version of Recent
-       Transactions. Top five by UNITS sold this week, beside what is left on
-       the shelf, because the question this reader has is "what is selling fast
-       and do we have enough of it" and neither half answers it alone.
-
-       Filled from api/reports/top-products.php, which ranks the same rows the
-       Sales Report's Best Sellers panel ranks (Revenue::productTotals) and
-       resolves "this week" with the same Dates::range() — so the two screens
-       cannot disagree about the period or about what sold in it. No money
-       appears in that endpoint's response; it is readable with inventory
-       permissions and carries nothing that needs sales.report. -->
+  <!-- Product Rankings for the inventory dashboard: top five by units sold this week with stock left, from api/reports/top-products.php (no money figures). -->
   <div class="panel hide" id="dash-rank-panel" style="margin-top: 20px">
     <div class="panel-header">
       <span class="panel-title">Product Rankings</span>
@@ -227,12 +186,7 @@
   <div class="panel" id="dash-recent-panel" style="margin-top: 20px">
     <div class="panel-header">
       <span class="panel-title">Recent Transactions</span>
-      <!-- Carries the gate of the module it jumps to. Without data-perm this
-           button was offered to Inventory Staff and Online Orders Staff, who
-           hold no sales.report and are bounced by navigate()'s guard — the same
-           shape as the Archive tab: a control shown to someone who can never
-           use it. D9: the endpoint's permission is authoritative and the UI
-           conforms to it. -->
+      <!-- data-perm matches the destination module so the button only shows to roles that can open it. -->
       <button
         class="btn btn-ghost btn-sm"
         data-goto="sales"

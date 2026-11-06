@@ -1,65 +1,8 @@
-/* ============================================================
-   EbAddress — the Philippine address picker
-   ------------------------------------------------------------
-   ONE COMPONENT, FOUR FORMS
-
-   Checkout (delivery), the Create Account tab, the retailer
-   application (business address) and Profile > Delivery Address
-   all ask for the same thing. Each used to have its own free-text
-   box, and each stored whatever came back. This is built once and
-   mounted into each.
-
-     Region → Province → City / Municipality → Barangay
-     House no. and street, ZIP        typed — they are in no list
-
-   Codes from the PSA's PSGC, served one parent at a time by
-   api/locations/list.php. What this posts is CODES: the server
-   (api/core/Address.php) looks the names up itself and checks each
-   level belongs to the one above. Nothing here is trusted beyond
-   "this is what the person picked".
-
-   THE CASCADE RULES
-   - Every dropdown is empty and disabled until its parent is chosen.
-   - Changing a parent CLEARS every child below it. A new city must
-     never leave the previous city's barangay sitting in the field —
-     that is an address that does not exist, submitted with confidence.
-   - A list being fetched says so ("Loading barangays…") and stays
-     disabled until it lands.
-   - A late response for a parent that is no longer selected is
-     thrown away (see `ticket`), so fast clicking cannot put Cebu's
-     cities under a Pangasinan province.
-
-   CITIES WITH NO PROVINCE — Metro Manila, Pateros, and highly
-   urbanised cities such as Cebu City — arrive in the Province list
-   under their own names, marked kind "city". Choosing one fills the
-   City step with that one city and goes straight to its barangays.
-   Nobody is stranded at a Province step with nothing to pick.
-
-   THE DROPDOWNS ARE EbSelect. Native <select class="control"> /
-   "auth-input" elements, which core/select.js enhances on sight:
-   the site's one listbox, with its keyboard handling and its
-   type-ahead — typing the first letters of a barangay jumps to it,
-   which matters in a city with a hundred of them. Disabling a
-   select is not something EbSelect observes, so every state change
-   here ends with EbSelect.sync().
-
-   BEFORE THE LOCATION DATA IS LOADED — db/seed-ph-locations.sql is
-   generated from the PSA file and loaded separately — the lists
-   come back empty with meta.loaded = false. The picker then shows
-   the single free-text box the forms used to have, and the server
-   accepts it (Address::checkLegacyLine). A shop that cannot take
-   an address cannot sell; this keeps it selling until the seed lands.
-
-   Classic script, loaded before site.js on every public page: the
-   Create Account tab and the checkout can both open from any of them.
-   ============================================================ */
+/* ===== EbAddress: one Philippine address picker (Region, Province, City/Municipality, Barangay, then street and ZIP) for checkout, sign-up, the retailer form and Profile; posts PSGC codes that api/core/Address.php verifies, clears children when a parent changes, and falls back to a free-text box until the location data is loaded ===== */
 (function () {
   "use strict";
 
-  /* Every list fetched, for the life of the page. Keyed by level and
-     parent, holding the PROMISE — so two controls asking for the same
-     province at once share one request instead of racing two. The
-     server also sends a week's Cache-Control; this is the in-page half. */
+  /* Cache each fetched list (as a promise) for the page's life, so identical requests are shared. */
   const cache = new Map();
 
   function fetchLevel(level, parent) {
@@ -73,9 +16,7 @@
     return cache.get(key);
   }
 
-  /* The picker's level names are singular; the endpoint's are the plural of
-     what it returns. Spelled out rather than built from a suffix rule, because
-     "city" does not pluralise by adding an s. */
+  /* Map each level name to the endpoint's plural. */
   const API_LEVEL = { region: "regions", province: "provinces", city: "cities", barangay: "barangays" };
 
   const esc = s => String(s == null ? "" : s)
@@ -87,18 +28,7 @@
     mail:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>',
   };
 
-  /* The four dropdown levels, in cascade order. `placeholder` is the
-     empty option once a parent is chosen; `waiting` is what the box says
-     before that — a disabled control should say what it is waiting FOR.
-
-     SHORT ON PURPOSE. These strings set the narrowest the picker can be laid
-     out two-across: a trigger has to hold the longest of them plus a 44px icon
-     well and an arrow, and "Choose a city or municipality" alone asked for
-     ~199px of text, which pushed the pairing off any container under ~560px.
-     Every one of them sits directly under a <label> that names the field, so
-     the field name does not need saying twice — "City / Municipality" above
-     "Choose a city", "Province" above "Region first". Measured, not trimmed by
-     eye: the longest is now "Choose a barangay" at 130px. */
+  /* Dropdown levels in cascade order, with short placeholders so two fit side by side. */
   const LEVELS = [
     { key: "region",   label: "Region",               placeholder: "Choose a region",    waiting: "Choose a region",  loading: "Loading regions…" },
     { key: "province", label: "Province",             placeholder: "Choose a province",  waiting: "Region first",     loading: "Loading provinces…" },
@@ -106,19 +36,10 @@
     { key: "barangay", label: "Barangay",             placeholder: "Choose a barangay",  waiting: "City first",       loading: "Loading barangays…" },
   ];
 
-  /* ------------------------------------------------------------
-     Markup. Two host styles:
-       "field" — checkout and profile: .field > label + .control
-       "auth"  — Create Account and the retailer form:
-                 .auth-field > label + .auth-input-group(icon + input)
-     Same ids either way: `${prefix}-addr-<part>`, so a server error
-     keyed addr_barangay lands on `${prefix}-addr-barangay`.
-     ------------------------------------------------------------ */
+  /* Markup for two host styles ("field" and "auth"), with ids ${prefix}-addr-<part> so server errors land on the right field. */
   function markup(prefix, opts) {
     const o = Object.assign({ variant: "field", required: false }, opts || {});
-    /* The asterisk follows the same three modes validate() does: the four
-       dropdowns are required in both "location" and full mode, street and ZIP
-       only in full. Marking a field required that is not is its own bug. */
+    /* Required stars follow the same three modes as validate(). */
     const reqLoc  = o.required ? " *" : "";
     const reqFull = o.required === true ? " *" : "";
     const auth = o.variant === "auth";
@@ -161,9 +82,7 @@
               ${o.required === true ? 'aria-required="true"' : ""}/>`,
       ICON.mail);
 
-    /* The fallback box, hidden until the lists come back empty. Rendered up
-       front so switching to it is a class flip, not a rebuild that would lose
-       whatever the host form has already bound. */
+    /* The fallback box is rendered up front and shown by toggling a class. */
     const legacy = wrap("line", "Full address",
       `<textarea class="${cls}${auth ? " auth-textarea" : ""}" id="${id("line")}" rows="2" maxlength="300"
                  placeholder="House no., street, barangay, city, province, ZIP"
@@ -176,9 +95,7 @@
     </div>`;
   }
 
-  /* ------------------------------------------------------------
-     Behaviour.
-     ------------------------------------------------------------ */
+  /* Behaviour. */
   function mount(root, prefix) {
     const $ = part => root.querySelector(`#${prefix}-addr-${part}`);
     const box = root.querySelector(`#${prefix}-addr`);
@@ -194,13 +111,9 @@
     const line   = $("line");
     const status = root.querySelector(`#${prefix}-addr-status`);
 
-    /* Rises every time the PERSON changes something. A prefill in flight
-       checks it before each step and stops if it has moved — so a customer
-       who starts picking before their saved address arrives is never
-       overwritten mid-choice. */
+    /* Increments on every user change, so a slow prefill stops instead of overwriting the user's choice. */
     let generation = 0;
-    /* One per level: a response only applies if it is still the latest
-       request for that level. */
+    /* One ticket per level; only the latest response applies. */
     const ticket = { region: 0, province: 0, city: 0, barangay: 0 };
     let legacyMode = false;
 
@@ -209,8 +122,7 @@
     function setOptions(level, rows, placeholder) {
       const s = sel[level];
       s.innerHTML = `<option value="">${esc(placeholder)}</option>` + rows.map(r => {
-        /* Manila's numbered barangays read as "Barangay 105 · Tondo I" —
-           the district is how a resident finds theirs among ~900. */
+        /* Manila barangays show their district ("Barangay 105 · Tondo I"). */
         const label = r.district ? `${r.name} · ${r.district}` : r.name;
         return `<option value="${esc(r.code)}" data-kind="${esc(r.kind || "")}">${esc(label)}</option>`;
       }).join("");
@@ -235,8 +147,7 @@
       LEVELS.slice(i + 1).forEach(L => reset(L.key));
     }
 
-    /* Fetch a level's list into its select. Resolves true when the list is in
-       place and still wanted, false when it was superseded. */
+    /* Fetch a level's list into its select; true if applied, false if superseded. */
     async function load(level, parent) {
       const L = LEVELS.find(x => x.key === level);
       const s = sel[level];
@@ -281,8 +192,7 @@
       setStatus("");
     }
 
-    /* A province entry that is really a CITY (no province above it): the City
-       step gets exactly that one city, already chosen. */
+    /* A province entry that is really a city fills the City step with that city. */
     function fillIndependentCity(opt) {
       const s = sel.city;
       ticket.city++;
@@ -325,8 +235,7 @@
 
     [street, zip, line].forEach(el => el && el.addEventListener("input", () => unmark(el)));
 
-    /* ZIP is four digits in the Philippines. Stripping anything else as it is
-       typed is kinder than refusing a submitted "2400 " later. */
+    /* ZIP keeps only digits (four in the Philippines). */
     zip.addEventListener("input", () => {
       const v = zip.value.replace(/\D/g, "").slice(0, 4);
       if (v !== zip.value) zip.value = v;
@@ -350,9 +259,7 @@
       box.querySelectorAll("[data-addr-field]").forEach(clearError);
     }
 
-    /* Server errors arrive keyed addr_region, addr_barangay, … (Address::FIELD).
-       Returns true if any of them belonged to this picker, so a host form can
-       tell whether it still has something of its own to show. */
+    /* Show server errors keyed addr_*; returns true if any belonged to this picker. */
     function showErrors(fields) {
       let any = false;
       Object.entries(fields || {}).forEach(([k, msg]) => {
@@ -366,10 +273,7 @@
         any = true;
       });
       if (any) {
-        /* Focus the FIRST field in error, and on a dropdown that means
-           EbSelect's trigger — the native <select> is clipped to 1px and taken
-           out of the tab order, so focusing it puts the cursor nowhere a person
-           can see. A touch device keeps the native control, hence the fallback. */
+        /* Focus the first field in error (EbSelect's trigger, or the native select on touch). */
         const cell = box.querySelector("[data-addr-field].has-error");
         (cell?.querySelector(".ebs-trigger:not([disabled])")
           || cell?.querySelector("select:not([disabled]), input, textarea"))?.focus();
@@ -391,23 +295,13 @@
       };
     }
 
-    /* Nothing chosen and nothing typed. Optional addresses (Create Account,
-       Profile) are allowed to be entirely empty; the server refuses a
-       half-finished one, and so does validate() below. */
+    /* Nothing chosen or typed at all. */
     function isEmpty() {
       const v = value();
       return legacyMode ? !v.line : !(v.region || v.street || v.zip);
     }
 
-    /* Client-side courtesy only — the same rules Address::check applies, so
-       an incomplete address is flagged without a round trip. The server
-       decides. Returns true when the form may submit.
-
-       `required` takes the same three values the server does:
-         true        everything, street and ZIP included (checkout, business)
-         "location"  region through barangay; street and ZIP optional
-                     (Create Account)
-         false       nothing — but anything started must be finished (Profile) */
+    /* Client-side check mirroring Address::check (true = everything, "location" = region to barangay, false = optional but finish what you start); returns true when the form may submit. */
     function validate(required) {
       clearErrors();
       if (required === false && isEmpty()) return true;
@@ -429,16 +323,7 @@
       return Object.keys(errs).length === 0;
     }
 
-    /* ---------------- prefill ----------------
-       THE CHECKOUT'S RULE, applied to four dropdowns instead of one box
-       (see the PREFILL block in openCheckout):
-         - only EMPTY fields are filled — if the person has already chosen a
-           region, the saved address is not forced over it;
-         - each step waits for its list, and stops the moment the person
-           changes anything (the generation check);
-         - nothing is disabled or made read-only by prefilling;
-         - it writes nothing back. The host form's save checkbox does that.
-       `saved` is the codes-and-text shape shop/profile.php returns. */
+    /* Prefill from the saved address: only empty fields, step by step, stopping if the user changes anything, never locking fields or saving. */
     async function prefill(saved) {
       if (!saved) return false;
       const gen = generation;
@@ -495,7 +380,7 @@
       return touched;
     }
 
-    /* Start: the region list. Everything else waits for a choice. */
+    /* Start by loading the region list. */
     const regionsReady = load("region", null);
 
     return { value, validate, showErrors, clearErrors, prefill, isEmpty,

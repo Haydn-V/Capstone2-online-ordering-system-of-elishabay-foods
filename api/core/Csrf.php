@@ -1,31 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * CSRF protection for state-changing requests.
- *
- * WHY THIS EXISTS
- * ---------------
- * Authentication rides in a cookie, and browsers attach cookies to requests
- * they make on any page's behalf. So a form on evil.example that POSTs to
- * this API would arrive carrying the victim's session — authenticated, and
- * doing whatever the attacker wrote.
- *
- * SameSite=Lax on the session cookie already blocks the classic cross-site
- * form POST, which is real protection, but it is one browser setting away from
- * being the only thing standing there. A token the attacker's page cannot read
- * (same-origin policy stops it fetching one) is the actual defence.
- *
- * HOW IT WORKS
- * ------------
- * A random token is minted per session and handed to the client by
- * auth/login.php and auth/me.php. api.js sends it back in an X-CSRF-Token
- * header on every POST/PUT/DELETE. bootstrap.php checks it automatically, so
- * an endpoint cannot forget to.
- *
- * GET is exempt because it must be side-effect free — an endpoint that changes
- * state on GET is the bug, and no token would fix it.
- */
+/** CSRF protection: each session gets a random token that api.js sends back in an X-CSRF-Token header on every POST/PUT/DELETE, and bootstrap.php checks it automatically so a hostile site cannot act with the user's cookie. */
 final class Csrf
 {
     private const KEY = 'eb_csrf';
@@ -46,14 +22,7 @@ final class Csrf
         unset($_SESSION[self::KEY]);
     }
 
-    /**
-     * Enforce on any state-changing request. Called from bootstrap.php so it
-     * applies by default rather than per endpoint.
-     *
-     * Skipped when nobody is signed in: there is no session to ride, so there
-     * is nothing to forge. That is what lets login.php work — the credentials
-     * are the proof there.
-     */
+    /** Check the token on every state-changing request (called from bootstrap.php), skipping only when nobody is signed in because there is no session to forge. */
     public static function enforce(): void
     {
         $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -65,8 +34,7 @@ final class Csrf
             return;
         }
 
-        /* Covers customer sessions as well as staff. A signed-in shopper has a
-           cookie a hostile page could ride just as easily. */
+        /* Applies to customer sessions as well as staff. */
         if (!Auth::hasAnySession()) {
             return;
         }
@@ -74,13 +42,9 @@ final class Csrf
         $sent = $_SERVER[self::HEADER] ?? '';
         $held = $_SESSION[self::KEY] ?? '';
 
-        /* hash_equals, not ===, so a wrong token cannot be discovered one
-           character at a time by measuring how long the comparison took. */
+        /* hash_equals instead of === so the token cannot be guessed by timing the comparison. */
         if ($held === '' || $sent === '' || !hash_equals($held, $sent)) {
-            /* 403, not 419. 419 is a Laravel convention, not a registered
-               HTTP status — PHP does not recognise it and silently emits 500,
-               which reads as "the server broke" rather than "refused". The
-               distinct `CSRF` code is what the client branches on. */
+            /* Return 403 (not 419, which PHP turns into a 500) with code CSRF so the client knows why it was refused. */
             Response::error(
                 'CSRF',
                 'Your session token is missing or stale. Reload the page and try again.',

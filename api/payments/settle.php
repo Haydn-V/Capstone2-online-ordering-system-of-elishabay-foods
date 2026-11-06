@@ -1,23 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/payments/settle.php
- * Body: { "id": "pay-01", "paid": true, "method"?: "cash"|"gcash"|"bank",
- *         "ref_num"?: "…", "note"?: "…" }
- *
- * Requires payments.manage.
- *
- * KEPT FOR THE OLD "MARK PAID" CONTRACT. It used to flip payment_accounts.paid
- * and nothing else, so an account could be "paid" with no record of how much
- * arrived, when, or how. It now RECORDS A STAFF PAYMENT for everything still
- * left — what payments/record.php does with the amount filled in — so the
- * account is settled by a payment the history can show.
- *
- * `paid: false` is refused. An account reopens when a payment is rejected
- * (payments/decide.php); flipping it back by hand would leave verified money on
- * record against an account marked unpaid.
- */
+/** POST /api/payments/settle.php (needs payments.manage) is the old "Mark Paid", now recording a staff payment for whatever is left; paid:false is refused. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -42,6 +26,10 @@ if (!in_array($method, Payments::PAYMENT_METHODS, true)) {
 }
 $ref  = trim((string) ($in['ref_num'] ?? '')) ?: null;
 $note = trim((string) ($in['note'] ?? '')) ?: null;
+[$ref, $refErr] = Payments::checkRef($method, $ref);
+if ($refErr !== null) {
+    Response::validation('Check the reference number.', ['ref_num' => $refErr]);
+}
 
 $pdo = Database::pdo();
 try {

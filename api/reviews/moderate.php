@@ -1,43 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/reviews/moderate.php
- * Body: { "id": 12, "action": "publish" | "reject" | "unpublish", "reason": "…" }
- *
- * A staff decision about one review. Requires `reviews.moderate`.
- *
- * THREE ACTIONS, NOT A STATUS PARAMETER
- * -------------------------------------
- * `{"status": "rejected"}` would be shorter and is the wrong shape: the rules
- * differ per action — publish needs no reason, reject and unpublish both
- * require one — and an endpoint that takes a target state has to rediscover
- * which rules apply by branching on it anyway. Naming the action makes the
- * branch the subject rather than a consequence, and makes "unpublish" a thing
- * the audit log can say instead of "set status to rejected", which is what it
- * would otherwise have to record for two quite different decisions.
- *
- * A REASON IS REQUIRED TO TAKE SOMETHING DOWN
- * -------------------------------------------
- * Both reject and unpublish refuse without one. A review removed with no stated
- * cause is indistinguishable from one removed because staff disliked the score,
- * including to the staff member who has to defend it later, and the customer is
- * shown the reason on their own review (api/shop/reviews.php returns it in
- * `mine`). Publishing needs no reason: it is the outcome the customer already
- * asked for.
- *
- * MODERATION IS FOR ABUSE AND POLICY. NEVER FOR A LOW SCORE.
- * ----------------------------------------------------------
- * Nothing here reads `rating`, and that is deliberate rather than an omission.
- * A one-star review is a signal that something went wrong with a real order;
- * the system's response to it is a Warning notification raised at the moment it
- * was written (review-save.php), not a queue. If a rating could be moderated
- * away, the average would measure which reviews staff were willing to keep.
- *
- * EVERY DECISION IS ON THE RECORD — an audit_logs row, with the reason, the
- * moderator and the review, for all three actions including publish. A
- * moderation log that records only refusals cannot answer "who cleared this".
- */
+/** POST /api/reviews/moderate.php (needs reviews.moderate) publishes, rejects or unpublishes a review (reject/unpublish need a reason shown to the customer), never based on the rating, and every decision is audited. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -58,8 +22,7 @@ $data = Validate::check($in)
 $action = (string) $data['action'];
 $reason = trim((string) ($in['reason'] ?? ''));
 
-/* Checked before the row is read, so a missing reason is answered the same way
-   whether or not the id happens to exist. */
+/* Check for a missing reason before reading the row. */
 if ($action !== 'publish' && $reason === '') {
     Response::validation('Please correct the highlighted fields.', [
         'reason' => $action === 'reject'
@@ -81,15 +44,13 @@ if ($review === null) {
     Response::notFound('That review no longer exists.');
 }
 
-/* What each action means, and what it refuses to do. Kept as one table so the
-   guard and the write cannot disagree about which transitions are legal. */
+/* Each action's allowed starting statuses, in one table used by both the check and the write. */
 $rules = [
     /* Clearing a held review, or restoring one that was taken down. */
     'publish'   => ['to' => Reviews::PUBLISHED, 'from' => [Reviews::PENDING, Reviews::REJECTED]],
     /* Refusing a held review outright. */
     'reject'    => ['to' => Reviews::REJECTED,  'from' => [Reviews::PENDING]],
-    /* Taking down something already live. Same stored status as reject; a
-       different decision, and the audit log says which. */
+    /* Unpublish takes down a live review (same stored status as reject, but logged differently). */
     'unpublish' => ['to' => Reviews::REJECTED,  'from' => [Reviews::PUBLISHED]],
 ];
 
@@ -105,13 +66,7 @@ $pdo = Database::pdo();
 try {
     $pdo->beginTransaction();
 
-    /* `updated_at = updated_at` is not a no-op — it is the point.
-
-       The column is ON UPDATE CURRENT_TIMESTAMP, so any write here would bump
-       it, and both readers treat updated_at != created_at as "the CUSTOMER
-       edited this" (shop/reviews.php sends `edited`, the shop page prints it).
-       Without this clause, moderating a review makes the storefront claim its
-       author rewrote it. The moderator's own timestamp is moderated_at. */
+    /* updated_at = updated_at stops the timestamp changing, so moderation does not make the storefront say the customer edited the review. */
     Database::run(
         'UPDATE product_reviews
             SET status = ?, reject_reason = ?, hold_reason = NULL,
@@ -121,17 +76,13 @@ try {
          $user['id'], $review['id'], $review['status']]
     );
 
-    /* Conditional on the status that was read. Two moderators can open the same
-       queue, and the second one should be told rather than silently overwrite
-       the first. Same pattern as confirm-received.php. */
+    /* Conditional on the status read, so a second moderator is told instead of overwriting the first. */
     if ((int) Database::pdo()->query('SELECT ROW_COUNT()')->fetchColumn() < 1) {
         $pdo->rollBack();
         Response::conflict('Somebody else just moderated this review. Reload and try again.');
     }
 
-    /* The average moves with the decision, in the same transaction. A published
-       review that is not in the count, or a rejected one that still is, would
-       be a shop page disagreeing with the queue. */
+    /* Update the product's average rating in the same transaction. */
     $totals = Reviews::recompute((string) $review['product_id']);
 
     $verb = ['publish' => 'Published', 'reject' => 'Rejected', 'unpublish' => 'Unpublished'][$action];

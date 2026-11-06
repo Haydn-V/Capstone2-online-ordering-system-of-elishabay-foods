@@ -3,29 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <title>Portal shell</title>
-  <!-- ============================================================
-       PORTAL SHELL — login view, topbar, sidebar navigation, modal,
-       landing preview and toast container. The main element with
-       id="main-content" is left empty for the loader to fill.
-
-       Wrapped as a complete HTML document ON PURPOSE.
-
-       Dev servers inject a live-reload script into every .html file
-       they serve, placed just before the closing body tag. A bare
-       fragment has no closing body tag, so VS Code Live Server falls
-       back to injecting before the first closing svg tag instead —
-       which lands inside the Elisha Bay logo mark, corrupts the
-       parse, and leaves the portal showing "Portal failed to load".
-
-       With a real body element the injection lands harmlessly at the
-       end, and Core/module-loader.js strips every script element
-       before using this markup.
-
-       Keep the html/head/body wrapper. Also avoid writing a literal
-       closing body, head or svg tag anywhere in a comment in these
-       files — Live Server matches raw text and will inject there,
-       breaking the comment and everything after it.
-       ============================================================ -->
+  <!-- Portal shell (login, top bar, sidebar, modal, landing preview, toasts, empty #main-content), kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment in these files. -->
   </head>
   <body>
     <!-- ===== ADMIN APP ===== -->
@@ -48,8 +26,7 @@
             <path d="M3 12h18M3 6h18M3 18h18" />
           </svg>
         </button>
-        <!-- Module search: finds any screen in the sidebar the user can open
-             (engine.js, "TOPBAR SEARCH"). Ctrl+K focuses it. -->
+        <!-- Module search: finds any screen the user can open (engine.js TOPBAR SEARCH); Ctrl+K focuses it. -->
         <div class="topbar-search" id="topbar-search" role="search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
           <input type="search" id="topbar-search-input" placeholder="Search modules…" autocomplete="off"
@@ -129,26 +106,7 @@
             </svg>
           </button>
           <div class="topbar-user" id="topbar-user">
-            <!-- ONE CHIP, ONE CONTROL.
-
-                 Who is using the system, stated in the header rather than only
-                 inside a dropdown nobody opens. Name first because the role
-                 alone ("Super Admin") identifies a permission set, not a
-                 person. Same two values as #ud-name / #ud-role below, written
-                 by one function so the header and the menu cannot disagree.
-
-                 The BUTTON is now the whole chip rather than the avatar alone.
-                 The outline has to enclose name, role and avatar together and
-                 the whole enclosure has to be the trigger — an outlined group
-                 where only the circle inside it responds to a click reads as
-                 two controls, and puts the focus ring on the wrong thing.
-
-                 Both children are aria-hidden and the button carries its name
-                 from aria-label, written alongside the text in
-                 applySignedInUser(). Without that a screen reader would read
-                 the name, then the role, then the avatar initials ("MS") as
-                 three separate strings with no indication any of it opens a
-                 menu. -->
+            <!-- Identity chip: the whole chip (name, role, avatar) is one button that opens the user menu, with its accessible name set in aria-label by applySignedInUser(). -->
             <button
               class="topbar-user-chip"
               id="topbar-user-btn"
@@ -169,8 +127,7 @@
                 <div class="ud-role" id="ud-role">Super Admin</div>
               </div>
               <div class="ud-sep"></div>
-              <!-- The sidebar carries the same entry; this is here because the
-                   user menu is where people look for their own account first. -->
+              <!-- Shortcut to the user's own profile (also in the sidebar). -->
               <button class="ud-item" id="ud-profile">
                 <svg
                   viewBox="0 0 24 24"
@@ -504,7 +461,7 @@
               Inventory Report
             </button>
             <button
-              class="nav-item nav-parent"
+              class="nav-item nav-parent collapsed"
               data-mod="inventory-manage"
               data-perm="inventory.manage"
             >
@@ -616,9 +573,9 @@
                 <polyline points="6 9 12 15 18 9" /></svg
             ></span>
             <button
-              class="nav-item nav-parent"
+              class="nav-item nav-parent collapsed"
               data-mod="users"
-              data-perm="users.manage"
+              data-perm="users.manage|employees.manage"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -658,7 +615,7 @@
                 class="nav-item sub"
                 data-mod="users"
                 data-tab="employees"
-                data-perm="users.manage"
+                data-perm="employees.manage"
               >
                 Employee Accounts
               </button>
@@ -680,7 +637,7 @@
                 <path d="M9 15v.01" />
                 <path d="M9 18v.01" />
               </svg>
-              B2B Partner Applications
+              B2B Retail Partners
             </button>
             <button
               class="nav-item"
@@ -702,7 +659,7 @@
               Landing Page
             </button>
             <button
-              class="nav-item nav-parent"
+              class="nav-item nav-parent collapsed"
               data-mod="products"
               data-perm="products.manage"
             >
@@ -751,12 +708,7 @@
                 Varieties
               </button>
             </div>
-          </div>
-
-          <!-- Maintenance, beside the catalogue it moderates. data-perm hides
-               it from roles without reviews.moderate; api/reviews/list.php and
-               moderate.php refuse them regardless, because hiding a control is
-               presentation, not security. -->
+          <!-- Product Reviews moderation, hidden without reviews.moderate (the API refuses them anyway). -->
           <button
             class="nav-item"
             data-mod="reviews"
@@ -776,10 +728,7 @@
             </svg>
             Product Reviews
           </button>
-          <!-- VAT MAINTENANCE. vat.manage belongs to Super Admin alone and the
-               Roles & Permissions screen cannot grant it (Rbac::SYSTEM_ONLY), so
-               for every other role this item simply never appears. Hiding it is
-               presentation; api/vat/* checks the permission and the system role. -->
+          <!-- VAT Maintenance: Super Admin only (vat.manage is system-only); api/vat/* checks permission and role. -->
           <button
             class="nav-item"
             data-mod="vat"
@@ -799,6 +748,28 @@
             </svg>
             VAT Maintenance
           </button>
+          <!-- Shipping Rates (zones and weight brackets for the delivery fee); api/shipping/save.php checks shipping.manage. -->
+          <button
+            class="nav-item"
+            data-mod="shipping"
+            data-perm="shipping.manage"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M1 3h15v13H1z" />
+              <path d="M16 8h4l3 3v5h-7V8z" />
+              <circle cx="5.5" cy="18.5" r="2.5" />
+              <circle cx="18.5" cy="18.5" r="2.5" />
+            </svg>
+            Shipping Rates
+          </button>
+          </div>
 
           <div class="nav-group">
             <span class="nav-group-label"
@@ -948,47 +919,7 @@
             </button>
           </div>
 
-          <!-- ITS OWN GROUP, AT THE BOTTOM, AND CARRYING NO data-perm.
-
-               Every group above is about the business — what is sold, ordered,
-               stocked, reported on. This one is about the person signed in, so
-               it does not belong inside any of them.
-
-               No data-perm on the group or the item, deliberately: every staff
-               member owns their own account, so there is no permission to
-               check. applyRBAC() only touches elements that HAVE a data-perm,
-               which is what makes this visible to everyone; and engine.js's
-               MOD_PERM has no "profile" entry, so navigate()'s guard lets
-               everyone through. Both omissions are load-bearing. -->
-          <div class="nav-group">
-            <span class="nav-group-label"
-              >Account
-              <svg
-                class="nav-chevron"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <polyline points="6 9 12 15 18 9" /></svg
-            ></span>
-            <button class="nav-item" data-mod="profile">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-              My Profile
-            </button>
-          </div>
+          <!-- The Account group was removed; the header's profile chip opens My Profile. -->
         </nav>
 
         <div class="sidebar-user">

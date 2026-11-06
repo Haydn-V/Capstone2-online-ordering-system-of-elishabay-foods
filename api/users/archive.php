@@ -1,26 +1,12 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/users/archive.php
- * Body: { "id": "emp-05", "archived": true }
- *
- * Requires users.manage.
- *
- * Archive, never delete. Orders carry `cashier` as a foreign key to users and
- * audit rows carry actor_user_id — deleting an employee would either fail or
- * detach the record of everything they did. Archiving refuses their login
- * (Auth::attempt checks status) while leaving that history intact.
- *
- * Archiving takes effect immediately, including on an already-signed-in
- * session: Auth::user() re-reads status from the database on every request and
- * logs the account out the moment it turns archived.
- */
+/** POST /api/users/archive.php (needs employees.manage) archives or restores a staff account (never deletes, to keep history), blocking login immediately. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
 Response::requireMethod('POST');
-$actor = Rbac::require('users.manage');
+$actor = Rbac::require('employees.manage');
 
 $in = Response::input();
 
@@ -41,6 +27,11 @@ if ($user === null) {
     Response::notFound('That account does not exist.');
 }
 
+/* Only the Super Admin can archive or restore a Super Admin account, so no other role can lock the Super Admin out. */
+if ((int) $user['is_system'] === 1 && (int) ($actor['is_system'] ?? 0) !== 1) {
+    Response::forbidden('Only the Super Admin can archive or restore a Super Admin account.');
+}
+
 /* Locking yourself out mid-session is not a thing anyone means to do. */
 if ($user['id'] === $actor['id']) {
     Response::forbidden('You cannot archive your own account.');
@@ -50,9 +41,7 @@ if (($user['status'] === 'archived') === $archive) {
     Response::conflict($archive ? 'That account is already archived.' : 'That account is not archived.');
 }
 
-/* Never leave the system with no way back in. If this is the last active
-   account holding rbac.manage, archiving it means nobody can ever manage roles
-   or restore it — a door that locks from the outside with the key inside. */
+/* Refuse to archive the last active account with rbac.manage. */
 if ($archive) {
     $remainingAdmins = (int) Database::scalar(
         "SELECT COUNT(*)

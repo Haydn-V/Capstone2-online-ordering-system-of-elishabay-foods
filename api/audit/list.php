@@ -1,16 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/audit/list.php?page=&limit=&type=&actor=&search=&from=&to=
- *
- * Requires audit.view.
- *
- * Read-only, deliberately and permanently. There is no create, update or delete
- * endpoint for audit rows: a log that can be edited by the same system it
- * records is not evidence of anything. Entries are written by the endpoints
- * that perform the actions, inside their transactions.
- */
+/** GET /api/audit/list.php (needs audit.view) is read-only on purpose: an audit log the system could edit would not be evidence. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -43,8 +34,7 @@ foreach (['from' => '>=', 'to' => '<='] as $key => $op) {
         if (!$d || $d->format('Y-m-d') !== $q[$key]) {
             Response::validation('Check the date range.', [$key => 'Use YYYY-MM-DD.']);
         }
-        /* <= on a DATETIME column needs the end of that day, or "to today"
-           silently excludes everything logged today. */
+        /* Compare against the end of the day, or a "to today" filter would skip everything logged today. */
         $where[] = "a.ts $op ?";
         $params[] = $q[$key] . ($op === '<=' ? ' 23:59:59' : ' 00:00:00');
     }
@@ -64,8 +54,7 @@ $rows = Database::all(
     $params
 );
 
-/* Distinct types, so the filter dropdown offers what actually exists rather
-   than a hardcoded list that drifts. */
+/* Distinct types from the data, so the filter dropdown only offers types that actually exist. */
 $types = array_column(Database::all('SELECT DISTINCT type FROM audit_logs ORDER BY type'), 'type');
 
 Response::ok(array_map(static fn(array $r): array => [
@@ -73,8 +62,7 @@ Response::ok(array_map(static fn(array $r): array => [
     'ts'          => $r['ts'],
     'actor'       => $r['actor'],
     'actorUserId' => $r['actor_user_id'],
-    /* The name is preserved as written; this flags that the account behind it
-       is no longer active, without rewriting history. */
+    /* Keep the actor name as written and only flag that the account is no longer active, so history is never rewritten. */
     'actorArchived' => $r['actor_status'] === 'archived',
     'type'        => $r['type'],
     'desc'        => $r['description'],

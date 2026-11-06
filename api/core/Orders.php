@@ -1,35 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Orders — order-lifecycle rules that run without anybody pressing anything.
- *
- * WHY THIS EXISTS
- * ---------------
- * The Scope promises that a delivered order becomes completed one hour later if
- * the customer never confirms receipt. Nothing scheduled that, and there was no
- * record of when an order became delivered to measure the hour from — see
- * db/migrations/006 for the column.
- *
- * A SWEEP, NOT A CRON
- * -------------------
- * XAMPP ships no scheduler, and a capstone that only behaves correctly on a
- * machine where somebody remembered to configure Windows Task Scheduler is a
- * capstone that does not behave correctly. So the rule runs opportunistically:
- * any request that lists orders sweeps first.
- *
- * That is not free, which is why it is throttled — see below. And it is not the
- * only way in: api/system/auto-complete.php calls the same function, so a real
- * deployment can attach it to a scheduler and get punctual completion instead
- * of completion-on-next-page-load. Both routes run this one implementation.
- *
- * WHAT "ONE HOUR" MEANS
- * ---------------------
- * Measured in SQL against NOW(), never against a PHP timestamp. Due dates,
- * overdue days and this all have to agree, and the database clock is the one
- * they already share (D1 — the same reason isOverdue() was moved server-side
- * after it spent two months frozen against a hardcoded date).
- */
+/** Orders runs automatic lifecycle rules, mainly completing delivered orders one hour after delivery if the customer never confirms, swept when orders are listed (or via api/system/auto-complete.php from a scheduler). */
 
 final class Orders
 {
@@ -41,32 +13,8 @@ final class Orders
 
     private const THROTTLE_KEY = 'autocomplete_last_run';
 
-    /**
-     * The BIR TIN a Sales Invoice prints for this buyer, as a SQL expression.
-     *
-     * A retailer's TIN, and nobody else's. It is the one the retailer typed
-     * on their partner application (b2b_applications.bir_tin) — the customer
-     * row has no TIN of its own, so the approved application is the record.
-     * A regular customer's invoice leaves the TIN line blank, as the paper
-     * form would be.
-     *
-     * An ARCHIVED retailer still gets it: an invoice reprinted after the
-     * account was closed describes a sale made while they were a retailer.
-     *
-     * Matched by customer_id or by email because decide.php links the two
-     * either way — an application made before the shopper had an account is
-     * joined to it by address. The newest approved application wins.
-     *
-     * `$customerCol` is interpolated: pass a column name (`o.customer_id`) or a
-     * `?` placeholder, never a value.
-     */
-    /**
-     * The tracking stepper for an order: the journey in order, with the steps
-     * reached marked. 'on-hold' is a pause on the first step, not a step of its
-     * own; a cancelled order has reached none.
-     *
-     * @return list<array{key:string,done:bool,now:bool}>
-     */
+    /** SQL expression for the buyer TIN printed on a Sales Invoice: only a retailer's (from their newest approved partner application, matched by customer id or email); pass a column name or ? placeholder, never a value. */
+    /** The order's tracking steps in order with reached steps marked (on-hold pauses the first step; cancelled reaches none). */
     public static function trackingSteps(string $status): array
     {
         $sequence = ['pending', 'accepted', 'shipping', 'delivered', 'completed'];
@@ -81,6 +29,21 @@ final class Orders
             ];
         }
         return $out;
+    }
+
+    /** Name for the invoice's Cashier/Authorized Representative line: the cashier for walk-ins, the first processing staff member for online orders. */
+    public static function cashierSql(string $alias): string
+    {
+        /* orders.cashier holds a users.id (FK); the invoice wants the name. */
+        $own = "(SELECT cu.name FROM users cu WHERE cu.id = {$alias}.cashier)";
+        if (!Database::hasTable('order_status_history')) {
+            return $own;
+        }
+        return "COALESCE({$own},
+                 (SELECT u.name FROM order_status_history h
+                    JOIN users u ON u.id = h.changed_by
+                   WHERE h.order_id = {$alias}.id
+                   ORDER BY h.id LIMIT 1))";
     }
 
     public static function buyerTinSql(string $customerCol): string
@@ -98,7 +61,7 @@ final class Orders
                   LIMIT 1)";
     }
 
-    /** buyerTinSql() for one customer id. Null for anyone but a retailer. */
+    /** buyerTinSql() for one customer id; null for anyone but a retailer. */
     public static function buyerTin(?string $customerId): ?string
     {
         if ($customerId === null || $customerId === '') {
@@ -108,28 +71,10 @@ final class Orders
         return ($tin === false || $tin === null || $tin === '') ? null : (string) $tin;
     }
 
-    /**
-     * Complete every delivered order that has waited more than an hour.
-     *
-     * Returns the number moved. Safe to call on every request — see
-     * sweepIfDue(), which is what the list endpoints actually call.
-     *
-     * ONLINE ORDERS AND WALK-IN DELIVERIES. A walk-in PICKUP is completed at
-     * the till by pos/checkout.php and never reaches `delivered`, so it cannot
-     * match. A walk-in DELIVERY is a parcel like any online one — rung up at
-     * the counter, then shipped with a courier number through Order Status —
-     * and it was left out of this sweep only because walk-in deliveries had no
-     * screen to be moved on. They do now (orders/list.php `with_deliveries`),
-     * so the same one-hour customer-confirmation rule applies to them. Walk-in
-     * buyers usually have no account to press Mark Received with, which makes
-     * the sweep the normal way theirs complete, not the exception.
-     */
+    /** Complete every online order or walk-in delivery that has been delivered for over an hour, returning how many were moved. */
     public static function autoCompleteDelivered(): int
     {
-        /* Read first, then update: the audit and history rows need to name the
-           orders individually, and doing the UPDATE first would leave nothing
-           to name. The window between the two is closed by the conditional
-           UPDATE — an order that changes in between simply does not match. */
+        /* Read the orders first so audit rows can name each one, while the conditional UPDATE skips any order that changed in between. */
         $due = Database::all(
             "SELECT id, customer_name, delivered_at
                FROM orders
@@ -145,10 +90,7 @@ final class Orders
         $moved = 0;
         $pdo = Database::pdo();
 
-        /* One transaction for the sweep, not one per order: either the batch
-           lands with all its audit rows or none of it does. A partial sweep
-           that completed three orders and logged one is worse than a sweep that
-           did not run. */
+        /* One transaction for the whole sweep, so orders and their audit rows land together or not at all. */
         $ownTransaction = !$pdo->inTransaction();
         if ($ownTransaction) {
             $pdo->beginTransaction();
@@ -161,10 +103,7 @@ final class Orders
                       WHERE id = ? AND status = 'delivered'",
                     [$o['id']]
                 );
-                /* Conditional, because the customer may be pressing Mark
-                   Received at this exact moment (api/shop/confirm-received.php).
-                   Either outcome is correct; this one just declines to double-
-                   count it. */
+                /* Conditional update, in case the customer presses Mark Received at the same moment. */
                 if ((int) $pdo->query('SELECT ROW_COUNT()')->fetchColumn() < 1) {
                     continue;
                 }
@@ -180,9 +119,7 @@ final class Orders
                     );
                 }
 
-                /* actor "System", actor_user_id NULL. Nobody did this, and
-                   attributing it to whichever staff member happened to load a
-                   page would make the audit trail actively misleading. */
+                /* Logged as actor "System" with no user id, since no staff member did this. */
                 Database::run(
                     'INSERT INTO audit_logs (ts, actor, actor_user_id, type, description)
                      VALUES (NOW(), ?, NULL, ?, ?)',
@@ -205,22 +142,7 @@ final class Orders
         return $moved;
     }
 
-    /**
-     * The throttled entry point the list endpoints call.
-     *
-     * Without a throttle this runs its SELECT on every order-list request from
-     * every staff member and every customer — a query per page view for a rule
-     * that can only fire once an hour per order.
-     *
-     * The marker lives in `settings` rather than a file: the application's
-     * database user has no filesystem grants and should not need any, and a
-     * timestamp in a file is one more thing that can be out of step with the
-     * data it describes.
-     *
-     * Never throws into a request. This is a background rule riding on someone
-     * else's page load; a failure here must not turn their order list into a
-     * 500. It is logged and the request continues.
-     */
+    /** Throttled entry point (marker stored in settings) so the sweep runs at most periodically, and any error is logged instead of breaking the page. */
     public static function sweepIfDue(): int
     {
         try {
@@ -233,9 +155,7 @@ final class Orders
                 return 0;
             }
 
-            /* Claimed before the work, not after. Two requests arriving together
-               would otherwise both read a stale marker and both sweep; the
-               second finds nothing to do, but it still pays for the query. */
+            /* Claim the run before doing the work so two requests do not both sweep. */
             Database::run(
                 'INSERT INTO settings (key_name, value_text) VALUES (?, NOW())
                  ON DUPLICATE KEY UPDATE value_text = NOW()',

@@ -1,15 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/customers/list.php?page=&limit=&search=&status=active|retailer|archived|all&sort=name|fifo|newest
- *
- * Requires users.manage — the Customer tab sits inside User Management.
- *
- * Order counts and lifetime spend are aggregated in SQL rather than by loading
- * every order and summing in PHP. The join is on customer_id, so walk-in and
- * guest orders (customer_id NULL) correctly count toward nobody.
- */
+/** GET /api/customers/list.php (needs users.manage) with order counts and lifetime spend computed in SQL. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -29,10 +21,7 @@ if ($search !== '') {
     array_push($params, $like, $like, $like);
 }
 
-/* Sort (whitelisted, never interpolated from input):
-     name   — A to Z (default)
-     fifo   — first joined, first listed (oldest account at the top)
-     newest — most recently joined first */
+/* Sort options (whitelisted): name A to Z (default), fifo (oldest first), newest. */
 $orderBy = [
     'fifo'   => 'c.joined ASC, c.created_at ASC, c.id ASC',
     'newest' => 'c.joined DESC, c.created_at DESC, c.id DESC',
@@ -49,13 +38,10 @@ if ($where) { $sql .= ' WHERE ' . implode(' AND ', $where); }
 
 $total = (int) Database::scalar("SELECT COUNT(*) $sql", $params);
 
-/* Lifetime spend uses the one revenue definition (D2). The spend params come
-   FIRST because the sub-select appears before $sql in the statement. */
+/* Lifetime spend uses the one revenue definition; its params come first because the sub-select appears before $sql. */
 [$spendSql, $spendParams] = Revenue::spendSql('c.id');
 $rows = Database::all(
-    /* canSignIn, NOT the hash. The column is never sent — a staff screen has
-       no use for it and shipping password material to a browser is how it ends
-       up in a log, a cache or a screenshot. Only the yes/no leaves the server. */
+    /* Send only canSignIn (yes/no), never the password hash. */
     "SELECT c.id, c.name, c.email, c.contact, c.status, c.joined,
             (c.password IS NOT NULL) AS can_sign_in,
             (SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.id) AS order_count,
@@ -72,21 +58,7 @@ Response::ok(array_map(static fn(array $r): array => [
     'email'    => $r['email'],
     'contact'  => $r['contact'],
     'status'   => $r['status'],
-    /* FALSE MEANS THIS PERSON CANNOT SIGN IN, and the table must say so.
-
-       api/customers/save.php deliberately never sets a password — an admin form
-       that could set someone else's is an account-takeover vector, and its
-       header makes that argument. The consequence was left invisible: every
-       customer staff created through Add Customer could never sign in, nothing
-       on the screen said so, and the sign-in form answered "Email or password
-       is incorrect" forever. That is a fortnight of somebody retyping a correct
-       password.
-
-       Showing it here is the safe half of the fix. Inside the portal, behind
-       users.manage, "this record has no sign-in" is operational detail staff
-       need. On the public sign-in form the same fact is account enumeration,
-       which is why Auth::attemptCustomer still refuses all three cases
-       identically. */
+    /* canSignIn false means the customer has no password (e.g. created by staff), shown only inside the portal so staff can tell them to register with that email. */
     'canSignIn' => (bool) $r['can_sign_in'],
     'joined'   => $r['joined'],
     'orders'   => (int) $r['order_count'],

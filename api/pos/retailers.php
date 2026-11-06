@@ -1,37 +1,14 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/pos/retailers.php
- *
- * Requires pos.use. The retailers a cashier may sell to on credit terms.
- *
- * WHY THIS IS NOT customers/list.php
- * ----------------------------------
- * customers/list.php requires `users.manage`, which a Cashier does not hold —
- * and should not. It returns every customer with their email, contact number
- * and join date; a till operator needs none of that to put a Net-30 sale
- * against an account.
- *
- * This returns id and name for retailers only. The same reasoning as
- * shop/products.php against products/list.php: when a screen needs a slice of
- * a table, give it the slice rather than the permission to read the whole
- * thing. Widening the permission on customers/list.php would have been one
- * line and would have handed every cashier the full customer list.
- *
- * Archived customers are never returned. A retailer whose account has been
- * closed should not be offered fresh credit.
- */
+/** GET /api/pos/retailers.php (needs pos.use) returns only active retailers with what the cashier needs, instead of giving cashiers the full customer list. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
 Response::requireMethod('GET');
 Rbac::require('pos.use');
 
-/* What each retailer still owes AFTER the payments staff have verified
-   (Payments::describeAccount) — not the billed total of every open account. A
-   retailer who has paid half was being shown owing the whole, at exactly the
-   moment the cashier decides whether to extend more credit. */
+/* Show what each retailer still owes after verified payments, not the billed total. */
 $rate  = Payments::penaltyRate();
 $owing = [];
 foreach (Database::all(Payments::accountSelect() . ' WHERE pa.paid = 0') as $r) {
@@ -44,18 +21,28 @@ $rows = array_map(static fn(array $c): array => [
     'id'            => $c['id'],
     'name'          => $c['name'],
     'outstanding'   => round($owing[$c['id']]['outstanding'] ?? 0.0, 2),
+    'tier'          => $c['retailer_tier'] ?: 'Bronze',
     'overdue_count' => $owing[$c['id']]['overdue_count'] ?? 0,
-], Database::all("SELECT id, name FROM customers WHERE status = 'retailer' ORDER BY name"));
+    /* Contact and saved address prefill the payment form once a retailer is picked. */
+    'contact'       => $c['contact'],
+    'address'       => implode(', ', array_filter(array_map('trim', [
+        (string) $c['addr_street'], (string) $c['addr_barangay'], (string) $c['addr_city'],
+        (string) $c['addr_province'], (string) $c['addr_zip'],
+    ]), 'strlen')),
+], Database::all("SELECT id, name, retailer_tier, contact, addr_street, addr_barangay, addr_city, addr_province, addr_zip
+                  FROM customers WHERE status = 'retailer' ORDER BY name"));
 
-/* Outstanding balance and overdue count travel with the name so the cashier can
-   see, at the moment of choosing, that this retailer already owes money and is
-   late with it. Deciding whether to extend more credit is a person's call; not
-   showing them the number is how it stops being a call at all.
-   Both are computed against CURDATE() at read time — never stored, for the same
-   reason payments/list.php derives them. */
+$limits = Payments::creditLimits();
+/* Show the outstanding balance and overdue count (computed at read time) so the cashier can decide whether to extend more credit. */
 Response::ok(array_map(static fn(array $r): array => [
     'id'          => $r['id'],
     'name'        => $r['name'],
     'outstanding' => (float) $r['outstanding'],
     'overdue'     => (int) $r['overdue_count'],
+    /* Tier and its Net credit budget, so the cashier sees how much Net credit is left. */
+    'tier'        => $r['tier'],
+    'creditLimit' => $limits[$r['tier']],
+    'creditLeft'  => Payments::creditStanding($r['id'])['available'],
+    'contact'     => $r['contact'],
+    'address'     => $r['address'],
 ], $rows));

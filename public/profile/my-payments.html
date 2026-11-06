@@ -2,11 +2,11 @@
 <html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>My Payments — Elisha Bay</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="../../assets/css/public/styles.css" />
     <link rel="stylesheet" href="../../assets/css/public/profile.css" />
       <!-- Theme before first paint: Light / Dark / System (no flash). -->
@@ -53,24 +53,7 @@
     <!-- ===== SCAFFOLDING required by script.js ===== -->
     <div id="modal-scrim" class="modal-scrim">
       <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <!-- #modal-title WAS MISSING FROM THIS PAGE, AND THAT BROKE EVERY MODAL.
-
-             openModal() opens with `$("#modal-title").textContent = title`. With
-             no such element that line threw before anything opened, so SIGN IN
-             on the signed-out guard and Proceed to Checkout in the cart both
-             looked like dead buttons on all four profile pages while working
-             fine on index.html and shop.html, which have it.
-
-             aria-labelledby="modal-title" was already here, pointing at nothing
-             — a dangling reference, so role="dialog" also had no accessible
-             name. Both are fixed by the element existing.
-
-             The `modal-body` CLASS was missing too; .modal-body carries the
-             dialog's 18px/26px padding, so content sat flush against the edges.
-
-             Same drift as #toast-wrap vs #toast-root, written up on showToast().
-             The shared shell in assets/js/public/modal-shell.js now owns this
-             markup so the copies cannot diverge again. -->
+        <!-- The modal markup (with #modal-title and .modal-body) is required; modal-shell.js now ensures it. -->
         <div class="modal-head">
           <h3 id="modal-title"></h3>
           <button class="modal-close" id="modal-close" aria-label="Close dialog">
@@ -97,9 +80,7 @@
     <main class="mp-page" id="mp-page">
       <div class="container">
 
-        <!-- Auth guard. Same shape as my-orders.html, and it waits for the
-             SERVER's answer rather than sampling state.auth at load — see the
-             note on whenAuthReady() in assets/js/public/site.js. -->
+        <!-- Auth guard waits for the server's answer (see whenAuthReady() in site.js). -->
         <div class="mp-guard" id="mp-guard" style="display:none">
           <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           <h2>Sign in to view your payments</h2>
@@ -110,11 +91,7 @@
         <div id="mp-content" style="display:none">
           <div class="mp-account-layout">
 
-            <!-- Rendered by EbProfileShell. This was forty lines of markup
-                 repeated on every account page — which is how the same person
-                 came to be tagged "CUSTOMER" here and "Retail Partner" one
-                 page over, and how one link ended up revealed-but-never-hidden
-                 in three files at once. -->
+            <!-- Sidebar rendered by EbProfileShell. -->
             <aside class="mp-account-sidebar" id="mp-sidebar"></aside>
 
             <div class="mp-account-main">
@@ -144,44 +121,13 @@
     <script defer src="../../assets/js/public/site.js"></script>
     <script defer src="../../assets/js/public/profile-shell.js"></script>
     <script>
-    /* My Payments — the customer half of the Payment Schemes module.
+    /* My Payments: a retailer's Net accounts and every payment, all figures from api/shop/my-payments.php (Payments::describeAccount()). */
 
-       The Scope promises retailers "all outstanding and upcoming payments in
-       one place", with notification when a payment nears its deadline or is
-       overdue, "including any penalties incurred". Staff have had that screen
-       since the beginning at portal/views/payments.html; the retailer could
-       only find out what they owed by asking the person they owed it to.
-
-       Every figure here comes from api/shop/my-payments.php, which computes it
-       with Payments::describeAccount() — the same function the cashier's screen
-       uses. Nothing is calculated in this file. A penalty worked out twice is a
-       penalty that eventually disagrees with itself, and the customer-facing
-       copy is the one that starts an argument. */
-
-    /* NO top-level `const esc` or `const peso` here.
-
-       site.js already declares both at top level, and it is a classic script
-       sharing one global scope with this one. A second top-level `const` of the
-       same name is a SyntaxError that kills the ENTIRE script — which is
-       exactly what happened on the first run of this page:
-
-           Uncaught SyntaxError: Identifier 'peso' has already been declared
-
-       and nothing below it executed, so the page rendered its empty shell with
-       no error anyone could see on screen.
-
-       That is the same hazard verify-structure.py §16 checks for across the
-       four portal scripts. It does not yet cover the public pages; it should.
-
-       EbFormat.pesoExact rather than site.js's peso(): money owed needs two
-       decimal places, and peso() renders whole pesos. */
+    /* No top-level esc/peso here (site.js already declares them); use EbFormat.pesoExact for two decimals. */
     const payEsc  = v => EbFormat.escHtml(v == null ? "" : v);
     const payPeso = n => EbFormat.pesoExact(n);
 
-      /* The avatar, the name, the role tag, the Payment Schemes link and the
-         sign-out button all moved to EbProfileShell — they were written out
-         once per account page and had already drifted (the same person read
-         "Customer" on one page and "Retail Partner" on the next). */
+      /* The sidebar parts are rendered by EbProfileShell. */
 
     async function loadMyPayments() {
       const list = document.getElementById("pay-list");
@@ -194,10 +140,7 @@
         document.getElementById("pay-banner").innerHTML = "";
         document.getElementById("pay-summary").innerHTML = "";
         if (err.isAuth) {
-          /* Bound, not inline. verify-structure.py §"no inline event handlers"
-             enforces this project-wide, and it caught this one on the first
-             run — an onclick in a template string is exactly the kind a grep of
-             the .html files would never find. */
+          /* Listeners are bound, not inline. */
           list.innerHTML = `<div class="orders-empty">
             <h3>Sign in to see your payments</h3>
             <p>Your payment schedule is tied to your partner account.</p>
@@ -207,8 +150,7 @@
           return;
         }
         if (err.isForbidden) {
-          /* Not a retailer. Says what the facility is and who it is for, rather
-             than showing an empty table that reads as "you owe nothing". */
+          /* Not a retailer: explain what Payment Schemes is instead of an empty table. */
           list.innerHTML = `<div class="orders-empty">
             <h3>For retail partners</h3>
             <p>${payEsc(err.message)}</p>
@@ -222,13 +164,11 @@
       }
 
       renderBanner(data.summary);
-      renderSummary(data.summary);
+      renderSummary(data.summary, data.credit);
       renderList(data.accounts);
     }
 
-    /* The Scope's "notification when a payment nears its deadline or is
-       overdue". Overdue outranks due-soon: somebody already late does not need
-       to be told about next week. */
+    /* Due and overdue notices, with overdue taking priority. */
     function renderBanner(s) {
       const el = document.getElementById("pay-banner");
       if (s.overdueCount > 0) {
@@ -245,8 +185,19 @@
       }
     }
 
-    function renderSummary(s) {
-      document.getElementById("pay-summary").innerHTML = `
+    function renderSummary(s, c) {
+      /* Tier credit budget: unpaid Net balances + a new Net order cannot go above it. */
+      const pct = c && c.limit > 0 ? Math.min(100, Math.round(c.used / c.limit * 100)) : 0;
+      const credit = c ? `
+        <div class="pay-credit">
+          <div class="pay-credit-top">
+            <span class="pay-tier pay-tier-${payEsc(c.tier.toLowerCase())}">${payEsc(c.tier)} Partner</span>
+            <span class="pay-credit-left"><strong>${payPeso(c.available)}</strong> left for Net orders</span>
+          </div>
+          <div class="pay-credit-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="Net credit used"><span style="width:${pct}%"></span></div>
+          <small>${payPeso(c.used)} used of your ${payPeso(c.limit)} Net 30 / 60 / 90 budget. Paying your balances frees it up again.</small>
+        </div>` : "";
+      document.getElementById("pay-summary").innerHTML = credit + `
         <div class="pay-summary">
           <div class="pay-stat">
             <span class="pay-stat-label">Left to pay</span>
@@ -275,8 +226,7 @@
     const MP_PAY_STATUS = { pending: "Waiting for review", verified: "Verified", rejected: "Rejected" };
     const MP_PAY_METHOD = { gcash: "GCash", bank: "Bank Transfer", cash: "Cash" };
 
-    /* The accounts last loaded, so a Pay form reads the figures it was opened
-       against without another request. Replaced wholesale on every load. */
+    /* Accounts from the last load, so the Pay form needs no extra request. */
     let mpAccounts = [];
 
     function mpDays(a) {
@@ -286,8 +236,7 @@
       return a.daysUntilDue === 0 ? "due today" : `in ${n} day${n === 1 ? "" : "s"}`;
     }
 
-    /* Every payment toward the account, newest first: the three transfers
-       toward one balance are read here, each with its own status. */
+    /* Every payment toward the account, newest first. */
     function mpHistory(a) {
       if (!a.payments.length) return "";
       return `
@@ -299,12 +248,12 @@
               <tbody>
                 ${a.payments.map(p => `
                   <tr class="pay-row-${payEsc(p.status)}">
-                    <td>${payEsc(EbFormat.fmtDate(p.paidDate))}</td>
-                    <td><strong>${payPeso(p.amount)}</strong></td>
-                    <td>${payEsc(MP_PAY_METHOD[p.method] || "—")}</td>
-                    <td class="mono">${payEsc(p.refNum || "—")}${p.proof
+                    <td data-label="Paid on">${payEsc(EbFormat.fmtDate(p.paidDate))}</td>
+                    <td data-label="Amount"><strong>${payPeso(p.amount)}</strong></td>
+                    <td data-label="Method">${payEsc(MP_PAY_METHOD[p.method] || "—")}</td>
+                    <td class="mono" data-label="Reference">${payEsc(p.refNum || "—")}${p.proof
                       ? ` · <a href="${payEsc(EbFormat.imageUrl(p.proof))}" target="_blank" rel="noopener noreferrer">screenshot</a>` : ""}</td>
-                    <td>
+                    <td data-label="Status">
                       <span class="order-status status-${p.status === "verified" ? "paid" : p.status === "rejected" ? "overdue" : "due-soon"}">${payEsc(MP_PAY_STATUS[p.status] || p.status)}</span>
                       ${p.status === "rejected" && p.rejectReason ? `<small class="pay-days">${payEsc(p.rejectReason)}</small>` : ""}
                       ${p.source === "legacy" ? `<small class="pay-days">Settled before online payments</small>` : ""}
@@ -362,16 +311,12 @@
         btn.addEventListener("click", () => mpOpenPay(btn.dataset.payOpen)));
     }
 
-    /* The Pay form.
+    /* Pay form: the screenshot uploads on pick (unused ones are discarded), and the amount defaults to everything payable but may be lowered (api/shop/credit-pay.php re-checks). */
+    /* 42500 -> "42,500.00" for the amount box. */
+    function mpMoney(n) {
+      return Number(n).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
 
-       The screenshot is uploaded the moment it is chosen, as at checkout, and
-       the payment carries the path the server issued. A screenshot that is
-       replaced, or left behind by Cancel, is discarded so it does not sit on
-       the server with nothing pointing at it.
-
-       The amount starts at everything payable and may be lowered: a part
-       payment is normal, and the rest can be sent later. The server re-checks
-       every rule here (api/shop/credit-pay.php); this only spares a round trip. */
     function mpOpenPay(id) {
       const a = mpAccounts.find(x => x.id === id);
       const slot = document.getElementById("pay-form-" + id);
@@ -382,26 +327,51 @@
       let proofPath = null;
       slot.innerHTML = `
         <form class="pay-form" novalidate>
-          <div class="toggle-group pay-form-methods" role="group" aria-label="Payment method">
-            <button type="button" class="tg active" data-pm="gcash">GCash</button>
-            <button type="button" class="tg" data-pm="bank">Bank Transfer</button>
+          <div class="pm-tabs" role="radiogroup" aria-label="Payment method">
+            <button type="button" class="pm-tab active" role="radio" aria-checked="true" data-pm="gcash">
+              <span class="pm-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg></span>
+              <span class="pm-txt"><b>GCash</b><small>Scan the QR in your GCash app</small></span>
+              <span class="pm-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+            </button>
+            <button type="button" class="pm-tab" role="radio" aria-checked="false" data-pm="bank">
+              <span class="pm-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10 12 4l9 6"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8"/><path d="M3 21h18"/></svg></span>
+              <span class="pm-txt"><b>Bank Transfer</b><small>Send from your bank or InstaPay</small></span>
+              <span class="pm-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+            </button>
           </div>
           <div data-qr>${payQrHtml("gcash")}</div>
           <div class="field">
             <label>Amount</label>
-            <input class="control" type="number" inputmode="decimal" step="0.01" min="0.01" max="${a.payable}" value="${a.payable.toFixed(2)}" data-f="amount">
+            <div class="pay-amount">
+              <span class="pay-amount-cur" aria-hidden="true">₱</span>
+              <input class="control" type="text" inputmode="decimal" autocomplete="off" value="${mpMoney(a.payable)}" data-f="amount" aria-label="Amount in pesos">
+            </div>
             <small class="field-hint">Up to ${payPeso(a.payable)}. You can pay part now and the rest later.</small>
             <span class="field-error" data-err="amount"></span>
           </div>
-          <div class="field">
-            <label>Reference number</label>
-            <input class="control" type="text" maxlength="100" placeholder="e.g. 1234 5678 90" data-f="ref_num">
+          <div class="field" data-ref-field>
+            <label><span data-ref-label>Reference number</span></label>
+            <input class="control" type="text" maxlength="30" autocomplete="off" data-f="ref_num">
             <span class="field-error" data-err="ref_num"></span>
           </div>
           <div class="field">
             <label>Payment screenshot</label>
-            <input class="control" type="file" accept="image/png,image/jpeg,image/webp" data-f="proof">
-            <small class="field-hint" data-proof-status>PNG, JPEG or WebP.</small>
+            <label class="proof-drop" data-proof-drop>
+              <input type="file" accept="image/png,image/jpeg,image/webp" data-f="proof" hidden>
+              <span class="proof-empty">
+                <span class="proof-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg></span>
+                <span><b>Click to upload</b> or drag the screenshot here</span>
+                <small>PNG, JPEG or WebP — the receipt showing the amount and reference number</small>
+              </span>
+              <span class="proof-filled">
+                <img alt="Payment screenshot preview" data-proof-img>
+                <span class="proof-meta">
+                  <b data-proof-name></b>
+                  <small data-proof-status>Uploading…</small>
+                </span>
+                <span class="proof-change">Change</span>
+              </span>
+            </label>
             <span class="field-error" data-err="proof_image"></span>
           </div>
           <div class="pay-form-actions">
@@ -411,38 +381,79 @@
         </form>`;
 
       const form = slot.querySelector("form");
+      /* Message under the field, plus a red outline on its input; false when the form has no such field. */
       const setErr = (f, msg) => {
         const el = form.querySelector(`[data-err="${f}"]`);
         if (el) el.textContent = msg || "";
+        const input = form.querySelector(`[data-f="${f}"]`);
+        if (input) input.classList.toggle("is-invalid", !!msg);
+        return !!el;
       };
       const discard = p => {
         if (p) EbApi.post("uploads/discard.php", { path: p }).catch(() => {});
       };
 
+      /* One reference field per method (EbUI.splitRefField): GCash 13 digits, bank 6–20 letters or numbers. */
+      const refSplit = EbUI.splitRefField(form.querySelector('[data-f="ref_num"]'), () => method,
+        form.querySelector("[data-ref-field] label"));
       form.querySelectorAll("[data-pm]").forEach(b => b.addEventListener("click", () => {
         method = b.dataset.pm;
-        form.querySelectorAll("[data-pm]").forEach(x => x.classList.toggle("active", x === b));
+        refSplit.refresh();
+        form.querySelectorAll("[data-pm]").forEach(x => { x.classList.toggle("active", x === b); x.setAttribute("aria-checked", String(x === b)); });
         form.querySelector("[data-qr]").innerHTML = payQrHtml(method);
       }));
 
-      form.querySelector('[data-f="proof"]').addEventListener("change", async e => {
-        const file = e.target.files[0];
+      const drop = form.querySelector("[data-proof-drop]");
+      const proofInput = form.querySelector('[data-f="proof"]');
+      const attach = async file => {
         const status = form.querySelector("[data-proof-status]");
         setErr("proof_image", "");
         if (!file) return;
+        const img = form.querySelector("[data-proof-img]");
+        if (img.src) URL.revokeObjectURL(img.src);
+        img.src = URL.createObjectURL(file);
+        form.querySelector("[data-proof-name]").textContent = file.name;
+        drop.classList.add("has-file", "is-busy"); drop.classList.remove("is-done");
         status.textContent = "Uploading…";
         const previous = proofPath;
         proofPath = null;
         try {
           const data = await EbApi.upload(file, "references");
           proofPath = data.path;
-          status.textContent = "Screenshot attached.";
+          status.textContent = "Attached ✓";
+          drop.classList.add("is-done");
           discard(previous);
         } catch (err) {
-          status.textContent = "PNG, JPEG or WebP.";
+          drop.classList.remove("has-file");
           setErr("proof_image", (err.fields && err.fields.file) || err.message);
-          e.target.value = "";
+          proofInput.value = "";
+        } finally {
+          drop.classList.remove("is-busy");
         }
+      };
+      proofInput.addEventListener("change", e => attach(e.target.files[0]));
+      ["dragenter", "dragover"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("is-over"); }));
+      ["dragleave", "drop"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("is-over"); }));
+      drop.addEventListener("drop", e => { const f = e.dataTransfer?.files?.[0]; if (f) attach(f); });
+
+      /* Amount auto-formats with thousands separators while typing; the plain number is sent. */
+      const amt = form.querySelector('[data-f="amount"]');
+      amt.addEventListener("input", () => {
+        const raw = amt.value;
+        const before = raw.slice(0, amt.selectionStart).replace(/[^\d.]/g, "").length;
+        let clean = raw.replace(/[^\d.]/g, "");
+        const dot = clean.indexOf(".");
+        if (dot !== -1) clean = clean.slice(0, dot + 1) + clean.slice(dot + 1).replace(/\./g, "").slice(0, 2);
+        const [i, d] = clean.split(".");
+        const out = (i ? Number(i).toLocaleString("en-PH") : (d !== undefined ? "0" : "")) + (d !== undefined ? "." + d : "");
+        amt.value = out;
+        let pos = 0, seen = 0;
+        while (pos < out.length && seen < before) { if (/[\d.]/.test(out[pos])) seen++; pos++; }
+        amt.setSelectionRange(pos, pos);
+      });
+      amt.addEventListener("blur", () => {
+        const n = parseFloat(amt.value.replace(/,/g, ""));
+        if (n > 0) amt.value = mpMoney(n);
       });
 
       form.querySelector("[data-pay-cancel]").addEventListener("click", () => {
@@ -453,12 +464,16 @@
       form.addEventListener("submit", async e => {
         e.preventDefault();
         form.querySelectorAll("[data-err]").forEach(x => { x.textContent = ""; });
-        const amount = parseFloat(form.querySelector('[data-f="amount"]').value);
+        form.querySelectorAll(".is-invalid").forEach(x => x.classList.remove("is-invalid"));
+        const amount = parseFloat(form.querySelector('[data-f="amount"]').value.replace(/,/g, ""));
         const ref = form.querySelector('[data-f="ref_num"]').value.trim();
         let bad = false;
         if (!(amount > 0)) { setErr("amount", "Enter the amount you sent."); bad = true; }
         else if (amount > a.payable + 0.004) { setErr("amount", `Only ${payPeso(a.payable)} is left to pay.`); bad = true; }
+        const refClean = ref.replace(/[\s-]/g, "").toUpperCase();   /* same rule as Payments::checkRef */
         if (!ref) { setErr("ref_num", "Enter the reference number from your transfer."); bad = true; }
+        else if (method === "gcash" && !/^\d{13}$/.test(refClean)) { setErr("ref_num", "GCash reference numbers are 13 digits."); bad = true; }
+        else if (method === "bank" && !/^[A-Z0-9]{6,20}$/.test(refClean)) { setErr("ref_num", "Enter the 6–20 character reference from your bank's confirmation."); bad = true; }
         if (!proofPath) { setErr("proof_image", "Attach a screenshot of the transfer."); bad = true; }
         if (bad) return;
 
@@ -474,20 +489,18 @@
           loadMyPayments();
         } catch (err) {
           const fields = err.fields || {};
-          Object.keys(fields).forEach(k => setErr(k, fields[k]));
+          Object.keys(fields).forEach(k => { if (!setErr(k, fields[k])) showToast(fields[k], "error"); });
           if (!Object.keys(fields).length) showToast(err.message, "error");
+          form.querySelector(".is-invalid")?.focus();
           btn.disabled = false;
           btn.textContent = "Send payment";
         }
       });
     }
 
-    /* Waits for the server's answer, not for a flag. See the note on the same
-       guard in my-orders.html. */
+    /* Wait for the server's auth answer (see my-orders.html). */
     window.addEventListener("DOMContentLoaded", () => {   /* not "load": that waited for every image */
-      /* The guard, the sidebar and the sign-out button are the shell's now —
-         all three were duplicated across the four account pages. See
-         assets/js/public/profile-shell.js. */
+      /* Guard, sidebar and sign-out come from profile-shell.js. */
       EbProfileShell.mount({ page: "payments", onReady: loadMyPayments });
     });
     </script>

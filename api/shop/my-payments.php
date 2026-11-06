@@ -1,23 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/shop/my-payments.php — a retailer's Net accounts, with every payment.
- *
- * Requires a customer session; the customer must be a retailer.
- *
- * Every figure comes from Payments::describeAccount() — the same function the
- * cashier's Payment Scheme screen reads — so what a retailer is shown owing and
- * what staff see cannot differ. Nothing is calculated in the page.
- *
- * Each account carries its payments: what was sent, when, how, and whether staff
- * have verified it, with the reason when one was rejected. A retailer paying a
- * ₱13,330 balance in three transfers sees all three, what is left, and the due
- * date, in one place.
- *
- * `decidedBy` is removed before it leaves: which staff member checked a payment
- * is the business's record, not the customer's.
- */
+/** GET /api/shop/my-payments.php returns a retailer's Net accounts with every payment, using Payments::describeAccount() so it matches staff screens, without revealing which staff member decided. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -75,9 +59,7 @@ foreach ($rows as $r) {
 Response::ok([
     'accounts' => $accounts,
     'summary'  => [
-        /* What they owe today, penalties included — not the principal they were
-           billed. A figure that quietly leaves out the penalty is the one that
-           causes the argument at the counter. */
+        /* What they owe today, penalties included. */
         'totalOutstanding' => round($outstanding, 2),
         'overdueCount'     => $overdueCount,
         'dueSoonCount'     => $dueSoonCount,
@@ -86,4 +68,6 @@ Response::ok([
         'penaltyRate'      => $rate,
         'dueSoonDays'      => DUE_SOON_DAYS,
     ],
+    /* Tier credit budget: how much more they can order on Net terms. */
+    'credit'   => Payments::creditStanding($customer['id']),
 ]);

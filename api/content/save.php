@@ -1,27 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/content/save.php
- * Body: { "about"?, "vision"?, "mission"?, "contact"?: {...}, "faqs"?: [{q,a}],
- *         "hero"?: [{title, image}], "featured"?: ["prod-id", …],
- *         "payment"?: { "gcash"?: {name, number, qr}, "bank"?: {bank, name, number, qr} } }
- *
- * Requires landing.manage.
- *
- * Only the keys present in the request are written, so saving one panel cannot
- * blank the others. FAQs, hero images and the featured list are the exceptions
- * — they are ordered collections, so each is replaced wholesale when supplied,
- * inside one transaction.
- *
- * `hero` and `featured` were added closing defect 3.3. Before that this
- * endpoint accepted five keys and content/get.php returned seven: the reader
- * could hand back a hero image and a featured list that no writer anywhere in
- * the system could produce. hero_slides was NULL in all five rows and
- * featured_products had none at all.
- *
- * `hero[].image` is a PATH from api/uploads/image.php, never an image.
- */
+/** POST /api/content/save.php (needs landing.manage) writes only the keys sent, while FAQs, hero slides and featured products are each replaced as a whole inside one transaction. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -56,6 +36,35 @@ try {
         $changed[] = $k;
     }
 
+    /* Hero text over the landing image: the tagline (with one highlighted word), the line under it, and the two stats. */
+    if (isset($in['heroText']) && is_array($in['heroText'])) {
+        $ht = $in['heroText'];
+        $heroKeys = ['tagline' => 120, 'highlight' => 40, 'lead' => 240,
+                     'stat1_value' => 12, 'stat1_label' => 30, 'stat2_value' => 12, 'stat2_label' => 30];
+        foreach ($heroKeys as $k => $max) {
+            if (!array_key_exists($k, $ht)) { continue; }
+            $val = trim((string) $ht[$k]);
+            if (mb_strlen($val) > $max) {
+                $pdo->rollBack();
+                Response::validation('Check the hero text.', ['hero_' . $k => "Keep it under $max characters."]);
+            }
+            if ($k === 'tagline' && $val === '') {
+                $pdo->rollBack();
+                Response::validation('Check the hero text.', ['hero_tagline' => 'The tagline cannot be empty.']);
+            }
+            if ($k === 'highlight' && $val !== '' && mb_stripos(trim((string) ($ht['tagline'] ?? '')), $val) === false) {
+                $pdo->rollBack();
+                Response::validation('Check the hero text.', ['hero_highlight' => 'The highlighted word must appear in the tagline.']);
+            }
+            Database::run(
+                'INSERT INTO site_content (key_name, value_text) VALUES (?, ?)
+                 ON DUPLICATE KEY UPDATE value_text = VALUES(value_text)',
+                ['hero_' . $k, $val]
+            );
+        }
+        $changed[] = 'hero text';
+    }
+
     if (isset($in['contact']) && is_array($in['contact'])) {
         foreach ($contactKeys as $k) {
             if (!array_key_exists($k, $in['contact'])) {
@@ -85,8 +94,7 @@ try {
         foreach ($in['faqs'] as $f) {
             $q = trim((string) ($f['q'] ?? ''));
             $a = trim((string) ($f['a'] ?? ''));
-            /* Skip blank rows the editor leaves behind rather than storing
-               empty questions that render as gaps on the public page. */
+            /* Skip blank FAQ rows so they do not show up as gaps on the public page. */
             if ($q === '' || $a === '') {
                 continue;
             }
@@ -98,31 +106,14 @@ try {
         $changed[] = 'faqs (' . ($order - 1) . ')';
     }
 
-    /* ---- hero slide images -------------------------------------------------
-
-       THIS IS DEFECT 3.3.
-
-       This endpoint accepted about, vision, mission, contact and faqs — and
-       nothing else. content/get.php read and returned hero_slides.image_data,
-       so the READER could return a hero image and NOTHING IN THE SYSTEM COULD
-       EVER PUT ONE THERE. All five rows were NULL and structurally unfillable.
-
-       The administrator saw the image anyway, because saveLanding() mirrored
-       the whole SITE_CONTENT object into localStorage and the in-portal preview
-       iframe read it back from the same browser. Log out, or open the site
-       anywhere else, and it was gone — which is the defect exactly as reported.
-
-       Matched by title rather than by row id: the editor renders the slides it
-       was given by content/get.php, so the titles are the ones already in this
-       table. An unknown title is ignored rather than inserted — the carousel is
-       a fixed set of panels on the public page, and silently growing it from a
-       request body would put a slide on the landing page that nobody designed
-       a place for. */
+    /* Hero slide images: update existing slides by id (or title), never add new ones, so the landing page keeps its designed set of panels. */
     if (isset($in['hero']) && is_array($in['hero'])) {
         $slides = Database::all('SELECT id, title FROM hero_slides');
         $byTitle = [];
+        $byId = [];
         foreach ($slides as $s) {
             $byTitle[$s['title']] = $s['id'];
+            $byId[(int) $s['id']] = true;
         }
 
         $updated = 0;
@@ -131,15 +122,25 @@ try {
                 continue;
             }
             $title = trim((string) ($h['title'] ?? ''));
-            if ($title === '' || !isset($byTitle[$title])) {
+            /* Match by id when sent, because the title is editable now; older clients still match by title. */
+            $slideId = (int) ($h['id'] ?? 0);
+            if ($slideId > 0) {
+                if (!isset($byId[$slideId])) {
+                    continue;
+                }
+                if ($title === '' || mb_strlen($title) > 100) {
+                    $pdo->rollBack();
+                    Response::validation('Check the hero images.', [
+                        'hero' => 'Each hero slide needs a name of 1–100 characters.',
+                    ]);
+                }
+            } elseif ($title === '' || !isset($byTitle[$title])) {
                 continue;
+            } else {
+                $slideId = (int) $byTitle[$title];
             }
 
-            /* Accepts the path api/uploads/image.php returned, or an empty
-               string meaning "remove this slide's photo". Validated to the
-               exact shape that endpoint produces — a landing.manage holder is
-               trusted staff, but a stored path ends up in an <img src> on the
-               public storefront, so it is checked rather than assumed. */
+            /* Accept only an image path in the exact format api/uploads/image.php produces (or empty to remove), because it ends up in a public <img src>. */
             $path = trim((string) ($h['image'] ?? $h['img'] ?? ''));
 
             if ($path !== '') {
@@ -164,8 +165,8 @@ try {
             }
 
             Database::run(
-                'UPDATE hero_slides SET image_path = ? WHERE id = ?',
-                [$path !== '' ? $path : null, $byTitle[$title]]
+                'UPDATE hero_slides SET title = ?, image_path = ? WHERE id = ?',
+                [$title, $path !== '' ? $path : null, $slideId]
             );
             $updated++;
         }
@@ -174,16 +175,7 @@ try {
         }
     }
 
-    /* ---- featured products -------------------------------------------------
-
-       The same shape of gap as the hero images, one table over. saveLanding()
-       has always computed the ticked list (`SITE_CONTENT.featured`) and never
-       sent it; this endpoint never accepted it; featured_products has 0 rows
-       and content/get.php reads it on every storefront load.
-
-       Replaced wholesale, so unticking a product actually unfeatures it. An
-       empty list is a real answer and means "fall back to each product's own
-       is_best flag", which is what the carousel already does. */
+    /* Featured products are replaced as a whole so unticking one really unfeatures it, and an empty list falls back to each product's is_best flag. */
     if (isset($in['featured']) && is_array($in['featured'])) {
         if (count($in['featured']) > 24) {
             $pdo->rollBack();
@@ -199,9 +191,7 @@ try {
             if ($pid === '') {
                 continue;
             }
-            /* The product must exist. The FK would refuse anyway, but a 500 out
-               of a foreign-key violation tells the administrator nothing about
-               which product went missing. */
+            /* Check the product exists first, so the admin gets a clear message instead of a foreign-key 500. */
             if (!Database::scalar('SELECT COUNT(*) FROM products WHERE id = ?', [$pid])) {
                 $pdo->rollBack();
                 Response::validation('Check the featured products.', [
@@ -216,15 +206,7 @@ try {
         $changed[] = 'featured (' . ($order - 1) . ')';
     }
 
-    /* ---- official payment accounts (GCash, bank transfer) -------------------
-       Where customers SEND money: the account name, number and QR code shown at
-       checkout and on a retailer's Pay form. Stored as flat site_content keys
-       (pay_gcash_name, pay_bank_qr, …) like the contact details beside them, so
-       no table is needed for six short values.
-
-       A QR path is validated to the exact shape api/uploads/image.php produces
-       and must exist on disk: it ends up in an <img src> on the public
-       storefront. An empty string removes it. */
+    /* Payment accounts (GCash, bank) are stored as flat site_content keys, and any QR path must match the upload format and exist on disk because it is shown publicly. */
     if (isset($in['payment']) && is_array($in['payment'])) {
         $PAY_FIELDS = [
             'gcash' => ['name' => 100, 'number' => 40, 'qr' => 0],

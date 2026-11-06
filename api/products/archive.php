@@ -1,28 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/products/archive.php
- * Body: { "id": "db-masala", "archived": true }
- *
- * Requires products.manage OR inventory.manage.
- *
- * Two permissions, deliberately. The inventory.manage grant is labelled
- * "Restock, adjust & archive inventory" and Inventory Staff hold it — archiving
- * a line that is out of production is part of running stock, not a catalogue
- * privilege reserved for admins. Requiring products.manage alone meant the
- * Archive tab rendered for Inventory Staff and every button on it returned 403.
- *
- * This widens who may archive, and nothing else. Creating, pricing and editing
- * products still require products.manage in create.php and update.php, so an
- * Inventory Staff member can take a product off the shelf but cannot add one,
- * rename one, or change what it costs.
- *
- * Archive, never delete. Orders and batches reference products, and the schema
- * enforces that with ON DELETE RESTRICT — a deleted product would either break
- * order history or take it with it. Archiving hides the product from the shop
- * and from POS while leaving every past transaction intact and readable.
- */
+/** POST /api/products/archive.php (needs products.manage or inventory.manage) hides a product from the shop and POS without deleting it, keeping all past orders intact. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -53,9 +32,7 @@ if ((bool) $product['archived'] === $archive) {
 
 Database::run('UPDATE products SET archived = ? WHERE id = ?', [$archive ? 1 : 0, $product['id']]);
 
-/* Stock does not vanish when a product is archived, and pretending otherwise
-   would misreport inventory value. Worth surfacing so it is a decision rather
-   than a surprise. */
+/* Warn that archiving does not remove the product's remaining stock. */
 $note = ($archive && (int) $product['stock'] > 0)
     ? sprintf(' Note: %d units remain in stock and are still counted in inventory.', $product['stock'])
     : '';

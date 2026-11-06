@@ -2,11 +2,11 @@
 <html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>My Profile — Elisha Bay</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="../../assets/css/public/styles.css" />
     <link rel="stylesheet" href="../../assets/css/public/profile.css" />
       <!-- Theme before first paint: Light / Dark / System (no flash). -->
@@ -53,24 +53,7 @@
     <!-- ===== SCAFFOLDING required by script.js ===== -->
     <div id="modal-scrim" class="modal-scrim">
       <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <!-- #modal-title WAS MISSING FROM THIS PAGE, AND THAT BROKE EVERY MODAL.
-
-             openModal() opens with `$("#modal-title").textContent = title`. With
-             no such element that line threw before anything opened, so SIGN IN
-             on the signed-out guard and Proceed to Checkout in the cart both
-             looked like dead buttons on all four profile pages while working
-             fine on index.html and shop.html, which have it.
-
-             aria-labelledby="modal-title" was already here, pointing at nothing
-             — a dangling reference, so role="dialog" also had no accessible
-             name. Both are fixed by the element existing.
-
-             The `modal-body` CLASS was missing too; .modal-body carries the
-             dialog's 18px/26px padding, so content sat flush against the edges.
-
-             Same drift as #toast-wrap vs #toast-root, written up on showToast().
-             The shared shell in assets/js/public/modal-shell.js now owns this
-             markup so the copies cannot diverge again. -->
+        <!-- The modal markup (with #modal-title and .modal-body) is required; modal-shell.js now ensures it. -->
         <div class="modal-head">
           <h3 id="modal-title"></h3>
           <button class="modal-close" id="modal-close" aria-label="Close dialog">
@@ -111,11 +94,7 @@
           <div class="mp-account-layout">
 
             <!-- ── LEFT SIDEBAR NAV ── -->
-            <!-- Rendered by EbProfileShell. This was forty lines of markup
-                 repeated on every account page — which is how the same person
-                 came to be tagged "CUSTOMER" here and "Retail Partner" one
-                 page over, and how one link ended up revealed-but-never-hidden
-                 in three files at once. -->
+            <!-- Sidebar rendered by EbProfileShell. -->
             <aside class="mp-account-sidebar" id="mp-sidebar"></aside>
 
             <!-- ── MAIN CONTENT ── -->
@@ -131,8 +110,7 @@
             <p class="mp-sub">Manage your account information and preferences.</p>
           </div>
 
-            <!-- Section tabs, same look as History / My Orders: one section
-                 shown at a time instead of three stacked forms. -->
+            <!-- Section tabs, one section shown at a time. -->
             <div class="hist-tabs hist-tabs--3" id="pf-tabs" role="tablist">
               <button class="hist-tab active" data-pane="info" role="tab" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Personal</span></button>
               <button class="hist-tab" data-pane="address" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Address</span></button>
@@ -147,27 +125,32 @@
                 <div class="pc-head"><span class="pc-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><div><div class="pc-title">Personal Information</div><div class="pc-desc">Your name and how we reach you about orders.</div></div></div>
                 <form id="form-info" novalidate>
                   <div class="profile-form-grid">
-                    <!-- First + last name, stored separately (migration 019);
-                         the account's display name is "first last". -->
+                    <!-- First and last name stored separately (migration 019). -->
                     <div class="field">
                       <label for="pf-first">First Name *</label>
                       <input class="control" id="pf-first" type="text" placeholder="Juan" autocomplete="given-name" />
                       <span class="field-error" id="err-first_name"></span>
                     </div>
                     <div class="field">
+                      <label for="pf-middle">Middle Name <span class="auth-opt">(optional)</span></label>
+                      <input class="control" id="pf-middle" type="text" placeholder="Dizon" autocomplete="additional-name" />
+                      <span class="field-error" id="err-middle_name"></span>
+                    </div>
+                    <div class="field">
                       <label for="pf-last">Last Name *</label>
-                      <input class="control" id="pf-last" type="text" placeholder="dela Cruz" autocomplete="family-name" />
+                      <input class="control" id="pf-last" type="text" placeholder="Dela Cruz" autocomplete="family-name" />
                       <span class="field-error" id="err-last_name"></span>
+                      <small class="auth-name-preview" id="pf-name-preview" hidden></small>
                     </div>
                     <div class="field full">
                       <label for="pf-email">Email Address</label>
-                      <input class="control" id="pf-email" type="email" placeholder="juan@example.com" />
+                      <input class="control" id="pf-email" type="email" autocomplete="email" placeholder="juan@example.com" />
                       <span class="field-hint">A verification code will be sent to confirm email changes.</span>
                       <span class="field-error" id="err-email"></span>
                     </div>
                     <div class="field full">
                       <label for="pf-phone">Contact Number</label>
-                      <input class="control" id="pf-phone" type="tel" placeholder="09xx xxx xxxx" />
+                      <input class="control" id="pf-phone" type="tel" autocomplete="tel" placeholder="09xx xxx xxxx" />
                       <span class="field-error" id="err-phone"></span>
                     </div>
                   </div>
@@ -178,14 +161,7 @@
                 </form>
               </div>
 
-              <!-- Emailed verification code.
-
-                   The hint under the email input has always read "A
-                   verification code will be sent to confirm email changes" —
-                   the page promised this before anything implemented it. The
-                   panel is hidden until api/shop/profile.php answers
-                   requiresVerification, and the change is NOT claimed as saved
-                   until api/shop/verify-code.php returns. -->
+              <!-- Verification code panel, shown only when the server requires one; the change counts as saved only after verify-code.php confirms. -->
               <div class="profile-card hide" id="section-verify" data-pane="info">
                 <div class="pc-head"><span class="pc-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span><div><div class="pc-title">Confirm your change</div><div class="pc-desc">Enter the code we emailed you.</div></div></div>
                 <p id="vc-intro" class="field-hint" style="margin-bottom:14px"></p>
@@ -213,13 +189,7 @@
               <div class="profile-card" id="section-address" data-pane="address" hidden>
                 <div class="pc-head"><span class="pc-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span><div><div class="pc-title">Delivery Address</div><div class="pc-desc">Used to prefill checkout for delivery orders.</div></div></div>
                 <form id="form-address" novalidate>
-                  <!-- The shared address picker (assets/js/public/address-picker.js),
-                       rendered into this host by the script below. It replaced five
-                       free-text boxes — region, province and city typed by hand —
-                       which were a fourth, independent writer of the very columns
-                       checkout and Create Account now fill from PSGC codes. Left
-                       as text, editing a profile would have saved a city NAME that
-                       no longer matched the saved city CODE. -->
+                  <!-- The shared address picker, rendered here by the script below. -->
                   <div id="pf-addr-host"></div>
                   <div class="profile-form-actions">
                     <button type="button" class="btn btn-ghost" id="btn-addr-cancel">Cancel</button>
@@ -246,7 +216,7 @@
                     <div class="field">
                       <label for="pf-new-pw">New Password</label>
                       <div class="pw-row">
-                        <input class="control" id="pf-new-pw" type="password" placeholder="Min. 8 characters" autocomplete="new-password" />
+                        <input class="control" id="pf-new-pw" type="password" placeholder="Create a strong password" autocomplete="new-password" />
                         <button type="button" class="pw-eye" data-eye="pf-new-pw" aria-label="Toggle">
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12S5 4 12 4s11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
                         </button>
@@ -290,8 +260,9 @@
     function fillName() {
       const full = (state.auth.name || "").trim();
       const p = nameParts || { firstName: full.split(" ").slice(0, -1).join(" ") || full, lastName: full.includes(" ") ? full.split(" ").pop() : "" };
-      document.getElementById("pf-first").value = p.firstName || "";
-      document.getElementById("pf-last").value  = p.lastName || "";
+      document.getElementById("pf-first").value  = p.firstName || "";
+      document.getElementById("pf-middle").value = p.middleName || "";
+      document.getElementById("pf-last").value   = p.lastName || "";
     }
 
     function initProfile() {
@@ -299,21 +270,16 @@
       const parts = name.split(" ");
       const initials = parts.map(s => s[0]).slice(0, 2).join("").toUpperCase();
 
-      /* The avatar, the name, the role tag, the Payment Schemes link and the
-         sign-out button all moved to EbProfileShell — they were written out
-         once per account page and had already drifted (the same person read
-         "Customer" on one page and "Retail Partner" on the next). */
+      /* The sidebar parts are rendered by EbProfileShell. */
 
       /* Pre-fill the name halves (server's stored or suggested split). */
       fillName();
 
-      /* Everything below attaches listeners. initProfile() runs again after a
-         save to refresh the fields, and re-attaching made each later save fire
-         twice (two "Personal info saved." toasts). Wire once. */
+      /* Wire listeners only once, since initProfile() runs again after saves. */
       if (initProfile.wired) return;
       initProfile.wired = true;
 
-      /* Section tabs. #address / #security in the URL open that tab. */
+      /* Section tabs; #address or #security in the URL opens that tab. */
       const showPane = name => {
         document.querySelectorAll("#pf-tabs .hist-tab").forEach(t => {
           const on = t.dataset.pane === name;
@@ -344,28 +310,23 @@
         });
       });
 
-      /* Personal info form — also a mock until now: it set state.auth.name in
-         memory, re-rendered, and said "Personal info updated!". A reload put
-         the old name back. */
+      /* Personal info form saves to the server. */
       document.getElementById("form-info").addEventListener("submit", async e => {
         e.preventDefault();
         const first = document.getElementById("pf-first").value.trim().replace(/\s+/g, " ");
         const last  = document.getElementById("pf-last").value.trim().replace(/\s+/g, " ");
+        const middle = document.getElementById("pf-middle").value.trim().replace(/\s+/g, " ");
         document.getElementById("err-first_name").textContent = first ? "" : "Required";
         document.getElementById("err-last_name").textContent  = last ? "" : "Required";
         if (!first || !last) return;
         const phone = document.getElementById("pf-phone").value.trim();
         const email = document.getElementById("pf-email").value.trim();
         try {
-          /* Email is sent now. It used to be omitted because the endpoint
-             refused it outright; it is accepted behind an emailed code, which
-             is what the hint under that input has always promised. */
+          /* Email is sent and accepted behind an emailed code. */
           const { data } = await EbApi.post("shop/profile.php",
-            { first_name: first, last_name: last, contact: phone, email });
+            { first_name: first, middle_name: middle, last_name: last, contact: phone, email });
 
-          /* The name and address halves are already saved at this point. If
-             anything sensitive changed, the server held it back and issued a
-             code — say so instead of claiming a save that has not happened. */
+          /* If something sensitive changed, say a code was sent instead of claiming it saved. */
           if (data.requiresVerification) {
             openVerifyPanel(data);
             return;
@@ -373,7 +334,7 @@
 
           /* The screen shows what the SERVER stored, not what was typed. */
           state.auth.name = data.name;
-          nameParts = { firstName: data.firstName, lastName: data.lastName };
+          nameParts = { firstName: data.firstName, middleName: data.middleName || "", lastName: data.lastName };
           renderAccount();
           initProfile();
           showToast("Personal info saved.", "success");
@@ -392,11 +353,7 @@
         fillName();
       });
 
-      /* ---- emailed verification code -------------------------------------
-
-         Nothing here claims the change was saved. The panel appears when the
-         server says a code was issued, and disappears only when
-         verify-code.php confirms it. */
+      /* Emailed verification code: the panel shows when a code is issued and hides once verify-code.php confirms. */
       let vcTicket = null, vcTimer = null;
 
       function openVerifyPanel(data) {
@@ -404,10 +361,7 @@
         const panel = document.getElementById("section-verify");
         panel.classList.remove("hide");
 
-        /* Says plainly where the code went — or that it did not, on an install
-           with no SMTP configured. Mailer::isLive() is the same distinction
-           api/b2b/decide.php reports for the same reason: a page that claims an
-           email was sent when it was written to a log file is lying. */
+        /* Say where the code went, or that no email is configured (Mailer::isLive()). */
         const intro = document.getElementById("vc-intro");
         if (data.mailLive) {
           intro.textContent = "We sent a 6-digit code to your current email address. Enter it below to confirm the change.";
@@ -453,18 +407,13 @@
 
       document.getElementById("btn-vc-cancel").addEventListener("click", () => {
         closeVerifyPanel();
-        /* The pending change is abandoned, not applied — nothing was written
-           when the code was issued, so there is nothing to undo. The form is
-           reloaded so it shows what is actually stored. */
+        /* Cancel abandons the pending change and reloads the form. */
         loadProfile();
         showToast("Change cancelled.", "info");
       });
 
       document.getElementById("btn-vc-resend").addEventListener("click", async () => {
-        /* Re-submits the same change. The server reuses an unexpired code
-           issued in the last minute rather than minting a new one — otherwise
-           Resend invalidates the code already in the customer's inbox and they
-           are told the one they can see is wrong. */
+        /* Resend re-submits the change; the server reuses a recent valid code. */
         const btn = document.getElementById("btn-vc-resend");
         const restore = (l => { btn.disabled = true; btn.textContent = "Sending…";
                                 return () => { btn.disabled = false; btn.textContent = l; }; })(btn.textContent);
@@ -505,32 +454,18 @@
           initProfile();
           showToast("Change confirmed.", "success");
         } catch (err) {
-          /* A wrong code counts down aloud; an expired or spent one says to
-             start again. Both come from the server, which is the only thing
-             that knows how many attempts are left. */
+          /* Show the server's attempts-left or start-again message. */
           if (err.isValidation && err.fields.code) errEl.textContent = err.fields.code;
           else { errEl.textContent = err.message; }
         }
       });
 
-      /* Address form — now actually saves.
-
-         This handler used to validate that the street was non-empty, call
-         showToast("Address saved!") and write NOTHING. No endpoint existed. A
-         customer could "save" their address every day and the database would
-         never hear about it — and it is the reason the checkout had nothing to
-         prefill from. */
-      /* THE ADDRESS PANEL IS THE SHARED PICKER.
-
-         OPTIONAL here — clearing every field and saving removes the saved
-         address, which is a legitimate thing to want — but anything started
-         must be finished, exactly as shop/profile.php enforces. */
+      /* Address form saves to the server. */
+      /* The address is optional here (clearing all fields removes it), but anything started must be finished. */
       let savedAddress = null;
       let pfAddr = null;
 
-      /* Build the picker fresh and prefill it from what is SAVED. Used on load
-         and by Cancel: the picker's own prefill never overwrites a choice, so
-         restoring means starting from an empty picker, not writing over one. */
+      /* Rebuild the picker and prefill it from the saved address (used on load and by Cancel). */
       function renderAddress() {
         const host = document.getElementById("pf-addr-host");
         host.innerHTML = EbAddress.markup("pf", { variant: "field", required: false });
@@ -542,18 +477,14 @@
         try {
           const { data } = await EbApi.get("shop/profile.php");
           document.getElementById("pf-phone").value = data.contact || "";
-          /* The email input was never populated, because the endpoint refused
-             email changes and the field was decorative. It is a real, editable
-             field now — behind a code — so it has to show what is stored, or a
-             save posts an empty address and is refused. */
+          /* Show the stored email in the field. */
           document.getElementById("pf-email").value = data.email || "";
           savedAddress = data.address;
           renderAddress();
-          nameParts = { firstName: data.firstName, lastName: data.lastName };
+          nameParts = { firstName: data.firstName, middleName: data.middleName || "", lastName: data.lastName };
           fillName();
         } catch (err) {
-          /* 401 means not signed in, which the page already handles by showing
-             its signed-out state. Anything else is worth saying. */
+          /* 401 is handled by the signed-out state; other errors are shown. */
           if (!err.isAuth) showToast("Could not load your profile: " + err.message, "info");
         }
       }
@@ -574,12 +505,11 @@
           }
         }
       });
-      /* Cancel restores what is SAVED rather than blanking every field. Wiping
-         the form was indistinguishable from "delete my address", and there was
-         no way back from it. */
+      /* Cancel restores the saved address instead of blanking the form. */
       document.getElementById("btn-addr-cancel").addEventListener("click", renderAddress);
 
-      /* Security form */
+      /* Security form; the checklist under New Password shows the rules (mountPwChecklist in site.js). */
+      const pwMissing = mountPwChecklist(document.getElementById("pf-new-pw"));
       document.getElementById("form-security").addEventListener("submit", async e => {
         e.preventDefault();
         const cur = document.getElementById("pf-cur-pw").value;
@@ -592,31 +522,23 @@
 
         let ok = true;
         if (!cur) { document.getElementById("err-cur-pw").textContent = "Enter current password"; ok = false; }
-        if (nw.length < 8) { document.getElementById("err-new-pw").textContent = "Min. 8 characters"; ok = false; }
+        const miss = pwMissing();
+        if (miss) { document.getElementById("err-new-pw").textContent = `Your password needs: ${miss.label.toLowerCase()}.`; ok = false; }
         if (nw !== con) { document.getElementById("err-confirm-pw").textContent = "Passwords do not match"; ok = false; }
         if (!ok) return;
 
-        /* THIS USED TO BE A MOCK. It cleared the fields and showed
-           "Password updated successfully!" while writing nothing — so a
-           customer who believed their password had changed would try the new
-           one, fail, and have no way to understand why.
-
-           api/shop/password.php re-verifies the current password, is rate
-           limited on the same counter as sign-in, and regenerates the session
-           id so any other session on the old id dies. */
+        /* Password change via api/shop/password.php (re-verifies, rate limited, regenerates the session). */
         try {
           await EbApi.post("shop/password.php", {
             current_password: cur, new_password: nw, confirm_password: con,
           });
           document.getElementById("pf-cur-pw").value = "";
           document.getElementById("pf-new-pw").value = "";
+          document.getElementById("pf-new-pw").dispatchEvent(new Event("input"));
           document.getElementById("pf-confirm-pw").value = "";
           showToast("Password changed.", "success");
         } catch (err) {
-          /* Field errors land on their own input. The fields are NOT cleared on
-             failure — retyping all three because one was wrong is its own small
-             cruelty, and the current-password box is the only one that could be
-             at fault. */
+          /* Show field errors on their inputs without clearing the fields. */
           if (err.isValidation) {
             const map = { current_password: "err-cur-pw", new_password: "err-new-pw", confirm_password: "err-confirm-pw" };
             let shown = false;
@@ -634,28 +556,9 @@
 
     }
 
-    /* Auth guard.
-
-       THIS USED TO SAMPLE state.auth.loggedIn ONCE, at window.load.
-
-       bootstrapCustomer() is asynchronous, so at that moment the flag is still
-       its fail-closed initial `false` (D8) no matter who is signed in. A
-       signed-in customer opening their own profile was shown the "please sign
-       in" panel with the entire page hidden, and nothing ever re-checked — the
-       retry loop below only ran while `state` itself was undefined, which it
-       stops being almost immediately.
-
-       The page was correctly wired and displayed the wrong answer. Observed
-       directly: state.auth.loggedIn was `true` while #mp-guard was still
-       `display:block`.
-
-       It now waits for the SERVER's answer via whenAuthReady(), which resolves
-       from an event site.js fires after shop/me.php has replied — and resolves
-       immediately if that already happened. */
+    /* Auth guard waits for the server's answer via whenAuthReady() instead of checking a flag once at load. */
     window.addEventListener("DOMContentLoaded", () => {   /* not "load": that waited for every image */
-      /* The guard, the sidebar and the sign-out button are the shell's now —
-         all three were duplicated across the four account pages. See
-         assets/js/public/profile-shell.js. */
+      /* Guard, sidebar and sign-out come from profile-shell.js. */
       EbProfileShell.mount({ page: "profile", onReady: initProfile });
     });
     </script>

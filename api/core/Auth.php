@@ -1,24 +1,86 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Server-side authentication.
- *
- * Replaces the previous arrangement entirely: the browser used to hold a
- * STAFF_ACCOUNTS array with plaintext passwords and compare them in JS, which
- * meant every visitor was served every staff credential. Nothing here trusts
- * the client — the session cookie is the only thing the browser gets, and the
- * role is read back out of the database on every request.
- */
+/** Server-side authentication: the browser only gets a session cookie, and the role is re-read from the database on every request. */
 final class Auth
 {
     private const SESSION_USER = 'eb_user_id';
     private const SESSION_TIME = 'eb_last_seen';
-    /* Customers are a separate table and a separate session key on purpose.
-       A shopper signing in must never land in the same slot that grants staff
-       permissions — one key holding either kind of identity is exactly how a
-       customer ends up passing an Rbac check. */
+    /* Customers use a separate table and session key so a shopper's login can never pass a staff permission check. */
     private const SESSION_CUSTOMER = 'eb_customer_id';
+    /* A short fingerprint of the password hash, saved at sign-in. When the password changes, every other session's
+       fingerprint no longer matches the database and that session is signed out on its next request. */
+    private const SESSION_PW_STAFF    = 'eb_pw_stamp';
+    private const SESSION_PW_CUSTOMER = 'eb_cpw_stamp';
+
+    /** Fingerprint of a password hash (never the hash itself) for the session. */
+    private static function pwStamp(?string $hash): string
+    {
+        return substr(hash('sha256', (string) $hash), 0, 20);
+    }
+
+    /* One session per account: each sign-in issues a token kept in active_sessions (migration 026); a session whose token
+       is no longer the account's latest was replaced by a newer sign-in elsewhere and is signed out. */
+    private const SESSION_TOKEN_STAFF    = 'eb_sess_token';
+    private const SESSION_TOKEN_CUSTOMER = 'eb_csess_token';
+    private static ?bool $hasSessions = null;
+
+    private static function sessionsReady(): bool
+    {
+        return self::$hasSessions ??= Database::hasTable('active_sessions');
+    }
+
+    /** Make this browser the account's only signed-in session (called at every sign-in). */
+    private static function claimSession(string $type, string $id): void
+    {
+        $token = bin2hex(random_bytes(16));
+        $_SESSION[$type === 'staff' ? self::SESSION_TOKEN_STAFF : self::SESSION_TOKEN_CUSTOMER] = $token;
+        if (!self::sessionsReady()) { return; }
+        Database::run(
+            'INSERT INTO active_sessions (account_type, account_id, token) VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE token = VALUES(token)',
+            [$type, $id, $token]
+        );
+    }
+
+    /** False when another sign-in of this account has replaced this session. Sessions from before the check adopt the slot if it is free. */
+    private static function sessionIsCurrent(string $type, string $id): bool
+    {
+        if (!self::sessionsReady()) { return true; }
+        $key  = $type === 'staff' ? self::SESSION_TOKEN_STAFF : self::SESSION_TOKEN_CUSTOMER;
+        $mine = $_SESSION[$key] ?? null;
+        $live = Database::scalar('SELECT token FROM active_sessions WHERE account_type = ? AND account_id = ?', [$type, $id]);
+        if (!is_string($live) || $live === '') {
+            if ($mine === null) { self::claimSession($type, $id); return true; }
+            Database::run('INSERT IGNORE INTO active_sessions (account_type, account_id, token) VALUES (?, ?, ?)', [$type, $id, $mine]);
+            return true;
+        }
+        return is_string($mine) && hash_equals($live, $mine);
+    }
+
+    /** Leave a short-lived note so the sign-in page can explain why this browser was signed out. */
+    private static function noteSignedOutElsewhere(): void
+    {
+        if (headers_sent()) { return; }
+        setcookie('eb_signed_out', 'elsewhere', [
+            'expires'  => time() + 300,
+            'path'     => Database::config()['app']['base_path'] ?? '/',
+            'samesite' => 'Lax',
+        ]);
+    }
+
+    /** After a password change, keep THIS session signed in by saving the new fingerprint; all other sessions drop out. */
+    public static function refreshPasswordStamp(): void
+    {
+        if (isset($_SESSION[self::SESSION_USER])) {
+            $h = Database::scalar('SELECT password FROM users WHERE id = ?', [$_SESSION[self::SESSION_USER]]);
+            $_SESSION[self::SESSION_PW_STAFF] = self::pwStamp(is_string($h) ? $h : null);
+        }
+        if (isset($_SESSION[self::SESSION_CUSTOMER])) {
+            $h = Database::scalar('SELECT password FROM customers WHERE id = ?', [$_SESSION[self::SESSION_CUSTOMER]]);
+            $_SESSION[self::SESSION_PW_CUSTOMER] = self::pwStamp(is_string($h) ? $h : null);
+        }
+    }
 
     private static ?array $user = null;
     private static ?array $customer = null;
@@ -41,8 +103,7 @@ final class Auth
         ]);
         session_start();
 
-        /* Idle timeout. Checked here rather than relying on the cookie so that
-           a stolen session id also expires. */
+        /* Idle timeout is checked on the server so even a stolen session id expires. */
         $lifetime = (int) ($sec['session_lifetime'] ?? 7200);
         if (isset($_SESSION[self::SESSION_TIME]) && (time() - $_SESSION[self::SESSION_TIME]) > $lifetime) {
             self::logout();
@@ -50,20 +111,10 @@ final class Auth
         $_SESSION[self::SESSION_TIME] = time();
     }
 
-    /**
-     * Verify credentials and start a session.
-     *
-     * Returns the user row on success. On failure it throws the standard
-     * error response — deliberately the same message whether the email is
-     * unknown or the password is wrong, so the endpoint cannot be used to
-     * enumerate which staff addresses exist.
-     */
+    /** Check staff credentials and start a session; an unknown email and a wrong password get separate messages (fields.email / fields.password), as the course requires, with the lockout still slowing guessing. */
     public static function attempt(string $email, string $password): array
     {
-        /* CTX_STAFF: the same free attempts as a customer, but escalating to a
-           30-minute ceiling rather than 10. These accounts adjust stock, issue
-           refunds and, for Super Admin, edit the permission table — see the
-           note on Lockout::CTX_STAFF. */
+        /* Staff accounts use CTX_STAFF, which has a longer (30-minute) lockout ceiling than customers. */
         Lockout::enforce($email, Lockout::CTX_STAFF);
 
         $user = Database::one(
@@ -77,23 +128,18 @@ final class Auth
 
         $ok = $user !== null && password_verify($password, $user['password']);
 
-        /* password_verify on a dummy hash when the user does not exist, so a
-           missing account and a wrong password take a similar amount of time.
-           Skipping it would make user enumeration possible by stopwatch. */
+        /* Run password_verify on a dummy hash when the user does not exist, so timing does not reveal which emails exist. */
         if ($user === null) {
             password_verify($password, '$2y$10$usesomesillystringfteonwiuhefoiwehfoiwehfoiwehfoiweh');
         }
 
         if (!$ok) {
-            /* Refuses with the lockout message instead if this failure is the
-               one that crossed the threshold — see Lockout::recordFailure. */
+            /* Shows the lockout message instead if this failure crossed the limit (see Lockout::recordFailure). */
             Lockout::recordFailure($email, Lockout::CTX_STAFF);
-            Response::error('UNAUTHENTICATED', 'Email or password is incorrect.', 401);
+            Response::error('UNAUTHENTICATED', ...self::badLogin($user === null, $email, Lockout::CTX_STAFF));
         }
 
-        /* An archived account keeps its row and its history but must not be
-           able to sign in. The old client-side check did this too; it is
-           repeated here because that check no longer counts for anything. */
+        /* Archived accounts keep their history but cannot sign in. */
         if ($user['status'] === 'archived') {
             Lockout::record($email, false, Lockout::CTX_STAFF);
             Response::forbidden('This account has been archived. Contact an administrator.');
@@ -106,40 +152,24 @@ final class Auth
 
         Lockout::record($email, true, Lockout::CTX_STAFF);
 
-        /* New session id on privilege change — stops session fixation, where
-           an attacker plants a known session id before the victim logs in. */
+        /* Issue a new session id at sign-in to prevent session fixation. */
         session_regenerate_id(true);
 
         $_SESSION[self::SESSION_USER] = $user['id'];
         $_SESSION[self::SESSION_TIME] = time();
+        $_SESSION[self::SESSION_PW_STAFF] = self::pwStamp($user['password']);
+        self::claimSession('staff', (string) $user['id']);
 
         unset($user['password']);
         self::$user = $user;
         return $user;
     }
 
-    /* ------------------------------------------------------------------
-       Customer authentication.
-
-       Deliberately separate from staff sign-in: different table, different
-       session key, no role and no permissions. A customer session satisfies
-       requireCustomer() and nothing else — Rbac::require() and Auth::require()
-       both still refuse it.
-       ------------------------------------------------------------------ */
+    /* Customer authentication: separate table and session key, no role or permissions, so it only satisfies requireCustomer(). */
 
     public static function attemptCustomer(string $email, string $password): array
     {
-        /* THIS PATH WAS NOT THROTTLED AT ALL, and that was the real gap.
-
-           attempt(), reauthenticateStaff() and reauthenticateCustomer() all
-           called throttle(); customer SIGN-IN never did. So the storefront —
-           the one login form on the public internet — accepted unlimited
-           password guesses, while the password-change form behind a session was
-           rate limited. The rows in login_attempts for customer addresses came
-           from those other paths, which is why the counter looked alive.
-
-           It also means a lockout could not have been the cause of a customer
-           being told "incorrect": there was no lockout here to misreport. */
+        /* Customer sign-in is now throttled too, since it is the public login form and previously allowed unlimited guesses. */
         Lockout::enforce($email, Lockout::CTX_CUSTOMER);
 
         $c = Database::one(
@@ -150,73 +180,65 @@ final class Auth
         $ok = $c !== null && $c['password'] !== null && password_verify($password, $c['password']);
 
         if ($c === null || $c['password'] === null) {
-            /* Same dummy-hash timing guard as the staff path, and the same
-               single message, so this cannot be used to discover which email
-               addresses have accounts. */
+            /* Same dummy-hash timing guard and single message as staff, so customer emails cannot be discovered. */
             password_verify($password, '$2y$10$usesomesillystringfteonwiuhefoiwehfoiwehfoiwehfoiweh');
         }
 
         if (!$ok) {
             Lockout::recordFailure($email, Lockout::CTX_CUSTOMER);
-            /* ONE MESSAGE FOR THREE CASES, AND IT SAYS WHAT TO DO NEXT.
-
-               Wrong password, unknown email, and a record with password NULL
-               all land here with identical wording. Splitting them was
-               requested and is the thing this comment exists to argue against:
-               "that email has no password set" tells an attacker the address is
-               registered, which is precisely the enumeration the dummy-hash
-               above spends time preventing. A staff-created customer record and
-               a stranger's address must be indistinguishable from outside.
-
-               What CAN be fixed without leaking anything is the advice. The old
-               text sent a passwordless customer — every account an
-               administrator has ever created through Add Customer — back to
-               retype a password that was already correct, forever. The second
-               sentence is true for all three cases and actionable in the one
-               that needs it. The state itself is now visible where it is safe
-               to show it: to staff, in Customer Accounts. */
-            Response::error(
-                'UNAUTHENTICATED',
-                'Email or password is incorrect. If you have not set a password for '
-                . 'this email yet, use Sign Up to create one.',
-                401
-            );
+            /* An unregistered email (or one with no password yet) and a wrong password get separate messages. */
+            Response::error('UNAUTHENTICATED', ...self::badLogin($c === null || $c['password'] === null, $email, Lockout::CTX_CUSTOMER));
         }
         if ($c['status'] === 'archived') {
             Lockout::record($email, false, Lockout::CTX_CUSTOMER);
             Response::forbidden('This account is no longer active. Please contact us.');
         }
 
-        /* Clears the streak. Without this the customer path would count
-           failures and never forgive them. */
+        /* Clear the failure streak after a successful sign-in. */
         Lockout::record($email, true, Lockout::CTX_CUSTOMER);
 
         session_regenerate_id(true);
         $_SESSION[self::SESSION_CUSTOMER] = $c['id'];
         $_SESSION[self::SESSION_TIME] = time();
+        $_SESSION[self::SESSION_PW_CUSTOMER] = self::pwStamp($c['password']);
+        self::claimSession('customer', (string) $c['id']);
 
         unset($c['password']);
         return self::$customer = $c;
     }
 
-    /**
-     * Sign in a customer by id, with no password check. ONLY for a sign-up the
-     * caller has just verified by emailed code (shop/register-verify.php) —
-     * the plain password is never kept, so attemptCustomer() cannot be used.
-     */
+    /** Message, status and field for a failed sign-in: "not registered" on the email field, or "incorrect password" with tries left on the password field. */
+    private static function badLogin(bool $unknownEmail, string $email, string $context): array
+    {
+        if ($unknownEmail) {
+            $msg = 'This email is not registered yet. Check the spelling, or use Create Account to sign up.';
+            return [$msg, 401, ['email' => $msg]];
+        }
+        $left = Lockout::attemptsLeft($email, $context);
+        $msg  = 'Incorrect password. Check it and try again.'
+            . ($left > 0
+                ? sprintf(' %d attempt%s left before sign-in pauses for a few minutes.', $left, $left === 1 ? '' : 's')
+                : '');
+        return [$msg, 401, ['password' => $msg]];
+    }
+
+    /** Sign in a customer by id with no password check; ONLY for a sign-up just verified by emailed code (shop/register-verify.php). */
     public static function loginCustomer(string $id): array
     {
-        $c = Database::one('SELECT id, name, email, contact, status FROM customers WHERE id = ?', [$id]);
+        $c = Database::one('SELECT id, name, email, contact, status, password FROM customers WHERE id = ?', [$id]);
         if ($c === null) {
             Response::error('SERVER', 'Your account could not be opened. Please sign in.', 500);
         }
         session_regenerate_id(true);
         $_SESSION[self::SESSION_CUSTOMER] = $c['id'];
         $_SESSION[self::SESSION_TIME] = time();
+        $_SESSION[self::SESSION_PW_CUSTOMER] = self::pwStamp($c['password']);
+        self::claimSession('customer', (string) $c['id']);
+        unset($c['password']);
         return self::$customer = $c;
     }
 
-    /** The signed-in customer, or null. Re-read each request, like staff. */
+    /** The signed-in customer or null, re-read every request like staff. */
     public static function customer(): ?array
     {
         if (self::$customer !== null) {
@@ -227,22 +249,32 @@ final class Auth
             return null;
         }
         $c = Database::one(
-            'SELECT id, name, email, contact, status FROM customers WHERE id = ?',
+            'SELECT id, name, email, contact, status, password FROM customers WHERE id = ?',
             [$id]
         );
         if ($c === null || $c['status'] === 'archived') {
-            unset($_SESSION[self::SESSION_CUSTOMER]);
+            unset($_SESSION[self::SESSION_CUSTOMER], $_SESSION[self::SESSION_PW_CUSTOMER]);
             return null;
         }
+        /* Password changed elsewhere since this session signed in: sign this session out. Sessions from before this check get stamped now. */
+        $stamp = self::pwStamp($c['password']);
+        if (!isset($_SESSION[self::SESSION_PW_CUSTOMER])) {
+            $_SESSION[self::SESSION_PW_CUSTOMER] = $stamp;
+        } elseif (!hash_equals($_SESSION[self::SESSION_PW_CUSTOMER], $stamp)) {
+            unset($_SESSION[self::SESSION_CUSTOMER], $_SESSION[self::SESSION_PW_CUSTOMER]);
+            return null;
+        }
+        /* Signed in again on another device or browser: only the newest session stays. */
+        if (!self::sessionIsCurrent('customer', (string) $c['id'])) {
+            unset($_SESSION[self::SESSION_CUSTOMER], $_SESSION[self::SESSION_PW_CUSTOMER], $_SESSION[self::SESSION_TOKEN_CUSTOMER]);
+            self::noteSignedOutElsewhere();
+            return null;
+        }
+        unset($c['password']);
         return self::$customer = $c;
     }
 
-    /**
-     * @param string $message shown to the visitor. Defaults to something
-     *        generic, but a caller should say what the sign-in is FOR —
-     *        "Sign in to view this" during checkout told the shopper nothing
-     *        about why their order had not gone through.
-     */
+    /** @param string $message tells the visitor what signing in is for. */
     public static function requireCustomer(string $message = 'Sign in to continue.'): array
     {
         $c = self::customer();
@@ -278,13 +310,7 @@ final class Auth
         self::$customer = null;
     }
 
-    /**
-     * The signed-in user, or null.
-     *
-     * Re-read from the database rather than cached in the session, so that
-     * archiving an account or changing its role takes effect on the very next
-     * request instead of whenever they happen to log out.
-     */
+    /** The signed-in staff user or null, re-read from the database so archiving or a role change applies on the next request. */
     public static function user(): ?array
     {
         if (self::$user !== null) {
@@ -296,7 +322,7 @@ final class Auth
         }
 
         $user = Database::one(
-            'SELECT u.id, u.name, u.email, u.avatar, u.status,
+            'SELECT u.id, u.name, u.email, u.avatar, u.status, u.password,
                     u.role_id, r.name AS role, r.is_system
                FROM users u
                LEFT JOIN roles r ON r.id = u.role_id
@@ -308,6 +334,22 @@ final class Auth
             self::logout();
             return null;
         }
+
+        /* Password changed on another device since this session signed in: sign this session out. Sessions from before this check get stamped now. */
+        $stamp = self::pwStamp($user['password']);
+        if (!isset($_SESSION[self::SESSION_PW_STAFF])) {
+            $_SESSION[self::SESSION_PW_STAFF] = $stamp;
+        } elseif (!hash_equals($_SESSION[self::SESSION_PW_STAFF], $stamp)) {
+            self::logout();
+            return null;
+        }
+        /* Signed in again on another device or browser: only the newest session stays. */
+        if (!self::sessionIsCurrent('staff', (string) $user['id'])) {
+            self::logout();
+            self::noteSignedOutElsewhere();
+            return null;
+        }
+        unset($user['password']);
 
         return self::$user = $user;
     }
@@ -322,12 +364,7 @@ final class Auth
         return $user;
     }
 
-    /**
-     * Require one of the named roles, or stop with 403.
-     *
-     * Prefer Rbac::require() with a permission — roles are coarse, and the
-     * permission table is what the Roles screen actually edits.
-     */
+    /** Require one of the named roles or stop with 403; prefer Rbac::require() with a permission. */
     public static function requireRole(string ...$roles): array
     {
         $user = self::require();
@@ -337,62 +374,41 @@ final class Auth
         return $user;
     }
 
-    /* ------------------------------------------------------------------
-       Brute-force throttling.
+    /* Brute-force throttling needs the login_attempts table; without it throttling silently does not run, so apply that migration. */
 
-       Depends on the login_attempts table from db/schema-additions.sql,
-       which is optional and may not be applied. Rather than crash when it
-       is absent, throttling simply does not engage — but that is a real
-       reduction in protection, so it is worth applying that file.
-       ------------------------------------------------------------------ */
+    /* Passwords: the minimum length and the bcrypt hashing live only here, so the rule cannot drift between endpoints. */
 
-    /* ------------------------------------------------------------------
-       Passwords — one rule, one hash, one place.
-
-       The minimum length and the bcrypt call were written out FOUR times:
-       twice in users/save.php (create and update), once in shop/register.php,
-       and a fifth was about to be added by shop/password.php. Four copies of a
-       security rule is four places to weaken it and three places to forget when
-       it changes.
-       ------------------------------------------------------------------ */
-
-    /** Minimum length. Change it here and every path changes with it. */
+    /** Minimum password length for every path. */
     public const PASSWORD_MIN = 8;
 
-    /**
-     * Validate and hash, or refuse.
-     *
-     * Refuses with a field error rather than returning false, because every
-     * caller did exactly that and an ignored return value is how a plaintext
-     * password reaches a column.
-     *
-     * `$field` names the input so the message lands on the right box — the
-     * password-change form has three of them.
-     */
+    /** The first password rule not met (8+ characters, upper and lower case, a number, a symbol), or null; mirrored by the checklist in site.js. */
+    public static function passwordProblem(string $plain): ?string
+    {
+        $rules = [
+            [mb_strlen($plain) >= self::PASSWORD_MIN,     'Use at least ' . self::PASSWORD_MIN . ' characters.'],
+            [preg_match('/[A-Z]/', $plain) === 1,         'Add at least one uppercase letter (A–Z).'],
+            [preg_match('/[a-z]/', $plain) === 1,         'Add at least one lowercase letter (a–z).'],
+            [preg_match('/[0-9]/', $plain) === 1,         'Add at least one number (0–9).'],
+            [preg_match('/[^A-Za-z0-9]/', $plain) === 1,  'Add at least one symbol, such as ! @ # $ or %.'],
+        ];
+        foreach ($rules as [$ok, $message]) {
+            if (!$ok) { return $message; }
+        }
+        return null;
+    }
+
+    /** Validate and hash a password or stop with a field error on $field, so a plaintext password can never be stored by mistake. */
     public static function hashPassword(string $plain, string $field = 'password'): string
     {
-        if (mb_strlen($plain) < self::PASSWORD_MIN) {
-            Response::validation('Check the highlighted fields.', [
-                $field => 'Use at least ' . self::PASSWORD_MIN . ' characters.',
-            ]);
+        $problem = self::passwordProblem($plain);
+        if ($problem !== null) {
+            Response::validation('Check the highlighted fields.', [$field => $problem]);
         }
-        /* PASSWORD_BCRYPT explicitly, not PASSWORD_DEFAULT: DEFAULT changes
-           between PHP versions, and a hash written by one server that another
-           cannot verify locks people out of their accounts. */
+        /* Use PASSWORD_BCRYPT explicitly, because PASSWORD_DEFAULT can change between PHP versions. */
         return password_hash($plain, PASSWORD_BCRYPT);
     }
 
-    /**
-     * Re-verify the CURRENT password of the already-signed-in customer.
-     *
-     * For operations that need proof the person at the keyboard is the account
-     * holder, not just someone holding a session cookie — changing a password
-     * being the one that matters.
-     *
-     * Throttled on the same counter as sign-in, so this cannot be used as an
-     * unlimited password oracle against a stolen session. The policy itself
-     * lives in Lockout — one implementation for all four password paths.
-     */
+    /** Re-check the signed-in customer's current password before sensitive changes, throttled like sign-in so it cannot be used to guess passwords. */
     public static function reauthenticateCustomer(string $password): array
     {
         $customer = self::requireCustomer('Sign in to continue.');
@@ -413,28 +429,13 @@ final class Auth
         return $customer;
     }
 
-    /**
-     * Re-verify the CURRENT password of the already-signed-in STAFF member.
-     *
-     * The twin of reauthenticateCustomer() above, and deliberately beside it so
-     * the two are read together — they answer the same question about two
-     * different tables and must not drift apart.
-     *
-     * Same three properties: it proves the person at the keyboard is the
-     * account holder rather than merely someone holding a session cookie; it is
-     * throttled on the same login_attempts counter, so a stolen staff session
-     * cannot be used as an unlimited password oracle; and it fails with the
-     * same shape (401 from requireStaff, 429 from throttle, 400 from here) so
-     * a caller handles one contract, not two.
-     */
+    /** Re-check the signed-in staff member's current password; the twin of reauthenticateCustomer() with the same throttling and error shape. */
     public static function reauthenticateStaff(string $password): array
     {
         $user = self::require();
 
         $email = (string) $user['email'];
-        /* CTX_STAFF, matching attempt(). Re-authentication guards a password
-           CHANGE on a privileged account — if anything it deserves the stricter
-           ceiling more than sign-in does, not less. */
+        /* Uses CTX_STAFF like attempt(), since changing a privileged account's password deserves the stricter limit. */
         Lockout::enforce($email, Lockout::CTX_STAFF);
 
         $hash = Database::scalar('SELECT password FROM users WHERE id = ?', [$user['id']]);

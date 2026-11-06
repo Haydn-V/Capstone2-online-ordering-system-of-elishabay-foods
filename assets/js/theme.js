@@ -1,28 +1,7 @@
-/* =================================================================
-   THEME — Light, Dark, or follow the device (System)
-   -----------------------------------------------------------------
-   Shared by the storefront and every staff portal. Loaded as a plain
-   <script> in <head>, NOT deferred, so the right theme is on <html>
-   before the page paints — otherwise a dark-mode visitor sees a white
-   flash on every page load.
-
-   The choice is kept in localStorage["eb-theme"]:
-     "light" | "dark"  fixed
-     "system"          (default) follows prefers-color-scheme, live —
-                       switch the OS to dark and the page follows.
-
-   The #theme-btn in each header opens a small menu with the three
-   options. Delegated from document, because the portal's header is
-   injected after this runs (module-loader.js).
-
-   Fires `eb-theme-change` on window whenever the shown theme changes,
-   so anything drawn with theme colours (portal charts) can redraw.
-   ================================================================= */
+/* ===== THEME: Light, Dark or System (default, follows the device), stored in localStorage["eb-theme"]; loaded non-deferred in <head> to avoid a white flash, and fires eb-theme-change so charts can redraw ===== */
 (function () {
   const KEY = "eb-theme";
-  /* Inside the admin's preview iframe, prefers-color-scheme reports the
-     PORTAL's color-scheme, not the device's — so "System default" there
-     followed the portal. The top window (same origin) still sees the device. */
+  /* Inside the admin preview iframe, follow the top window's device setting. */
   const host = (() => { try { return window.top.matchMedia ? window.top : window; } catch (_) { return window; } })();
   const media = host.matchMedia ? host.matchMedia("(prefers-color-scheme: dark)") : null;
 
@@ -76,7 +55,7 @@
     s.id = "eb-theme-css";
     s.textContent = `
       .eb-theme-menu{position:fixed;z-index:10000;min-width:180px;padding:6px;border-radius:14px;
-        background:var(--surface,#fff);color:var(--text,#1e1a0e);border:1px solid var(--border,rgba(0,0,0,.1));
+        background:var(--glass-bg-overlay,var(--surface,#fff));-webkit-backdrop-filter:var(--glass-blur-lg,none);backdrop-filter:var(--glass-blur-lg,none);color:var(--text,#1e1a0e);border:1px solid var(--glass-border,var(--border,rgba(0,0,0,.1)));
         box-shadow:0 12px 32px rgba(0,0,0,.18);font-family:inherit;animation:ebThemeIn .14s ease-out}
       @keyframes ebThemeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
       .eb-theme-opt{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border:0;border-radius:10px;
@@ -166,10 +145,7 @@
   window.EbTheme = { get: () => pref, resolved, set };
 })();
 
-/* Required-field marker, on every page. A label or legend whose text carries
-   " *" gets that star wrapped in .req-star so only the star is red, and a
-   label whose control is required/aria-required gets a star if it has none.
-   Forms built later (modals) are caught by the observer. */
+/* Required-field marker: wrap " *" in .req-star (red), and add a star to labels of required controls, including forms added later. */
 (function () {
   const css = document.createElement("style");
   css.textContent = ".req-star{color:#d62828 !important;font-weight:700;margin-left:2px}";
@@ -207,9 +183,7 @@
   if (document.body) start(); else document.addEventListener("DOMContentLoaded", start);
 })();
 
-/* Preview (admin's landing-page iframe): hide the account/cart surface
-   before first paint. site.js removes them at DOMContentLoaded, which left
-   a flash of Login + cart on every page change inside the preview. */
+/* Preview iframe: hide the account and cart controls before first paint. */
 (function () {
   try {
     const on = new URLSearchParams(location.search).get("preview") === "1"
@@ -222,10 +196,7 @@
   } catch (_) {}
 })();
 
-/* Hidden scrollbars on every page (public + portal). Everything still
-   scrolls — wheel, trackpad, touch, keyboard — there is just no bar drawn.
-   With no bar there is no width to lose when a modal locks scrolling, so the
-   page no longer jumps sideways and no gutter needs reserving. */
+/* Hidden scrollbars on every page (scrolling still works), so pages never jump when a modal locks scrolling. */
 (function () {
   const css = document.createElement("style");
   css.textContent = `
@@ -234,18 +205,20 @@
   document.head.appendChild(css);
 })();
 
-/* Text areas everywhere (public + portal): no drag handle — the box grows by
-   itself as the text reaches its bottom, from a steady starting height up to
-   a cap, then scrolls inside. Dragging used to push a box out of its popup,
-   sideways and downward without limit. `field-sizing: content` does the
-   growing natively where supported; the input listener covers the rest. */
+/* Textareas have no drag handle and grow with their text up to a cap (field-sizing: content where supported). */
 (function () {
   const MAX = 200;
   const css = document.createElement("style");
   css.textContent = `
     textarea {
       resize: none !important;
+      /* field-sizing: content sizes the WIDTH to the text too — one long
+         unbroken word ("wwww…") widened the box past its form. Width is the
+         container's; long words break onto the next line instead. */
+      width: 100%;
       max-width: 100% !important;
+      overflow-wrap: anywhere;
+      word-break: break-word;
       box-sizing: border-box;
       min-height: 72px;
       max-height: ${MAX}px !important;

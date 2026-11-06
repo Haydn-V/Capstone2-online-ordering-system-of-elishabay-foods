@@ -3,18 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <title>vat module</title>
-  <!-- ============================================================
-       MODULE PARTIAL — section id="mod-vat".
-
-       Wrapped as a complete HTML document on purpose, like every partial in
-       this folder: a bare fragment makes Live Server inject its reload script
-       in the wrong place. Keep the html/head/body wrapper.
-
-       VAT MAINTENANCE is Super Admin only. vat.manage is a SYSTEM_ONLY
-       permission (api/core/Rbac.php) that no other role can be granted; the
-       nav item carries it, and every endpoint behind this screen checks the
-       permission and the system role. Rendered by assets/js/portal/vat.js.
-       ============================================================ -->
+  <!-- Module partial for section mod-vat, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
   </head>
   <body>
 <section id="mod-vat" class="mod-panel" aria-label="VAT Maintenance">
@@ -24,17 +13,14 @@
       <h2>VAT Maintenance</h2>
       <p class="field-hint" style="margin-top: 6px">
         The tax rules every Sales Invoice follows: the VAT rate, VAT-exempt
-        products, senior citizen and PWD discounts, and retailers that withhold
-        tax. Super Admin only.
+        products, and retailer discounts. Super Admin only.
       </p>
     </div>
+    <!-- Filled by vat.js on the Retailer Discount tab (Save changes). -->
+    <div class="actions" id="vat-head-actions"></div>
   </div>
 
-  <!-- Tabs left, the active tab's live count right — "0 of 15 products exempt",
-       "2 withholding agents". Those figures used to sit at the end of an
-       explanatory paragraph under each tab; the paragraphs were removed and the
-       counts kept, here, beside the tab they describe. Filled by vat.js;
-       empty on tabs that have no count. -->
+  <!-- Tabs on the left, the active tab's live count on the right (filled by vat.js). -->
   <div class="view-toolbar">
     <div class="vat-tabs" id="vat-tabs" role="tablist" aria-label="VAT Maintenance sections"></div>
     <div class="view-toolbar-filters">

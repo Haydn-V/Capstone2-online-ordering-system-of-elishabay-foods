@@ -1,16 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/roles/list.php
- *
- * Requires rbac.manage — this is the screen that decides what everyone else
- * can do, so reading it is already privileged.
- *
- * Returns every role with its granted permission keys and a live account count,
- * plus the full permission catalogue grouped by area, which is everything the
- * Role & Permission Matrix needs to render in one request.
- */
+/** GET /api/roles/list.php (needs rbac.manage) returns every role with its permissions and account count, plus the full permission catalogue. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -49,14 +40,11 @@ Response::ok([
             'slug'        => $r['slug'],
             'desc'        => $r['description'],
             'isSystem'    => $isSystem,
-            /* A system role holds everything unconditionally and owns no
-               role_permissions rows. Reporting the full list here keeps the
-               matrix honest instead of showing Super Admin with zero ticks. */
-            /* A non-system role never reports a SYSTEM_ONLY permission, even if
-               a stray row grants it — Rbac::forRole() ignores that row too. */
+            /* The system role reports what it holds (everything but its switched-off list); a non-system role never reports a SYSTEM_ONLY permission. */
             'permissions' => $isSystem
-                ? $allKeys
-                : array_values(array_diff($grants[(int) $r['id']] ?? [], Rbac::SYSTEM_ONLY)),
+                ? array_values(array_intersect($allKeys, Rbac::forRole((int) $r['id'], true)))
+                : array_values(array_diff($grants[(int) $r['id']] ?? [], Rbac::SYSTEM_ONLY,
+                    $r['slug'] === Rbac::ADMIN_SLUG ? [] : Rbac::ADMIN_ONLY)),
             'activeUsers' => (int) $r['active_users'],
             'totalUsers'  => (int) $r['total_users'],
         ];
@@ -67,5 +55,9 @@ Response::ok([
         'label' => $p['label'],
         /* So the matrix can show it locked for every other role. */
         'systemOnly' => Rbac::isSystemOnly($p['permission_key']),
+        /* Grantable to the Admin role only. */
+        'adminOnly'  => Rbac::isAdminOnly($p['permission_key']),
+        /* Always on for the Super Admin, so its switch is locked. */
+        'superLocked' => Rbac::isSuperLocked($p['permission_key']),
     ], $permissions),
 ]);

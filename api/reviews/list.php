@@ -1,41 +1,13 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/reviews/list.php?status=pending&search=&page=1&limit=25
- *
- * The staff moderation queue. Requires `reviews.moderate`.
- *
- * WHY THIS IS NOT PART OF api/shop/reviews.php
- * --------------------------------------------
- * That endpoint is public and returns published rows only. This one returns
- * held and rejected text, the customer's full name, the order behind it and the
- * moderator's reasons. Folding them together would mean one query whose output
- * is trimmed by a flag, and the day somebody gets that flag wrong the shop page
- * serves a rejected review and a customer's full name to anyone who asks.
- * Separate endpoints cannot make that mistake.
- *
- * WHAT THE QUEUE HAS TO SHOW TO BE USABLE
- * ---------------------------------------
- * `hold_reason` names the keyword that held each pending review. A queue that
- * says only "held for review" asks the moderator to guess what the machine
- * objected to, and guessing wrong in the direction of caution means rejecting
- * ordinary text. The word is shown so the moderator can see, immediately, that
- * "this sauce is fire" tripped a list rather than broke a rule.
- *
- * THE ORDER IS OLDEST FIRST FOR PENDING. A moderation queue is a queue: the
- * review that has been waiting longest is the one a customer is currently
- * wondering about. Everything else is newest first, because those lists are
- * records rather than work.
- */
+/** GET /api/reviews/list.php (needs reviews.moderate) is the staff moderation queue, separate from the public reviews endpoint, showing which keyword held each review, with pending sorted oldest first. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
 Response::requireMethod('GET');
 
-/* The endpoint decides for itself. The nav item is hidden from roles without
-   this permission, but that is presentation — api/core/Rbac.php says so in its
-   header, and hiding a control has never stopped anyone typing a URL. */
+/* The endpoint checks permission itself, since hiding the menu item is not security. */
 Rbac::require('reviews.moderate');
 
 $q  = $_GET;
@@ -55,9 +27,7 @@ if ($status !== '' && $status !== 'all') {
 
 $search = trim((string) ($q['search'] ?? ''));
 if ($search !== '') {
-    /* The product, the customer, the order and the text itself. A moderator
-       following up a complaint has one of those four and should not have to
-       know which field it lives in. */
+    /* Search across product, customer, order and review text. */
     $where[] = '(p.name LIKE ? OR c.name LIKE ? OR r.order_id LIKE ? OR r.comment LIKE ?)';
     $like = '%' . $search . '%';
     array_push($params, $like, $like, $like, $like);
@@ -72,7 +42,7 @@ $total = (int) Database::scalar(
     $params
 );
 
-/* Oldest-first only when looking at the work. See the header. */
+/* Oldest first only for pending reviews. */
 $order = $status === Reviews::PENDING
     ? 'r.created_at ASC, r.id ASC'
     : 'r.created_at DESC, r.id DESC';
@@ -100,17 +70,13 @@ $reviews = array_map(static function (array $r): array {
         'id'             => (int) $r['id'],
         'product_id'     => $r['product_id'],
         'product_name'   => $r['product_name'],
-        /* So the queue can say so. An archived product still collects reviews
-           — see the header of review-save.php — and a moderator reading one
-           should know the product is no longer on sale. */
+        /* Flag reviews on archived products. */
         'product_archived' => (int) $r['product_archived'] === 1,
         'customer_id'    => $r['customer_id'],
         'customer_name'  => $r['customer_name'],
         'customer_email' => $r['customer_email'],
         'order_id'       => $r['order_id'],
-        /* The evidence, as it stands TODAY. A review whose order has since been
-           cancelled is not automatically wrong, but it is worth a second look,
-           and the moderator should not have to open another screen to see it. */
+        /* Show the order's current status so a cancelled order behind a review is visible. */
         'order_status'   => $r['order_status'],
         'rating'         => (int) $r['rating'],
         'comment'        => $r['comment'],
@@ -124,8 +90,7 @@ $reviews = array_map(static function (array $r): array {
     ];
 }, $rows);
 
-/* Counts for the tab badges, over ALL rows rather than the filtered page —
-   a queue tab whose number changed with the current filter would be useless. */
+/* Tab counts over all rows, not just the filtered page. */
 $counts = ['pending' => 0, 'published' => 0, 'rejected' => 0];
 foreach (Database::all('SELECT status, COUNT(*) AS n FROM product_reviews GROUP BY status') as $c) {
     $counts[(string) $c['status']] = (int) $c['n'];

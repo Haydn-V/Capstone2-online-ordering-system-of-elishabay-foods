@@ -1,54 +1,17 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Notify — the one place that raises a notification.
- *
- * Same reasoning as Stock (I8) and Payments: `INSERT INTO notifications` was
- * open-coded at three call sites, each spelling the id the same way by
- * coincidence and each free to choose its own columns. Adding `priority` to
- * that arrangement would have meant three independent opinions about how much
- * an event matters, which is the thing the column exists to prevent.
- *
- * THE LEVELS
- * ----------
- * Three, and they are named in the interface rather than being an internal
- * rank, because staff have to act on the difference:
- *
- *   critical  needs action now; money or stock is at risk
- *   warning   needs attention today
- *   info      a record of something that happened
- *
- * THE MAPPING IS NOT CONFIRMED WITH THE ADVISER. It is the group's reading and
- * it lives HERE, once, so that changing it is one edit with a diff. Anything
- * that disagrees with this table is a bug in the caller, not a local override —
- * there is deliberately no way to pass an arbitrary level to create().
- *
- * WHY NOT DERIVE IT IN THE BROWSER. Three screens read these rows — the bell,
- * the dashboard's System Notifications panel and the Notifications module — and
- * a rule living in one screen's script is a rule the other two do not have.
- * It also has to survive paging: "unread first, then by urgency, then newest"
- * is an ORDER BY, and a client cannot order rows it has not been sent.
- */
+/** Notify is the single place staff notifications are created, with the level (critical = act now, warning = today, info = record) decided by type in one table here so all three screens agree. */
 final class Notify
 {
     public const CRITICAL = 'critical';
     public const WARNING  = 'warning';
     public const INFO     = 'info';
 
-    /** Display order, worst first. Also the FIELD() list used to sort. */
+    /** Display order, worst first (also the FIELD() list used for sorting). */
     public const LEVELS = [self::CRITICAL, self::WARNING, self::INFO];
 
-    /**
-     * type => level.
-     *
-     * The keys past 'audit' are NOT in the notifications ENUM. They are the
-     * pseudo-types the portal derives client-side from live records — expiring
-     * batches, failed QA lots, retailer payment schemes — which have no row of
-     * their own but appear in the same three lists and must sort against the
-     * stored rows on the same scale. They are served to the browser by
-     * list.php's meta so the client has no second copy of this table.
-     */
+    /** Type to level map, including client-derived types (expiring batches, failed QA, payment schemes) that are sent to the browser so it has no second copy. */
     private const BY_TYPE = [
         /* Stored types (the notifications ENUM). */
         'inventory'     => self::CRITICAL,  // hit critical stock, or out of stock
@@ -58,10 +21,7 @@ final class Notify
         'return'        => self::WARNING,   // a request received, not yet judged
         'completed'     => self::INFO,
         'audit'         => self::INFO,
-        /* A customer left a low rating on a real, completed order. Warning, not
-           critical: it is a real problem worth hearing about today, not one
-           that stops the shop trading. The review itself is already published
-           — this is the early warning, not a moderation queue item. */
+        /* A low customer rating is a warning (worth seeing today), not critical; the review is already published. */
         'review'        => self::WARNING,
 
         /* Derived pseudo-types, client-side only. */
@@ -71,13 +31,7 @@ final class Notify
         'sales-summary' => self::INFO,
     ];
 
-    /**
-     * The level an event of this type carries.
-     *
-     * Unknown types fall to INFO rather than throwing: a notification that
-     * arrives at the wrong urgency is a nuisance, one that fails to be raised
-     * at all because a type was misspelled is a thing nobody is told about.
-     */
+    /** The level for a type, defaulting to info for unknown types so a misspelled type still gets raised. */
     public static function priorityFor(string $type): string
     {
         return self::BY_TYPE[$type] ?? self::INFO;
@@ -89,15 +43,7 @@ final class Notify
         return self::BY_TYPE;
     }
 
-    /**
-     * SQL that orders a notification list the way all three screens show it:
-     * unread first, then by urgency, then newest.
-     *
-     * Unread outranks urgency deliberately. A critical alert somebody has
-     * already dealt with should not sit above the thing that just happened —
-     * read state is shared across the team (see notifications/read.php), so
-     * "read" means somebody handled it, not "I glanced at it".
-     */
+    /** SQL ordering used by all three screens: unread first, then urgency, then newest. */
     public static function orderBy(string $alias = 'n'): string
     {
         $levels = "'" . implode("','", self::LEVELS) . "'";
@@ -105,18 +51,7 @@ final class Notify
                 {$alias}.created_at DESC, {$alias}.id DESC";
     }
 
-    /**
-     * Raise one notification.
-     *
-     * `$priority` is not a parameter. The level follows from the type, and a
-     * caller able to override it is a caller able to disagree with the table
-     * above — which is how the three screens started disagreeing in the first
-     * place. If an event needs a different level it needs a different type.
-     *
-     * Returns the id, so a caller can reference the row it just made.
-     *
-     * @param array{order?:?string,return?:?string,product?:?string} $links
-     */
+    /** Create one notification and return its id; the level always comes from the type, never from the caller. */
     public static function create(string $type, string $message, array $links = []): string
     {
         $id = 'n-' . strtolower(bin2hex(random_bytes(5)));
@@ -139,29 +74,7 @@ final class Notify
         return $id;
     }
 
-    /**
-     * Raise one notification only if the same unread one is not already
-     * standing against that product.
-     *
-     * Stock::sell() fires on the TRANSITION into a band, so it should not need
-     * this — but two concurrent sales can both observe the same crossing and
-     * would then write the same alert twice.
-     *
-     * THE KEY IS THE MESSAGE, NOT THE PRODUCT. Keying on type + product alone
-     * was tried and is wrong in a way that matters: it swallowed the
-     * critical → out-of-stock alert, because the critical one raised minutes
-     * earlier was still unread. Running out is a different problem from running
-     * low — it is the point at which the product stops earning — and it has to
-     * arrive as its own alert. The two messages differ, the two concurrent
-     * writes of one crossing do not, so the message is exactly the right
-     * discriminator.
-     *
-     * `is_read = 0` in the key means a fresh alert IS raised once somebody has
-     * dealt with the previous one, which is the whole point of read state being
-     * shared across the team.
-     *
-     * Returns the new id, or null when an unread one already says this.
-     */
+    /** Create a notification only if an identical unread message for that product does not already exist, preventing duplicates from simultaneous sales. */
     public static function createOnceWhileUnread(string $type, string $productId, string $message): ?string
     {
         $existing = Database::scalar(
@@ -177,46 +90,10 @@ final class Notify
         return self::create($type, $message, ['product' => $productId]);
     }
 
-    /**
-     * Raise a Critical notification for every batch that has already expired
-     * and is still counted as sellable stock.
-     *
-     * WHY THIS IS NOT A SCHEDULER, AND WHY IT IS SAFE.
-     * -----------------------------------------------
-     * Expiry is the one event on the Critical list with no user action behind
-     * it: a lot goes bad because a date passed, and there is no request to hang
-     * a producer off. XAMPP has no cron and the MySQL event scheduler is off by
-     * default, so a background job would be a piece of infrastructure the
-     * project does not have and could not be relied on to be running during a
-     * defence.
-     *
-     * Instead the rows are materialised lazily, when somebody opens the list
-     * they would appear in. api/shop/cart.php already does exactly this — a GET
-     * that reconciles what it is about to return and writes the result back —
-     * so the pattern is established here rather than invented.
-     *
-     * IDEMPOTENT BY CONSTRUCTION. The id is derived from the batch id, and the
-     * NOT EXISTS clause keys on it, so a batch gets one row however many times
-     * this runs and marking it read does not resurrect it. One statement, no
-     * PHP loop, nothing to half-apply.
-     *
-     * created_at is the EXPIRY DATE, not now. The event happened when the lot
-     * went bad; stamping it with the moment it was noticed would make an old
-     * problem look like a new one, and would reshuffle the feed on every page
-     * load. Ordering is unaffected either way, because unread + critical puts
-     * it at the top regardless.
-     *
-     * The 30-day "expiring soon" Warning is deliberately NOT stored. It is
-     * still derived in the browser from BATCHES, where it can recount days
-     * against today without a write; only the crossing into EXPIRED — the point
-     * at which stock on the shelf becomes unsellable — earns a durable row.
-     */
+    /** Create a Critical notification for each expired batch still counted as stock, generated when the list is opened (no cron available), once per batch and dated on the expiry date. */
     public static function syncExpiredBatches(): int
     {
-        /* Interpolated, not bound: an ENUM literal cannot be a placeholder in
-           the SELECT list without MySQL widening the column to text. It comes
-           from the constant above and is asserted to be one of the three
-           levels, so there is no caller input anywhere near this string. */
+        /* The level is inserted directly (not bound) because it is an ENUM literal from the constant above, never user input. */
         $level = self::priorityFor('inventory');
         if (!in_array($level, self::LEVELS, true)) {
             throw new LogicException("Notify: refusing to write unknown priority '{$level}'.");
@@ -240,15 +117,7 @@ final class Notify
         );
     }
 
-    /**
-     * Unread counts per level, for the topbar bell.
-     *
-     * Every level is present in the result even at zero, so the client can read
-     * `counts.critical` without guarding for a missing key — an absent key and
-     * a zero mean the same thing here and only one of them is safe to render.
-     *
-     * @return array{critical:int,warning:int,info:int}
-     */
+    /** Unread counts per level for the bell, always including all three levels even at zero. */
     public static function unreadByPriority(): array
     {
         $out = array_fill_keys(self::LEVELS, 0);

@@ -1,134 +1,73 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Inventory intelligence — movement, cover, stock band and expiry risk.
- *
- * THE PROBLEM THIS REPLACES
- * -------------------------
- * Stock status used to be four fixed piece counts and movement class was a
- * lifetime running total. Both were wrong, in ways that got worse over time.
- *
- * Fixed piece counts ask one number to answer a question that depends on how
- * fast the product sells. Nine units of a product that leaves at thirty a week
- * is a shortage; nine units of a product that sells two a year is three years
- * of cover. The old bands called both "Critical".
- *
- * `products.sold` is a CUMULATIVE LIFETIME COUNTER. It is maintained correctly
- * — Stock.php increments it on commit and decrements it on cancellation — but
- * it never decays. A product that sold well last year stays "Fast Moving"
- * forever on the strength of trade that has stopped, and because the counter
- * only rises, every product eventually crosses the "fast" threshold and the
- * classification stops separating anything at all. This catalogue was already
- * at 430–2100 lifetime units when this was written.
- *
- * WHAT REPLACES IT
- * ----------------
- * One number, measured rather than accumulated: units sold per day over a
- * trailing window, taken from completed orders. Everything else derives from
- * it.
- *
- *   movement   — units/month against two thresholds
- *   daysCover  — stock ÷ units per day: how long the shelf lasts
- *   stockLevel — cover measured against how long a restock takes
- *   expiryRisk — whether the earliest-expiring lot will sell before it expires
- *
- * WHY THERE IS STILL AN ABSOLUTE FLOOR
- * ------------------------------------
- * A pure cover model fails on the case that motivated it. A product with nine
- * units and one sale a month has 270 days of cover, and velocity alone would
- * report it Safe — while the shelf is visibly empty and any single order
- * clears it out. The band is therefore the MORE URGENT of the cover band and
- * an absolute floor. The floor can only escalate a status, never soften one,
- * so adding it cannot hide a shortage the cover model would have caught.
- *
- * WHY SLOW MOVERS GET THEIR OWN SIGNAL
- * ------------------------------------
- * Cover and expiry pull in opposite directions. For a fast mover the risk is
- * running out; for a slow one it is holding stock that spoils first. This is a
- * food business with real expiry dates on every lot, so the second risk is the
- * expensive one, and a stock band alone cannot express it — "Safe" is exactly
- * what a doomed pallet looks like. `expiryRisk` is that second axis.
- *
- * TUNABLES, NOT CONSTANTS
- * -----------------------
- * Every threshold lives in `settings` and is editable without a deployment,
- * the same way `penalty_rate` already is. The defaults below are calibrated
- * against the transaction volume present when this was written; a business
- * trading at real volume should raise the movement thresholds. That is a
- * settings change, not a code change, which is the entire point.
- */
+/** Inventory intelligence: classifies each product from its own sales over a recent window (yesterday, 7 or 30 days),
+    with no hand-set baselines. Movement compares a product with the store's average product in the same window; stock
+    level is how many days the shelf lasts at the product's sales rate, with a fixed 5-unit floor so a nearly empty
+    shelf is never "Safe". */
 final class Inventory
 {
-    /** Defaults, used whenever a settings row is absent or unparseable. */
-    public const DEFAULTS = [
-        /* Trailing window the rate is measured over. Long enough to survive a
-           quiet fortnight, short enough to notice a product going cold. */
-        'velocity_window_days'    => 90,
+    /** The fixed rules (not settings): Critical under 7 days of stock left, Low under 14, and 5 units or fewer is
+        always Critical. A product with no sales in the window falls back to its last-30-days rate. */
+    public const CRITICAL_DAYS = 7;
+    public const LOW_DAYS      = 14;
+    public const MIN_UNITS     = 5;
+    public const FALLBACK_DAYS = 30;
 
-        /* How long a restock takes. The band that matters: below this much
-           cover, an order placed today arrives after the shelf is empty. */
-        'restock_lead_days'       => 14,
+    /** Shelf life of a new lot, by category: bottled bangus keeps a year, deboned (boneless) bangus six months. The
+        expiry date is always computed from the production date, never typed in. */
+    public const SHELF_LIFE_MONTHS = ['cat-bg' => 12, 'cat-db' => 6];
 
-        /* Movement thresholds, in units per month. */
-        'movement_fast_per_month' => 8.0,
-        'movement_slow_per_month' => 2.0,
+    public static function shelfLifeMonths(string $productId): int
+    {
+        $c = Database::one('SELECT c.id, c.name FROM products p JOIN categories c ON c.id = p.category_id WHERE p.id = ?', [$productId]);
+        if ($c === null) {
+            return 6;
+        }
+        return self::SHELF_LIFE_MONTHS[$c['id']] ?? (stripos((string) $c['name'], 'bottled') !== false ? 12 : 6);
+    }
 
-        /* The absolute floor described above. "Low" is three times this. */
-        'stock_floor_critical'    => 10,
-    ];
+    /** The expiry date of a lot of this product produced on $productionDate. */
+    public static function autoExpiry(string $productId, string $productionDate): string
+    {
+        $m = self::shelfLifeMonths($productId);
+        return (new DateTimeImmutable($productionDate))->modify("+{$m} months")->format('Y-m-d');
+    }
+
+    /** A production date may be today or up to one month back, never in the future; null when it is allowed. */
+    public static function productionDateError(string $productionDate): ?string
+    {
+        $today    = Dates::today();
+        $earliest = (new DateTimeImmutable($today))->modify('-1 month')->format('Y-m-d');
+        if ($productionDate > $today) {
+            return 'The production date cannot be later than today.';
+        }
+        if ($productionDate < $earliest) {
+            return sprintf('The production date can be at most one month back (%s or later).', date('M j, Y', strtotime($earliest)));
+        }
+        return null;
+    }
 
     /** @var array<string,float>|null */
     private static ?array $cache = null;
 
-    /* ==========================================================
-       THE WINDOW
-       ----------------------------------------------------------
-       How far back "how fast does this sell" looks. It was one stored
-       setting, the same for every screen and every reader.
+    /* The sales window is chosen per request (falling back to the stored setting), and "yesterday" means the last complete day so a partial today does not drag rates down. */
 
-       One number cannot answer the question, because the question changes
-       with the shelf. Ninety days is the right lens on a slow mover — short
-       enough to notice it going cold, long enough that a quiet fortnight does
-       not reclassify it. It is the wrong lens the morning after a bulk order
-       clears half the stock: that sale is one day in ninety, the rate barely
-       moves, and the band still says Safe while the shelf is visibly empty.
-
-       So the window is now a CHOICE the reader makes per request, and the
-       stored setting is what they get when they do not make one. A shorter
-       window is more responsive and noisier, which is the honest trade —
-       "Yesterday" over one quiet Sunday will call the whole catalogue
-       Non-Moving, and that is what yesterday actually says.
-
-       Every rate stays normalised to per-day and per-month, so the movement
-       thresholds keep their meaning whichever window is in force and two
-       products read under the same window are always comparable.
-
-       WHY `yesterday` IS A DATE RATHER THAN A COUNT. The trailing windows
-       include today, which is a PART day: at 9am it holds an hour of trade
-       and drags every rate down. That is tolerable across a week and fatal
-       across one day, so "Yesterday" is the last COMPLETE day — the previous
-       date, whole. ========================================================== */
-
-    /** Windows a caller may ask for, in days. Keys are the API's values. */
+    /** Windows a caller may ask for, in days, keyed by API value. */
     public const WINDOWS = [
         'yesterday' => 1,
         'week'      => 7,
         'month'     => 30,
     ];
 
-    /** The window in force for THIS request; null means the stored setting. */
-    private static ?string $window = null;
+    /** The window in force for THIS request; the last 30 days unless the screen asks for another. */
+    private static ?string $window = 'month';
 
-    /**
-     * Choose the window for this request. An unknown key is a caller error,
-     * not something to silently ignore — a typo would otherwise be answered
-     * with ninety-day numbers under a "Yesterday" heading.
-     */
+    /** Pick this request's window; an unknown key is an error rather than silently using the default. */
     public static function useWindow(?string $key): void
     {
         if ($key === null || $key === '' || $key === 'default') {
-            self::$window = null;
+            self::$window = 'month';
             return;
         }
         if (!isset(self::WINDOWS[$key])) {
@@ -139,7 +78,7 @@ final class Inventory
         self::$window = $key;
     }
 
-    /** The key in force, or null for the stored default. */
+    /** The window key in force. */
     public static function windowKey(): ?string
     {
         return self::$window;
@@ -148,15 +87,10 @@ final class Inventory
     /** How many days the rate is divided by. */
     public static function windowDays(): int
     {
-        return self::$window === null
-            ? (int) self::tunables()['velocity_window_days']
-            : self::WINDOWS[self::$window];
+        return self::WINDOWS[self::$window ?? 'month'];
     }
 
-    /**
-     * The window as a phrase, for screens that have to say what they measured.
-     * "No sales in the last 1 days" is the sentence this exists to prevent.
-     */
+    /** The window as readable text, so screens never say "last 1 days". */
     public static function windowLabel(): string
     {
         if (self::$window === 'yesterday') {
@@ -165,15 +99,7 @@ final class Inventory
         return sprintf('the last %d days', self::windowDays());
     }
 
-    /**
-     * The date test that defines the window, against an orders alias.
-     *
-     * Trailing windows count back from today INCLUSIVE, so `week` is seven
-     * calendar days rather than eight. The old form was `>= CURDATE() -
-     * INTERVAL 90 DAY`, which is ninety-one days divided by ninety — a
-     * rounding error nobody would notice at that length and a 100% one at the
-     * lengths this now offers.
-     */
+    /** SQL date condition for the window, counting back from today inclusive so a week is exactly seven days. */
     public static function windowSql(string $alias = 'o'): string
     {
         if (self::$window === 'yesterday') {
@@ -183,92 +109,54 @@ final class Inventory
         return "{$alias}.date >= (CURDATE() - INTERVAL {$back} DAY)";
     }
 
-    /**
-     * The tunables, read once per request.
-     *
-     * Coerced to numbers here and nowhere else. Every value is interpolated
-     * into SQL further down — settings hold operator input, so the coercion is
-     * what makes that safe, and it happens at the single point of entry rather
-     * than being re-asserted at each use.
-     *
-     * @return array<string,float>
-     */
-    public static function tunables(): array
+    /** Units the average product sold in the window: everything sold in completed orders over the window, spread
+        across every product on sale. The line between Fast and Slow moving; cached per window for the request. */
+    private static array $avgCache = [];
+
+    public static function averageUnits(): float
     {
-        if (self::$cache !== null) {
-            return self::$cache;
-        }
-
-        $out = [];
-        foreach (self::DEFAULTS as $key => $fallback) {
-            $raw = Database::scalar(
-                'SELECT value_text FROM settings WHERE key_name = ?',
-                [$key]
+        $key = self::$window ?? 'month';
+        if (!isset(self::$avgCache[$key])) {
+            $sold = (float) Database::scalar(
+                "SELECT COALESCE(SUM(oi.qty), 0) FROM order_items oi JOIN orders o ON o.id = oi.order_id
+                  WHERE o.status = 'completed' AND " . self::windowSql('o')
             );
-            $val = ($raw === false || $raw === null || !is_numeric($raw))
-                ? $fallback
-                : (float) $raw;
-
-            /* A zero or negative window divides by zero; a zero lead time makes
-               every product Critical. Refuse nonsense rather than propagate it. */
-            if ($val <= 0) {
-                $val = $fallback;
-            }
-            $out[$key] = (float) $val;
+            $products = (int) Database::scalar('SELECT COUNT(*) FROM products WHERE archived = 0');
+            self::$avgCache[$key] = $products > 0 ? $sold / $products : 0.0;
         }
-
-        /* Fast must outrank slow. If an operator inverts them the bands would
-           silently overlap and "slow" would become unreachable. */
-        if ($out['movement_fast_per_month'] <= $out['movement_slow_per_month']) {
-            $out['movement_fast_per_month'] = $out['movement_slow_per_month'] * 2;
-        }
-
-        return self::$cache = $out;
+        return self::$avgCache[$key];
     }
 
-    /** Forget the cached tunables — for a request that has just written one. */
+    /** The rules in force, echoed to screens and exports so their legends describe exactly what was applied. */
+    public static function model(): array
+    {
+        $days = self::windowDays();
+        $avg  = self::averageUnits();
+        return [
+            'windowDays'      => $days,
+            'criticalDays'    => self::CRITICAL_DAYS,
+            'lowDays'         => self::LOW_DAYS,
+            'minUnits'        => self::MIN_UNITS,
+            'fallbackDays'    => self::FALLBACK_DAYS,
+            /* The store average for this window, as units in the window and per month. */
+            'averageUnits'    => round($avg, 2),
+            'averagePerMonth' => round($avg * 30 / $days, 2),
+        ];
+    }
+
+    /** Forget the per-request cache — for a request that has just changed sales or stock. */
     public static function forget(): void
     {
-        self::$cache  = null;
-        self::$window = null;
+        self::$avgCache = [];
+        self::$window   = 'month';
     }
 
-    /**
-     * The next lot code, assigned by the system.
-     *
-     * WHY THE SYSTEM ASSIGNS IT
-     * -------------------------
-     * The restock form used to prefill `JBF-2026-B` plus `Math.random()` over
-     * 900 values and let the operator edit it. `batches.lot_code` is UNIQUE, so
-     * that is a birthday problem waiting behind a 409: at a few dozen lots a
-     * year the odds of a clash stop being theoretical, and the operator's only
-     * clue is a rejected form. It also meant two people could invent two
-     * different schemes for the same shelf.
-     *
-     * The bulk replenish form was worse — it asked for a lot code and collected
-     * no expiry date, so ANY code typed there failed validation. The field
-     * could not be used successfully at all.
-     *
-     * A lot code identifies a production run. It is the system's fact to state,
-     * not something to be typed twice and reconciled.
-     *
-     * Sequential within the year, continuing whatever numbering is already
-     * there rather than restarting: the seeded lots are JBF-2026-B102 upward
-     * and a generator that began at 100 would collide with them immediately.
-     *
-     * The loop is the concurrency guard. Two restocks a moment apart read the
-     * same maximum, and only the UNIQUE index would notice — as a 500 on the
-     * insert rather than a message. Stepping past a taken code is cheaper than
-     * locking the table for a value nobody is waiting on.
-     */
+    /** Generate the next lot code (continuing the current year's numbering), retrying past any code already taken so two simultaneous restocks never clash. */
     public static function nextLotCode(): string
     {
         $prefix = 'JBF-' . substr(Dates::today(), 0, 4) . '-B';
 
-        /* SUBSTRING is 1-indexed and the offset must clear the prefix. Bound
-           rather than concatenated even though the prefix is built here — the
-           year comes from a configured timezone, and this is the file that
-           should not be the exception to the rule. */
+        /* SUBSTRING is 1-indexed and must skip the prefix; the value is bound rather than concatenated. */
         $max = (int) Database::scalar(
             'SELECT COALESCE(MAX(CAST(SUBSTRING(lot_code, ?) AS UNSIGNED)), 0)
                FROM batches WHERE lot_code LIKE ?',
@@ -286,49 +174,38 @@ final class Inventory
             }
         }
 
-        /* A hundred consecutive collisions is not contention, it is a numbering
-           scheme that has stopped meaning anything. Refuse rather than invent. */
+        /* Give up after 100 consecutive collisions, since that means the numbering is broken. */
         Response::serverError('Could not allocate a lot code. Check the batch numbering.');
     }
 
-    /* ==========================================================
-       SQL
-       ----------------------------------------------------------
-       The bands are computed in SQL rather than over a page of results,
-       for the reason products/list.php already learned the hard way: a
-       filter applied after paging returns "everything critical" from the
-       current page only. Sorting by cover has the same requirement.
-       ========================================================== */
+    /* Bands are computed in SQL, not after paging, so filters and sorting cover every product rather than only the current page. */
 
-    /**
-     * Units sold per product inside the window.
-     *
-     * Completed orders only, matching Revenue::STATUSES — a pending or
-     * cancelled order has not consumed anything, and counting it would let an
-     * abandoned basket suppress a restock alert.
-     */
+    /** Units sold per product within the window (vel.units) and over the last 30 days (vel.units30, the fallback rate
+        for a product with no sales in a shorter window), from completed orders only. Every window is within 30 days. */
     public static function velocityJoin(): string
     {
         $when = self::windowSql('o');
+        $back = self::FALLBACK_DAYS - 1;
 
         return "LEFT JOIN (
-                    SELECT oi.product_id, SUM(oi.qty) AS units
+                    SELECT oi.product_id,
+                           SUM(CASE WHEN {$when} THEN oi.qty ELSE 0 END) AS units,
+                           SUM(oi.qty)                                   AS units30
                       FROM order_items oi
                       JOIN orders o ON o.id = oi.order_id
                      WHERE o.status = 'completed'
-                       AND {$when}
+                       AND o.date >= (CURDATE() - INTERVAL {$back} DAY)
                      GROUP BY oi.product_id
                 ) vel ON vel.product_id = p.id";
     }
 
-    /**
-     * The earliest-expiring lot that still holds stock.
-     *
-     * Correlated subqueries rather than a join. Joining on MIN(expiry_date)
-     * duplicates the product row whenever two lots share that date, which
-     * silently inflates every count and page on the screen. `LIMIT 1` with a
-     * deterministic tiebreak cannot.
-     */
+    /** The base-select columns the layers above need: window units and the 30-day fallback. */
+    public static function velocityColumns(): string
+    {
+        return 'COALESCE(vel.units, 0) AS window_units, COALESCE(vel.units30, 0) AS units_30';
+    }
+
+    /** The earliest-expiring lot that still has stock, using LIMIT 1 subqueries so products are never duplicated. */
     public static function expirySelect(): string
     {
         $pick = "FROM batches b
@@ -341,47 +218,39 @@ final class Inventory
                 (SELECT b.lot_code      $pick) AS first_expiry_lot";
     }
 
-    /** Derived rate and cover columns, for the layer above the base select. */
+    /** Derived rate and cover columns: the window's rate, or the 30-day rate when the window had no sales; no rate at
+        all means nothing is running out (days_cover NULL). */
     public static function derivedSelect(): string
     {
         $win = self::windowDays();
+        $fb  = self::FALLBACK_DAYS;
 
         return "COALESCE(window_units, 0) / {$win}                AS per_day,
                 (COALESCE(window_units, 0) * 30.0) / {$win}       AS per_month,
-                CASE WHEN COALESCE(window_units, 0) = 0 THEN NULL
-                     ELSE stock / (COALESCE(window_units, 0) / {$win})
+                CASE WHEN COALESCE(window_units, 0) > 0 THEN stock / (window_units / {$win})
+                     WHEN COALESCE(units_30, 0) > 0     THEN stock / (units_30 / {$fb})
+                     ELSE NULL
                 END                                               AS days_cover";
     }
 
-    /**
-     * Band and movement, as sortable ranks.
-     *
-     * A rank rather than a label so the outer query can filter and order on it
-     * without repeating the CASE. 0 is the most urgent, which makes
-     * `ORDER BY level_rank` read as "worst first" with no DESC to forget.
-     */
+    /** Band and movement as numeric ranks (0 = most urgent) so queries can filter and sort on them directly. */
     public static function rankSelect(): string
     {
-        $t      = self::tunables();
-        $lead   = (float) $t['restock_lead_days'];
-        $lead2  = $lead * 2;
-        $floor  = (float) $t['stock_floor_critical'];
-        $floor3 = $floor * 3;
-        $fast   = (float) $t['movement_fast_per_month'];
-        $slow   = (float) $t['movement_slow_per_month'];
+        $crit = self::CRITICAL_DAYS;
+        $low  = self::LOW_DAYS;
+        $min  = self::MIN_UNITS;
+        $avg  = self::averageUnits();
 
         return "CASE
                     WHEN stock <= 0 THEN 0
-                    WHEN (days_cover IS NOT NULL AND days_cover < {$lead})
-                      OR stock <= {$floor}  THEN 1
-                    WHEN (days_cover IS NOT NULL AND days_cover < {$lead2})
-                      OR stock <= {$floor3} THEN 2
+                    WHEN stock <= {$min} OR (days_cover IS NOT NULL AND days_cover < {$crit}) THEN 1
+                    WHEN days_cover IS NOT NULL AND days_cover < {$low} THEN 2
                     ELSE 3
                 END AS level_rank,
                 CASE
-                    WHEN per_month >= {$fast} THEN 2
-                    WHEN per_month >= {$slow} THEN 1
-                    ELSE 0
+                    WHEN COALESCE(window_units, 0) <= 0 THEN 0
+                    WHEN window_units >= {$avg} THEN 2
+                    ELSE 1
                 END AS movement_rank";
     }
 
@@ -405,9 +274,7 @@ final class Inventory
         ][$movement] ?? null;
     }
 
-    /* ==========================================================
-       Interpretation
-       ========================================================== */
+    /* Interpretation */
 
     private const LEVELS = [
         0 => ['level' => 'out',  'label' => 'Out of Stock'],
@@ -422,27 +289,10 @@ final class Inventory
         2 => ['movement' => 'fast', 'label' => 'Fast Moving'],
     ];
 
-    /**
-     * The stock band ONE product is in right now.
-     *
-     * Built from the same three SQL builders every list screen stacks, scoped
-     * to a single row, so a band computed here cannot drift from the band the
-     * Inventory Report shows. A shorter version reading only
-     * stock_floor_critical was the obvious alternative and would have been
-     * wrong in a specific way: rankSelect() also calls a product critical when
-     * its days of cover fall under the restock lead time, so a fast seller can
-     * be critical holding well over the floor, and a producer using the floor
-     * alone would silently never fire for exactly the products that empty
-     * fastest.
-     *
-     * Returns 'out' | 'crit' | 'warn' | 'ok', or null when the product is gone.
-     * Two queries per sale — Stock::sell() needs the band on either side of the
-     * movement to tell a crossing from a sale of something already critical.
-     */
+    /** The current stock band of one product ('out'|'crit'|'warn'|'ok', or null if gone), built from the same SQL as the list screens so it can never disagree with the Inventory Report. */
     public static function levelForProduct(string $productId): ?string
     {
-        $base = 'SELECT p.id, p.stock,
-                        COALESCE(vel.units, 0) AS window_units
+        $base = 'SELECT p.id, p.stock, ' . self::velocityColumns() . '
                    FROM products p
                    ' . self::velocityJoin() . '
                   WHERE p.id = ?';
@@ -458,32 +308,14 @@ final class Inventory
         return self::LEVELS[(int) $rank]['level'] ?? null;
     }
 
-    /**
-     * The stock line a SHOPPER reads, quantity included.
-     *
-     * Staff wording is an instruction to act ("Critical"); shopper wording is
-     * scarcity plus the number, which is what the adviser asked for. Both read
-     * the same bands underneath — see the note on the storefront's exact-count
-     * trade-off in shop/products.php.
-     *
-     * WHY THE NUMBER OVERRIDES THE BAND AT TWO POINTS
-     * -----------------------------------------------
-     * `crit` is not only "few units left": rankSelect() also raises it when
-     * days_cover falls under the restock lead time, which a fast seller can hit
-     * holding 400 jars. "Only 400 left" is not a sentence anybody should read,
-     * so the phrasing is chosen by the count against the same
-     * stock_floor_critical the bands use, and only the pill colour comes from
-     * the band. Zero is Out of Stock whatever the band says, because a count of
-     * zero beside an enabled Add button is the one wrong answer here.
-     */
+    /** The stock line a shopper sees (with the quantity), where the wording follows the actual count and only the colour follows the band, and zero always reads Out of Stock. */
     public static function shopLabel(string $level, int $stock): string
     {
         if ($stock <= 0) {
             return 'Out of Stock';
         }
 
-        $floor = (int) self::tunables()['stock_floor_critical'];
-        if ($stock <= $floor) {
+        if ($stock <= self::MIN_UNITS) {
             return sprintf('Only %s left', number_format($stock));
         }
         if ($level === 'crit' || $level === 'warn') {
@@ -492,15 +324,9 @@ final class Inventory
         return sprintf('In Stock · %s available', number_format($stock));
     }
 
-    /**
-     * Turn one row of derived columns into the shape the client renders.
-     *
-     * @param array<string,mixed> $r
-     * @return array<string,mixed>
-     */
+    /** Turn one row of computed columns into the shape the client renders. */
     public static function describe(array $r): array
     {
-        $t       = self::tunables();
         $perDay  = (float) ($r['per_day'] ?? 0);
         $cover   = $r['days_cover'] === null ? null : (int) round((float) $r['days_cover']);
         $stock   = (int) ($r['stock'] ?? 0);
@@ -508,32 +334,20 @@ final class Inventory
         $lvl = self::LEVELS[(int) ($r['level_rank'] ?? 3)]   ?? self::LEVELS[3];
         $mov = self::MOVEMENTS[(int) ($r['movement_rank'] ?? 0)] ?? self::MOVEMENTS[0];
 
-        /* WHY the band says what it says. Without this the screen can show
-           "Critical" against a healthy-looking count and give the reader no way
-           to tell whether that came from the shelf being low or from the
-           product selling faster than it can be replaced. */
+        /* Explain why the band was chosen (low shelf vs. selling faster than restock), so "Critical" next to a decent count makes sense. */
         $reason = null;
         if ($lvl['level'] === 'out') {
             $reason = 'No stock on hand.';
         } elseif ($lvl['level'] !== 'ok') {
-            $lead     = (int) $t['restock_lead_days'];
-            $byFloor  = $stock <= (int) $t['stock_floor_critical'] * ($lvl['level'] === 'crit' ? 1 : 3);
-            $byCover  = $cover !== null && $cover < $lead * ($lvl['level'] === 'crit' ? 1 : 2);
-            if ($byCover && $byFloor) {
-                $reason = sprintf('%d left — about %d day%s of cover, under the %d-day restock lead time.',
-                    $stock, $cover, $cover === 1 ? '' : 's', $lead);
-            } elseif ($byCover) {
-                $reason = sprintf('About %d day%s of cover at the current rate; a restock takes %d.',
-                    $cover, $cover === 1 ? '' : 's', $lead);
+            if ($stock <= self::MIN_UNITS) {
+                $reason = sprintf('Only %d unit%s on hand (%d or fewer is always Critical).', $stock, $stock === 1 ? '' : 's', self::MIN_UNITS);
             } else {
-                $reason = sprintf('Only %d unit%s on hand.', $stock, $stock === 1 ? '' : 's');
+                $reason = sprintf('About %d day%s of stock left at its sales rate (Critical under %d days, Low under %d).',
+                    $cover, $cover === 1 ? '' : 's', self::CRITICAL_DAYS, self::LOW_DAYS);
             }
         }
 
-        /* Expiry risk: will the earliest-expiring lot sell before its date?
-           Measured against THAT LOT's remaining quantity, not the product's
-           whole stock, because it is the lot that expires — under FIFO it is
-           also the one being sold right now. */
+        /* Expiry risk checks whether the earliest-expiring lot's own remaining quantity will sell before its date. */
         $expiry     = $r['first_expiry'] ?? null;
         $expiryQty  = $r['first_expiry_qty'] === null ? null : (int) $r['first_expiry_qty'];
         $expiryRisk = null;
@@ -543,8 +357,7 @@ final class Inventory
                 (strtotime($expiry) - strtotime(Dates::today())) / 86400
             );
             if ($perDay <= 0) {
-                /* Nothing has sold in the window, so nothing will clear the lot
-                   before its date on the evidence available. */
+                /* No sales in the window, so nothing suggests the lot will sell before it expires. */
                 $expiryRisk = [
                     'atRisk'       => true,
                     'lot'          => $r['first_expiry_lot'],
@@ -586,11 +399,12 @@ final class Inventory
             'perMonth'    => round((float) ($r['per_month'] ?? 0), 1),
             'windowUnits' => (int) ($r['window_units'] ?? 0),
             'windowDays'  => self::windowDays(),
-            /* The phrase, not just the number — a screen saying "no sales in
-               the last 1 days" is the reason this is here. */
+            /* Use the readable window phrase, not just a number. */
             'windowLabel' => self::windowLabel(),
             'daysCover'   => $cover,
-            'leadDays'    => (int) $t['restock_lead_days'],
+            /* The day counts the level was judged against. */
+            'criticalDays' => self::CRITICAL_DAYS,
+            'lowDays'      => self::LOW_DAYS,
             'expiryRisk'  => $expiryRisk,
         ];
     }

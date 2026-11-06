@@ -1,6 +1,4 @@
-/* =================================================================
-   BATCH TRACEABILITY PAGE — layered on styles.css
-   ================================================================= */
+/* ===== BATCH TRACEABILITY PAGE (layered on styles.css) ===== */
 
 .trace-hero {
   background: var(--bg);
@@ -136,4 +134,42 @@
   .trace-result-grid { grid-template-columns: 1fr; }
   .trace-card-foot { flex-direction: column; align-items: stretch; }
   .trace-card-foot .btn { width: 100%; justify-content: center; }
+}
+
+/* Grow the sample-code links' hit area to 44px. */
+@media (max-width: 640px) {
+  .trace-sample { position: relative; display: inline-block; padding: 0 2px; }
+  .trace-sample::after { content: ""; position: absolute; inset: -15px -4px; }
+}
+@media (max-width: 640px) {
+  .trace-hero { padding-top: calc(var(--nav-h) + 24px); padding-bottom: 40px; }
+  .trace-badge { width: 52px; height: 52px; margin-bottom: 16px; }
+  .trace-badge svg { width: 24px; height: 24px; }
+  .trace-title { font-size: clamp(1.6rem, 7.4vw, 2rem); margin-bottom: 12px; }
+  .trace-sub { font-size: var(--fs-base); line-height: 1.65; margin-bottom: 24px; }
+  .trace-card { padding: 18px 16px; border-radius: var(--r-lg); }
+  .trace-input { padding: 14px 14px 14px 44px; }
+  .trace-input::placeholder { font-size: 14px; }
+  .trace-hint { flex-wrap: wrap; row-gap: 8px; line-height: 1.6; }
+  .trace-card-foot .btn { min-height: 48px; }
+}
+@media (max-width: 640px) {
+  /* The sample codes show as chips on their own line. */
+  .trace-hint { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); }
+  .trace-sample {
+    padding: 6px 12px; border-radius: var(--r-pill); text-decoration: none;
+    background: color-mix(in srgb, var(--red) 8%, transparent); border: 1px solid color-mix(in srgb, var(--red) 30%, transparent);
+  }
+  .trace-sample::after { inset: -6px -2px; }
+}
+@media (max-width: 640px) {
+  .trace-hint { flex-wrap: wrap; }
+  .trace-sep { display: none; }
+}
+@media (max-width: 640px) {
+  .trace-hint-label { flex: 1 1 calc(100% - 30px); }
+}
+@media (max-width: 640px) {
+  /* Chips align with the label text, not the icon. */
+  .trace-hint .trace-sample:first-of-type { margin-left: 23px; }
 }

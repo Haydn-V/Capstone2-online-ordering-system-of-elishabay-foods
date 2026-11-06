@@ -1,17 +1,9 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/auth/login.php
- * Body: { "email": "...", "password": "...", "portal_role": "Cashier" (optional) }
- *
- * Returns the signed-in user plus their permission keys, so the portal can
- * render its nav without a second round trip.
- */
+/** POST /api/auth/login.php: signs a user in and returns their permission keys so the portal can draw its menu without a second request. */
 
-/* No session exists at this point, so there is nothing for an attacker to
-   ride; the credentials are the proof here. Must be defined before bootstrap,
-   which enforces the check. */
+/* No session exists yet, so CSRF is not checked here (the credentials are the proof); must be defined before bootstrap. */
 define('CSRF_EXEMPT', true);
 
 require __DIR__ . '/../core/bootstrap.php';
@@ -20,9 +12,7 @@ Response::requireMethod('POST');
 
 $in = Response::input();
 
-/* Deliberately not run through Validate's email() rule: a malformed address is
-   simply a failed sign-in, and saying "that is not a valid email" tells an
-   attacker their input was parsed. Only emptiness is worth its own message. */
+/* Only check for an empty email, because saying "invalid email" would tell an attacker how their input was parsed. */
 $email    = trim((string) ($in['email'] ?? ''));
 $password = (string) ($in['password'] ?? '');
 
@@ -35,9 +25,7 @@ if ($fields !== []) {
 
 $user = Auth::attempt($email, $password);
 
-/* Portal entry gating, previously role-gate.js's job alone. The browser check
-   stays for the immediate error message, but it is re-run here because a
-   client-side refusal stops nobody from posting straight to this endpoint. */
+/* Re-check the portal role on the server, because the browser check alone can be bypassed by posting here directly. */
 $portalRole = trim((string) ($in['portal_role'] ?? ''));
 if ($portalRole !== '' && $user['role'] !== $portalRole) {
     Auth::logout();

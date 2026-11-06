@@ -1,18 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/shop/trace.php?code=JBF-2026-B112
- *
- * PUBLIC — batch traceability lookup for the storefront.
- *
- * batch-traceability.html carried its OWN inline BATCHES object: a third copy
- * of batch data, after engine.js and the database. A customer scanning a jar
- * was shown hardcoded demo values with no connection to the lot in their hand.
- *
- * Returns provenance and QA status only. Quantities, remaining stock and the
- * inspector name are staff information and are not sent.
- */
+/** GET /api/shop/trace.php (public) looks up a batch code for the traceability page, returning provenance and QA status only. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -34,9 +23,7 @@ $batch = Database::one(
 );
 
 if ($batch === null) {
-    /* 200 with found:false, not 404. "We have no record of that code" is a
-       legitimate answer to a legitimate question, and the page renders it as a
-       result rather than as an error. */
+    /* An unknown code returns 200 with found:false, not 404. */
     Response::ok([
         'found'   => false,
         'code'    => $code,

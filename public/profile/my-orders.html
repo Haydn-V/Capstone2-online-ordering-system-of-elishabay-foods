@@ -2,11 +2,11 @@
 <html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>My Orders — Elisha Bay</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="../../assets/css/public/styles.css" />
     <link rel="stylesheet" href="../../assets/css/public/profile.css" />
       <!-- Theme before first paint: Light / Dark / System (no flash). -->
@@ -53,24 +53,7 @@
     <!-- ===== SCAFFOLDING required by script.js ===== -->
     <div id="modal-scrim" class="modal-scrim">
       <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <!-- #modal-title WAS MISSING FROM THIS PAGE, AND THAT BROKE EVERY MODAL.
-
-             openModal() opens with `$("#modal-title").textContent = title`. With
-             no such element that line threw before anything opened, so SIGN IN
-             on the signed-out guard and Proceed to Checkout in the cart both
-             looked like dead buttons on all four profile pages while working
-             fine on index.html and shop.html, which have it.
-
-             aria-labelledby="modal-title" was already here, pointing at nothing
-             — a dangling reference, so role="dialog" also had no accessible
-             name. Both are fixed by the element existing.
-
-             The `modal-body` CLASS was missing too; .modal-body carries the
-             dialog's 18px/26px padding, so content sat flush against the edges.
-
-             Same drift as #toast-wrap vs #toast-root, written up on showToast().
-             The shared shell in assets/js/public/modal-shell.js now owns this
-             markup so the copies cannot diverge again. -->
+        <!-- The modal markup (with #modal-title and .modal-body) is required; modal-shell.js now ensures it. -->
         <div class="modal-head">
           <h3 id="modal-title"></h3>
           <button class="modal-close" id="modal-close" aria-label="Close dialog">
@@ -110,11 +93,7 @@
           <div class="mp-account-layout">
 
             <!-- ── LEFT SIDEBAR NAV ── -->
-            <!-- Rendered by EbProfileShell. This was forty lines of markup
-                 repeated on every account page — which is how the same person
-                 came to be tagged "CUSTOMER" here and "Retail Partner" one
-                 page over, and how one link ended up revealed-but-never-hidden
-                 in three files at once. -->
+            <!-- Sidebar rendered by EbProfileShell. -->
             <aside class="mp-account-sidebar" id="mp-sidebar"></aside>
 
             <!-- ── MAIN CONTENT ── -->
@@ -129,8 +108,7 @@
                 <p class="mp-sub">Track and manage all your Elisha Bay purchases.</p>
               </div>
 
-              <!-- Same layout as History: section tabs, one toolbar card
-                   (status chips | sort · show), the list, then the pager. -->
+              <!-- Same layout as History: tabs, a toolbar card, the list, then the pager. -->
               <div class="hist-tabs" id="ord-main-tabs" role="tablist">
                 <button class="hist-tab active" data-main="orders" role="tab" aria-selected="true">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18M16 10a4 4 0 0 1-8 0"/></svg>
@@ -180,17 +158,10 @@
     <script>
     /* ── My Orders page logic ── */
 
-    /* Orders for the signed-in customer, loaded from the API.
-
-       This page used to render MOCK_ORDERS: the same four invented orders for
-       every visitor, unrelated to anything they had bought. The endpoint scopes
-       by the session's customer id and takes no identifying parameter, so one
-       customer cannot read another's history by editing a URL. */
+    /* Orders for the signed-in customer from the API, scoped by the session. */
     let MY_ORDERS = [];
 
-    /* The API's key, spelled for a reader. `payMethod` comes back as the stored
-       value — cash / gcash / bank / net30 / net60 / net90 — and printing that
-       raw on a receipt-like card reads as a database dump. */
+    /* Readable labels for payment method keys. */
     const PAY_LABEL = {
       cash: "Cash", gcash: "GCash", bank: "Bank Transfer",
       net30: "Net 30", net60: "Net 60", net90: "Net 90",
@@ -204,9 +175,7 @@
         MY_ORDERS = data.map(o => ({
           id: o.id,
           date: EbFormat.fmtDate(o.date),
-          /* For the Sales Invoice: the order's own timestamp, the name and
-             address recorded ON the order (not today's profile), and the raw
-             method key. */
+          /* Invoice data: the order's timestamp, name and address as recorded, and the raw method key. */
           datetime: o.datetime,
           customerName: o.customerName,
           type: o.type,
@@ -214,20 +183,17 @@
           tax: o.tax,
           address: o.address,
           status: o.status,
+          cashier: o.cashier || "",
           total: o.total,
           payMethod: o.payMethod,
           orderType: o.orderType,
-          /* productId and the customer's own review travel with each line so
-             the rating control can be rendered and pre-filled without a second
-             request per item. All four come from shop/my-orders.php. */
+          /* productId and the customer's review come with each line, so the rating button needs no extra request. */
           items: o.items.map(i => ({
             name: i.name, qty: i.qty, price: i.price, image: i.image || null,
-            productId: i.productId,
+            productId: i.productId, orderId: o.id, lots: i.lots || [],
             myRating: i.myRating, myComment: i.myComment, myStatus: i.myStatus,
           })),
-          /* Carried through so a cancelled card can show why, and a shipped one
-             can show the courier number. Both come from the server; neither is
-             invented here. */
+          /* Cancellation reason and tracking number from the server. */
           cancelReason: o.cancelReason || null,
           trackingNumber: o.trackingNumber || null,
           /* Completed within the last 24 hours — offers "Return / Refund". */
@@ -237,8 +203,7 @@
         if (currentFilter !== "returns") renderOrders(currentFilter);
       } catch(err){
         if(err.isAuth){
-          /* Not signed in — say so and offer the way forward, rather than
-             showing an empty list that looks like "you have never ordered". */
+          /* Not signed in: say so and offer to sign in. */
           list.innerHTML = `<div class="orders-empty">
             <h3>Sign in to see your orders</h3>
             <p>Your order history is tied to your account.</p>
@@ -313,7 +278,7 @@
     const redraw = () => currentFilter === "returns" ? renderReturns() : renderOrders(currentFilter);
 
     /* Status chips with counts (Orders tab), and the two tab counts. */
-    const CHIPS = ["all", "pending", "accepted", "shipping", "completed", "cancelled"];
+    const CHIPS = ["all", "pending", "accepted", "shipping", "delivered", "completed", "cancelled"];
     function drawChips() {
       const el = document.getElementById("order-tabs");
       if (currentFilter === "returns") { el.innerHTML = ""; return; }
@@ -359,6 +324,18 @@
         return;
       }
 
+      /* One row per batch the units came from (qty and subtotal each); units with no batch get a plain row. */
+      const lotRows = (item, order) => {
+        const parts = (item.lots || []).filter(l => l.lot).map(l => ({ lot: l.lot, qty: l.qty }));
+        /* Batches are picked when the shop accepts the order (that is when stock is taken), so a pending one has none yet. */
+        if(!parts.length) return ["pending", "on hold", "on-hold"].includes(order.status)
+          ? `<div class="order-item-lots"><span>Batch code assigned once the order is accepted</span></div>` : "";
+        const rest = item.qty - parts.reduce((n, x) => n + x.qty, 0);
+        if(rest > 0) parts.push({ lot: null, qty: rest });
+        return `<div class="order-item-lots">${parts.map(x => `
+          <div class="order-lot-row"><span>${x.lot ? "Batch " + esc(x.lot) : "No batch"}</span>
+            <span>×${x.qty}</span><span>₱${(item.price * x.qty).toLocaleString()}</span></div>`).join("")}</div>`;
+      };
       list.innerHTML = shown.map(order => {
         const statusClass = "status-" + order.status.replace(" ", "-");
         const itemsHTML = order.items.map(item => `
@@ -373,14 +350,13 @@
             <div class="order-item-info">
               <div class="order-item-name">${item.name}</div>
               <div class="order-item-qty">Qty: ${item.qty}</div>
+              ${lotRows(item, order)}
             </div>
             <div class="order-item-price">₱${(item.price * item.qty).toLocaleString()}</div>
             ${order.status === "completed" ? ratingControl(item) : ""}
           </div>`).join("");
 
-        /* Every order that stands gets its invoice. A cancelled one does not:
-           nothing was sold, and a Sales Invoice for it would be a document
-           recording a sale that did not happen. */
+        /* Every order except cancelled ones gets an invoice. */
         const actions = getOrderActions(order.status, order.id)
           + (order.returnOpen
               ? `<button class="btn-order-action act-return" data-action="return" data-id="${order.id}">${ACT_ICON.ret}Return / Refund</button>`
@@ -406,6 +382,11 @@
             <div class="ot-drop ot-drop-card" data-track-panel="${order.id}"><div class="ot-drop-inner"></div></div>
             <div class="order-card-body">
               <div class="order-items">${itemsHTML}</div>
+              ${order.orderType === "delivery" && order.tax?.shipping?.etaFrom && ["pending", "accepted", "shipping"].includes(order.status) ? `
+                <div class="order-note order-eta">
+                  <strong>Estimated arrival:</strong> ${esc(EbFormat.etaRange(order.tax.shipping.etaFrom, order.tax.shipping.etaTo))}<br>
+                  <small>${order.tax.shipping.remote ? "Island / remote area — may take longer because of boat and flight schedules or the weather. " : ""}An estimate${order.status === "shipping" ? ", counted from the day it was handed to the courier" : ""}, Monday to Saturday, not counting holidays.</small>
+                </div>` : ""}
               ${order.trackingNumber && (order.status === "shipping" || order.status === "delivered") ? `
                 <div class="order-note">
                   <strong>Tracking number:</strong> <span class="mono">${esc(order.trackingNumber)}</span><br>
@@ -426,15 +407,7 @@
           </div>`;
       }).join("");
 
-      /* Bind action buttons.
-
-         THESE USED TO BE TOASTS AND NOTHING ELSE. Cancel called confirm() then
-         showToast("Order cancelled") without touching the server, and Mark
-         Received did not even ask — the order stayed exactly as it was and the
-         customer was told it had changed. The Scope names both as features.
-
-         Both now go through EbApi, which attaches the CSRF header; neither
-         claims anything until the server has answered. */
+      /* Order action buttons call the API (with CSRF) and change nothing until the server answers. */
       /* Order number drops its tracking open; one at a time (order-track.js). */
       EbOrderTrack.bind(list, id => MY_ORDERS.find(x => x.id === id));
 
@@ -449,9 +422,8 @@
           if (action === "received") { await confirmReceived(id, btn); return; }
           if (action === "reorder")  { openReorder(id); return; }
           if (action === "rate") {
-            /* Found by id rather than passed through the DOM: the button
-               carries an identifier, never a JSON blob of the record. */
-            const line = MY_ORDERS.flatMap(o => o.items)
+            /* Match both order and product, so rating one order never opens another order's review. */
+            const line = (MY_ORDERS.find(o => o.id === id)?.items || [])
               .find(i => i.productId === btn.dataset.product);
             if (line) openRatingModal(line);
             return;
@@ -461,32 +433,9 @@
     }
 
 
-    /* ==========================================================
-       RATE A PRODUCT — only from a completed order
-       ----------------------------------------------------------
-       THE CONTROL LIVES HERE AND NOWHERE ELSE. A star input on the
-       shop page would have to be disabled for almost everyone who
-       saw it, and a control that is usually refused teaches people
-       to ignore controls. Here it appears exactly where the right
-       to use it was earned: on the line of an order that reached
-       `completed`.
+    /* ===== RATE A PRODUCT: only on lines of completed orders (presentation only; api/shop/review-save.php re-checks) ===== */
 
-       IT IS NOT A SECURITY BOUNDARY. api/shop/review-save.php
-       re-derives the qualifying order from the database on every
-       write and never reads one from the request. This is the
-       presentation half of that rule — Rbac.php's header states
-       the general form: hiding a control is presentation, not
-       security, and every endpoint decides for itself.
-       ========================================================== */
-
-    /* The per-line control. Shows what the customer already said, if
-       anything, so the button is honest about what pressing it does —
-       "Rate this product" and "Edit your rating" are different promises.
-
-       A HELD OR REJECTED REVIEW STILL SHOWS ITS STATE HERE. Somebody
-       whose review is waiting needs to be told that rather than left to
-       conclude it vanished; the alternative is a button that looks like
-       it did nothing. */
+    /* The per-line rating button reflects any existing review, including held or rejected status. */
     function ratingControl(item) {
       if (!item.productId) return "";
       const rated = item.myRating != null;
@@ -503,7 +452,7 @@
       return `<div class="order-item-rate">
         ${stars}${state}
         <button type="button" class="btn-rate${rated ? " btn-rate-edit" : ""}" data-action="rate"
-                data-product="${esc(item.productId)}">
+                data-id="${esc(item.orderId)}" data-product="${esc(item.productId)}">
           <svg class="btn-rate-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.8L12 17.3 5.8 20.9l1.6-6.8L2.2 8.9l6.9-.6z"/></svg>
           ${rated ? `Edit your rating<span class="sr-only"> of ${esc(item.name)}, currently ${item.myRating} of 5 stars</span>`
                   : `Rate this product<span class="sr-only">: ${esc(item.name)}</span>`}
@@ -511,19 +460,7 @@
       </div>`;
     }
 
-    /* A REAL FIELDSET OF RADIO INPUTS. Not clickable spans.
-
-       The five stars are one radio group, so the browser gives us,
-       for free and correctly: arrow-key movement between options,
-       Tab in and out of the group as a single stop, the roving focus
-       ring, and a screen reader announcing "3 of 5 stars, radio
-       button, 3 of 5". A div with click handlers has none of that
-       and no amount of aria puts it back properly.
-
-       The visible star is the <label>; the input is clipped rather
-       than `display:none`, because a hidden input cannot receive
-       focus and the focus ring is what tells a keyboard user where
-       they are. */
+    /* Star input is a real radio group (labels visible, inputs clipped, not hidden) for full keyboard and screen reader support. */
     function starFieldset(name, current) {
       const opts = [1,2,3,4,5].map(n => `
         <input type="radio" class="rate-radio" id="${name}-${n}" name="${name}"
@@ -599,19 +536,7 @@
           const ta   = root.querySelector("#rate-comment");
           const cnt  = root.querySelector("#rate-count");
 
-          /* THE FILL IS DRIVEN FROM HERE, not from CSS sibling selectors.
-
-             With inputs in DOM order 1..5, `:checked ~ label` can only
-             reach the stars AFTER the chosen one, so a pure-CSS fill has
-             to either reverse the DOM — which reverses the arrow keys
-             with it — or default every star to gold and grey out the
-             tail. Defaulting to gold would show five filled stars on a
-             product nobody has rated, which is the same lie this whole
-             feature exists to remove. So: default empty, filled here.
-
-             Says the value in words as well as shapes — the live region
-             announces it, and a sighted user gets the same confirmation
-             that five gold shapes alone do not give. */
+          /* Stars are filled by JS (not CSS sibling selectors) and the value is announced in words. */
           const stars = [...form.querySelectorAll(".rate-star")];
           const paint = (n) => stars.forEach((el, i) => el.classList.toggle("on", i < n));
           const chosen = () => {
@@ -626,10 +551,7 @@
           form.querySelectorAll(`input[name="${name}"]`)
               .forEach(r => r.addEventListener("change", sync));
 
-          /* Mouse preview. Restores the real value on the way out, so the
-             control never keeps showing a rating nobody chose. Pointer
-             events only — a keyboard user moves the selection itself and
-             gets the announcement from the change handler above. */
+          /* Hover preview that restores the real value on leave. */
           stars.forEach((el, i) => {
             el.addEventListener("mouseenter", () => paint(i + 1));
           });
@@ -647,9 +569,7 @@
             err.textContent = "";
             const picked = form.querySelector(`input[name="${name}"]:checked`);
             if (!picked) {
-              /* Refused here so the customer is not made to wait for a
-                 round trip to learn they missed the one required field.
-                 The server refuses it too — this is a courtesy. */
+              /* Require a rating before sending (the server checks too). */
               err.textContent = "Choose a rating from 1 to 5 stars.";
               form.querySelector(".rate-star").focus();
               return;
@@ -658,14 +578,13 @@
             const done = busy(btn, "Saving…");
             try {
               const { data } = await EbApi.post("shop/review-save.php", {
+                order_id: item.orderId,
                 product_id: item.productId,
                 rating: Number(picked.value),
                 comment: ta.value.trim(),
               });
               closeModal();
-              /* TOLD PLAINLY WHEN IT IS HELD. A customer told "posted"
-                 who then cannot find their review learns that the shop
-                 lies to them. */
+              /* Tell the customer plainly when the review is held. */
               showToast(
                 data.held
                   ? "Thanks — your review will appear once it has been checked."
@@ -686,17 +605,15 @@
       });
     }
 
-    /* Shared button state. A second click while the first request is in flight
-       is how one cancellation becomes two. */
+    /* Disable buttons during the request to avoid double actions. */
     function busy(btn, label) {
-      const old = btn.textContent, wasDisabled = btn.disabled;
+      /* Nodes, not text, so the button's icon comes back after a refusal. */
+      const old = [...btn.childNodes], wasDisabled = btn.disabled;
       btn.disabled = true; btn.textContent = label;
-      return () => { btn.disabled = wasDisabled; btn.textContent = old; };
+      return () => { btn.disabled = wasDisabled; btn.replaceChildren(...old); };
     }
 
-    /* Errors from these two endpoints are all things the customer can act on —
-       "already accepted, contact us", "somebody else just changed this" — so
-       they are shown verbatim rather than replaced with a generic message. */
+    /* Show these endpoints' error messages as is. */
     function orderActionError(err) {
       if (err.isAuth) {
         showToast("Your session has expired. Sign in again to manage your orders.", "info");
@@ -705,54 +622,138 @@
       showToast(err.message, "info");
     }
 
-    async function cancelOrder(id, btn) {
-      /* The reason is mandatory server-side because the Scope says it is
-         recorded. Asked for here too, so the refusal is not a round trip. */
-      const reason = (window.prompt(
-        `Cancel order ${id}?
-
-Tell us why — this is recorded with the cancellation.`, ""
-      ) || "").trim();
-      if (!reason) {
-        showToast("Cancellation needs a reason.", "info");
-        return;
-      }
-
-      const restore = busy(btn, "Cancelling…");
-      try {
-        const { data } = await EbApi.post("shop/cancel-order.php", { order_id: id, reason });
-        const o = MY_ORDERS.find(x => x.id === data.id);
-        if (o) { o.status = data.status; o.cancelReason = data.reason; }
-        renderOrders(currentFilter);
-        showToast(`Order ${id} cancelled.`, "success");
-      } catch (err) {
-        restore();
-        orderActionError(err);
-      }
+    /* Styled cancel dialog: pick a common reason or type one (the server requires a reason). */
+    const CANCEL_REASONS = ["Ordered by mistake", "Wrong items or quantity", "Found a better price",
+      "Delivery takes too long", "Changing payment method"];
+    function cancelOrder(id, btn) {
+      const order = MY_ORDERS.find(x => x.id === id);
+      const count = order ? order.items.reduce((s, i) => s + Number(i.qty), 0) : 0;
+      openModal("Cancel this order?", `
+        <div class="rcv cxl">
+          <div class="rcv-hero">
+            <span class="rcv-ic cxl-ic" aria-hidden="true">${ACT_ICON.cancel}</span>
+            <div>
+              <div class="rcv-id">Order #${esc(id)}</div>
+              <p class="rcv-sub">${count ? `${count} pc${count === 1 ? "" : "s"} · ` : ""}This can't be undone. You'll need to place a new order to buy these again.</p>
+            </div>
+          </div>
+          <label class="cxl-label" for="cxl-reason">Why are you cancelling? <span>Required</span></label>
+          <div class="cxl-chips" role="group" aria-label="Common reasons">
+            ${CANCEL_REASONS.map(r => `<button type="button" class="cxl-chip" data-reason="${esc(r)}">${esc(r)}</button>`).join("")}
+          </div>
+          <textarea id="cxl-reason" class="cxl-text" rows="3" maxlength="300" placeholder="Choose a reason above or type your own…"></textarea>
+          <p class="cxl-err" id="cxl-err" role="alert"></p>
+          <div class="rcv-actions">
+            <button type="button" class="btn btn-ghost" id="cxl-no">Keep order</button>
+            <button type="button" class="btn btn-red" id="cxl-yes">${ACT_ICON.cancel}Cancel order</button>
+          </div>
+        </div>`, { onOpen: body => {
+          const text = body.querySelector("#cxl-reason"), err = body.querySelector("#cxl-err");
+          body.querySelectorAll(".cxl-chip").forEach(chip => chip.addEventListener("click", () => {
+            body.querySelectorAll(".cxl-chip").forEach(c => c.classList.toggle("on", c === chip));
+            text.value = chip.dataset.reason; err.textContent = "";
+          }));
+          text.addEventListener("input", () => {
+            err.textContent = "";
+            body.querySelectorAll(".cxl-chip").forEach(c => c.classList.toggle("on", c.dataset.reason === text.value.trim()));
+          });
+          body.querySelector("#cxl-no").addEventListener("click", closeModal);
+          const yes = body.querySelector("#cxl-yes");
+          yes.addEventListener("click", async () => {
+            const reason = text.value.trim();
+            if (!reason) { err.textContent = "Choose or type a reason to cancel."; text.focus(); return; }
+            const restoreYes = busy(yes, "Cancelling…");
+            const restore = busy(btn, "Cancelling…");
+            try {
+              const { data } = await EbApi.post("shop/cancel-order.php", { order_id: id, reason });
+              const o = MY_ORDERS.find(x => x.id === data.id);
+              if (o) { o.status = data.status; o.cancelReason = data.reason; }
+              closeModal();
+              renderOrders(currentFilter);
+              showToast(`Order ${id} cancelled.`, "success");
+            } catch (e) {
+              restoreYes(); restore();
+              err.textContent = e.isAuth ? "Your session has expired. Sign in again to manage your orders." : e.message;
+            }
+          });
+        } });
     }
 
-    async function confirmReceived(id, btn) {
-      if (!window.confirm(`Confirm you received order ${id}?\n\nThe order will be marked Completed. You can still request a return within 24 hours.`)) return;
-      const restore = busy(btn, "Confirming…");
-      try {
-        const { data } = await EbApi.post("shop/confirm-received.php", { order_id: id });
-        const o = MY_ORDERS.find(x => x.id === data.id);
-        if (o) o.status = data.status;
-        renderOrders(currentFilter);
-        showToast("Thanks — your order is complete.", "success");
-        loadMyOrders();   /* picks up the new Return / Refund button */
-      } catch (err) {
-        restore();
-        orderActionError(err);
-      }
+    /* Styled confirmation in the page's modal showing the items and total. */
+    function confirmReceived(id, btn) {
+      const order = MY_ORDERS.find(x => x.id === id);
+      if (!order) return;
+      const items = order.items.map(i => `
+        <li class="rcv-item">
+          <span class="rcv-thumb">${i.image ? `<img src="${esc(EbFormat.imageUrl(i.image))}" alt="">` : ""}</span>
+          <span class="rcv-info">
+            <span class="rcv-name">${esc(i.name)}</span>
+            <span class="rcv-qty">${i.qty} × ₱${Number(i.price).toLocaleString()}</span>
+          </span>
+          <span class="rcv-line">₱${(i.price * i.qty).toLocaleString()}</span>
+        </li>`).join("");
+      const total = order.items.reduce((s, i) => s + i.price * i.qty, 0);
+      /* Same figure as the order card and invoice: items + delivery fee − retailer discount. */
+      const fee  = +(order.tax?.shippingFee || 0);
+      const disc = +(order.tax?.withholdingTax || 0);
+      const intr = +(order.tax?.termInterest || 0);
+      const due  = Number.isFinite(+order.total) ? +order.total : total + fee - disc + intr;
+      const peso2 = n => "₱" + n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+      const count = order.items.reduce((s, i) => s + Number(i.qty), 0);
+      openModal("Confirm order received", `
+        <div class="rcv">
+          <div class="rcv-hero">
+            <span class="rcv-ic" aria-hidden="true">${ACT_ICON.received}</span>
+            <div>
+              <div class="rcv-id">Order #${esc(id)}</div>
+              <p class="rcv-sub">Check that everything below arrived in good condition.</p>
+            </div>
+          </div>
+          <section class="rcv-box">
+            <div class="rcv-box-head"><span>Items in this order</span><span>${count} pc${count === 1 ? "" : "s"}</span></div>
+            <ul class="rcv-items">${items}</ul>
+            ${fee || disc || intr ? `<div class="rcv-adj">
+              <div><span>Items</span><span>${peso2(total)}</span></div>
+              ${fee ? `<div><span>Delivery fee</span><span>+ ${peso2(fee)}</span></div>` : ""}
+              ${disc ? `<div><span>Retailer discount</span><span>− ${peso2(disc)}</span></div>` : ""}
+              ${intr ? `<div><span>Interest (${+order.tax.termInterestRate}%)</span><span>+ ${peso2(intr)}</span></div>` : ""}
+            </div>` : ""}
+            <div class="rcv-total"><span>${disc || intr ? "Amount due" : "Order total"}</span><strong>${peso2(due)}</strong></div>
+          </section>
+          <div class="rcv-note">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <span>Your order will be marked <b>Completed</b>. You can still request a return or refund within <b>24 hours</b>.</span>
+          </div>
+          <div class="rcv-actions">
+            <button type="button" class="btn btn-ghost" id="rcv-no">Not yet</button>
+            <button type="button" class="btn btn-gold" id="rcv-yes">${ACT_ICON.received}Yes, I received it</button>
+          </div>
+        </div>`, { onOpen: body => {
+          body.querySelector("#rcv-no").addEventListener("click", closeModal);
+          const yes = body.querySelector("#rcv-yes");
+          yes.addEventListener("click", async () => {
+            const restoreYes = busy(yes, "Confirming…");
+            const restore = busy(btn, "Confirming…");
+            try {
+              const { data } = await EbApi.post("shop/confirm-received.php", { order_id: id });
+              const o = MY_ORDERS.find(x => x.id === data.id);
+              if (o) o.status = data.status;
+              closeModal();
+              renderOrders(currentFilter);
+              showToast("Thanks — your order is complete.", "success");
+              loadMyOrders();   /* picks up the new Return / Refund button */
+            } catch (err) {
+              restoreYes(); restore();
+              orderActionError(err);
+            }
+          });
+        } });
     }
 
-    /* Server data goes into innerHTML on this page. EbFormat.escHtml is the same
-       escaper the storefront uses — see the note on it in assets/js/core/format.js. */
+    /* Escape server data with EbFormat.escHtml. */
     function esc(v) { return EbFormat.escHtml(v == null ? "" : v); }
 
-    /* The Sales Invoice for one of this customer's orders — the same renderer,
-       and the same printout, as the cashier's copy. */
+    /* Sales Invoice for one of the customer's orders (same as the cashier's). */
     function openInvoice(id) {
       const order = MY_ORDERS.find(o => o.id === id);
       if (!order) return;
@@ -770,8 +771,7 @@ Tell us why — this is recorded with the cancellation.`, ""
       });
     }
 
-    /* Small icons so each action reads at a glance; colour says what it does
-       (profile.css: .act-*). */
+    /* Small icons and colours per action (profile.css .act-*). */
     const ACT_ICON = {
       reorder:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.3L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.3L3 16"/><path d="M3 21v-5h5"/></svg>',
       ret:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
@@ -796,17 +796,7 @@ Tell us why — this is recorded with the cancellation.`, ""
       }
     }
 
-    /* ==========================================================
-       RETURNS & REFUNDS
-       ----------------------------------------------------------
-       A customer may ask for a return up to 24 hours after an order
-       is completed — the whole order, or chosen products and how many.
-       The request needs a reason and a photo, and goes to the staff
-       Return Module, which decides eligibility and pays the refund.
-
-       Presentation only: the window, the quantities and the amount
-       are all re-derived by api/shop/return-request.php.
-       ========================================================== */
+    /* ===== RETURNS & REFUNDS: request up to 24 hours after completion (whole order or chosen items) with a reason and photo; api/shop/return-request.php re-checks everything ===== */
     let MY_RETURNS = { requests: [], eligible: [], windowHours: 24 };
 
     const PESO = n => "₱" + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -899,7 +889,7 @@ Tell us why — this is recorded with the cancellation.`, ""
           </div>
           <div class="rr-card">
             <div class="rr-card-title">Items</div>
-            ${r.items.map(i => `<div class="rr-line"><span>${esc(i.name)} <span class="rr-x">×${i.qty} @ ${PESO(i.unitPrice)}</span></span><span>${PESO(i.subtotal)}</span></div>`).join("")}
+            ${r.items.map(i => `<div class="rr-line"><span>${esc(i.name)}${i.batchCode ? ` <span class="rr-lot">Batch ${esc(i.batchCode)}</span>` : ""} <span class="rr-x">×${i.qty} @ ${PESO(i.unitPrice)}</span></span><span>${PESO(i.subtotal)}</span></div>`).join("")}
             <div class="rr-line rr-total"><span>Total amount</span><span>${PESO(r.total)}</span></div>
             ${r.status === "refunded" ? `<div class="rr-line"><span>Refunded${r.refundMethod ? " via " + esc(PAY_LABEL[r.refundMethod] || r.refundMethod) : ""}</span><span>${PESO(r.refundAmount)}</span></div>` : ""}
           </div>
@@ -932,11 +922,9 @@ Tell us why — this is recorded with the cancellation.`, ""
         </div>`, { wide: true });
     }
 
-    /* The request form. Opened from the tab (choose an order) or from an order
-       card (that order preselected). */
+    /* The return request form, opened from the tab or from an order card. */
     async function openReturnForm(orderId) {
-      /* Fresh numbers every time: what is still returnable changes as requests
-         are filed, and the window closes on its own. */
+      /* Fetch fresh returnable quantities every time. */
       try {
         const { data } = await EbApi.get("shop/returns.php");
         MY_RETURNS = data;
@@ -1043,7 +1031,8 @@ Tell us why — this is recorded with the cancellation.`, ""
           const scope = () => form.querySelector('input[name="rr-scope"]:checked').value;
 
           const picked = () => [...itemsBox.querySelectorAll(".rr-qty")]
-            .map(i => ({ product_id: i.dataset.pid, qty: Math.floor(Number(i.value) || 0), price: Number(i.dataset.price) }))
+            .map(i => ({ product_id: i.dataset.pid, qty: Math.floor(Number(i.value) || 0), price: Number(i.dataset.price),
+                         ...(i.dataset.lot !== undefined ? { batch_code: i.dataset.lot } : {}) }))
             .filter(i => i.qty > 0);
           const sum = () => {
             const p = picked();
@@ -1051,23 +1040,30 @@ Tell us why — this is recorded with the cancellation.`, ""
             root.querySelector("#rr-count").textContent = `${n} ${n === 1 ? "item" : "items"}`;
             root.querySelector("#rr-total").textContent = PESO(p.reduce((a, i) => a + i.qty * i.price, 0));
           };
-          /* Whole order: every returnable unit, fixed. Choose items: start at
-             zero and let them pick. */
+          /* Whole order uses every returnable unit; Choose items starts at zero. */
           const drawItems = () => {
             const whole = scope() === "whole";
-            /* A − / + stepper per product. The number box stays a real input
-               (typing works too); the buttons just nudge it within 0..max. */
-            itemsBox.innerHTML = current().lines.map(l => `
+            /* A stepper per product, with a typable number box. */
+            /* One row per batch the units came from (or one per product for older orders), so the batch can be chosen. */
+            const rows = [];
+            current().lines.forEach(l => {
+              const lots = (l.lots || []).filter(x => x.remaining > 0);
+              if(lots.length) lots.forEach(x => rows.push({ ...l, remaining: x.remaining, bought: x.bought, lot: x.lot === null ? "" : x.lot, hasLot: true }));
+              else rows.push({ ...l, hasLot: false });
+            });
+            itemsBox.innerHTML = rows.map(l => `
               <div class="rr-item${whole ? " is-whole" : ""}">
-                <span class="rr-item-ic" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18M16 10a4 4 0 0 1-8 0"/></svg>
+                <span class="rr-item-ic${l.image ? " has-img" : ""}" aria-hidden="true">${l.image
+                  ? `<img src="${esc(EbFormat.imageUrl(l.image))}" alt="" loading="lazy">`
+                  : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18M16 10a4 4 0 0 1-8 0"/></svg>`}
                 </span>
                 <div class="rr-item-name">${esc(l.name)}
+                  ${l.hasLot ? `<span class="rr-lot">${l.lot ? "Batch " + esc(l.lot) : "No batch code"}</span>` : ""}
                   <small>${PESO(l.unitPrice)} each · ${l.remaining} of ${l.bought} returnable</small></div>
                 <div class="rr-stepper" role="group" aria-label="How many ${esc(l.name)} to return">
                   <button type="button" class="rr-step-btn" data-step="-1" aria-label="One less" ${whole ? "disabled" : ""}>−</button>
                   <input class="rr-qty" type="number" min="0" max="${l.remaining}" inputmode="numeric"
-                         value="${whole ? l.remaining : 0}" data-pid="${esc(l.productId)}" data-price="${l.unitPrice}"
+                         value="${whole ? l.remaining : 0}" data-pid="${esc(l.productId)}" data-price="${l.unitPrice}"${l.hasLot ? ` data-lot="${esc(l.lot)}"` : ""}
                          ${whole ? "disabled" : ""} aria-label="Quantity">
                   <button type="button" class="rr-step-btn" data-step="1" aria-label="One more" ${whole ? "disabled" : ""}>+</button>
                 </div>
@@ -1099,8 +1095,7 @@ Tell us why — this is recorded with the cancellation.`, ""
           form.querySelectorAll('input[name="rr-scope"]').forEach(r => r.addEventListener("change", drawItems));
           drawItems();
 
-          /* Uploaded on pick, like the checkout's payment screenshot — same
-             endpoint, same checks (api/uploads/image.php). */
+          /* Photo uploaded on pick via api/uploads/image.php. */
           const fileIn = root.querySelector("#rr-proof");
           const drop = root.querySelector("#rr-proof-drop");
           const card = root.querySelector("#rr-proof-card");
@@ -1190,7 +1185,7 @@ Tell us why — this is recorded with the cancellation.`, ""
               const { data } = await EbApi.post("shop/return-request.php", {
                 order_id: orderSel.value,
                 scope: scope(),
-                items: items.map(i => ({ product_id: i.product_id, qty: i.qty })),
+                items: items.map(i => ({ product_id: i.product_id, qty: i.qty, ...(i.batch_code !== undefined ? { batch_code: i.batch_code } : {}) })),
                 reason,
                 proof: proofPath,
                 refund_pref: pref(),
@@ -1213,9 +1208,7 @@ Tell us why — this is recorded with the cancellation.`, ""
       });
     }
 
-    /* ── Reorder ──────────────────────────────────────────────
-       Pick which items and how many (starts at what was ordered), at
-       TODAY's price and stock, then add them all and open the cart. */
+    /* Reorder: choose items and quantities at today's price and stock, then add them to the cart. */
     function openReorder(orderId) {
       const order = MY_ORDERS.find(o => o.id === orderId);
       if (!order) return;
@@ -1291,30 +1284,11 @@ Tell us why — this is recorded with the cancellation.`, ""
     document.getElementById("ord-size").addEventListener("change", e => { size = Number(e.target.value) || 10; page = 1; redraw(); });
     syncSort();
 
-      /* The avatar, the name, the role tag, the Payment Schemes link and the
-         sign-out button all moved to EbProfileShell — they were written out
-         once per account page and had already drifted (the same person read
-         "Customer" on one page and "Retail Partner" on the next). */
+      /* The sidebar parts are rendered by EbProfileShell. */
 
-    /* Auth guard — waits for the SERVER's answer, not for a flag.
-
-       This had the same race as profile.html: it read state.auth.loggedIn once
-       at window.load, while bootstrapCustomer() was still in flight and the
-       flag was still its fail-closed initial `false` (D8). A signed-in customer
-       was shown "Sign in to view your orders" over their own order history.
-       The retry loop only ran while `state` was undefined, which it stops being
-       almost immediately, so nothing ever corrected it.
-
-       whenAuthReady() resolves from an event site.js fires once shop/me.php has
-       replied, and resolves immediately if that already happened. */
+    /* Auth guard waits for the server's answer via whenAuthReady(). */
     window.addEventListener("DOMContentLoaded", () => {   /* not "load": that waited for every image */
-      /* The guard, the sidebar and the sign-out button are the shell's now —
-         all three were duplicated across the four account pages. See
-         assets/js/public/profile-shell.js.
-
-         loadMyOrders() fetches the real orders; renderOrders() runs again once
-         they arrive, so the loader shows "Loading…" rather than an empty list
-         that reads as "you have never ordered". */
+      /* Guard, sidebar and sign-out come from profile-shell.js; loadMyOrders() fetches orders and shows Loading meanwhile. */
       EbProfileShell.mount({ page: "orders", onReady: () => {
         loadMyOrders();
         /* The Returns count shows on its tab before it is opened. */

@@ -1,27 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/roles/save.php
- * Body: { "id": 3 (omit to create), "name": "...", "description": "...",
- *         "permissions": ["pos.use", "sales.report", …] }
- *
- * Requires rbac.manage.
- *
- * This endpoint edits the permission system itself, so its own guards matter
- * more than most:
- *
- *   - a system role (Super Admin) cannot be edited or have its grants changed;
- *     it holds everything by definition and is the account of last resort
- *   - you cannot remove rbac.manage from your own role, which is the one edit
- *     that cannot be undone from inside the application
- *   - unknown permission keys are rejected rather than silently dropped, so a
- *     typo does not quietly grant nothing
- *
- * Grants are replaced wholesale inside a transaction: the matrix screen sends
- * the full intended set, and a partial apply would leave a role with a mixture
- * of old and new rights.
- */
+/** POST /api/roles/save.php (needs rbac.manage) creates or edits a role, replacing its permissions in one transaction; Super Admin may only switch its unlocked permissions, and it cannot remove your own rbac.manage or accept unknown keys. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -44,8 +24,7 @@ if (!is_array($wanted)) {
 }
 $wanted = array_values(array_unique(array_map('strval', $wanted)));
 
-/* Reject unknown keys loudly. Silently dropping them would mean the screen
-   shows a permission as granted that was never stored. */
+/* Reject unknown permission keys instead of silently dropping them. */
 $known = array_column(Database::all('SELECT id, permission_key FROM permissions'), 'id', 'permission_key');
 $unknown = array_diff($wanted, array_keys($known));
 if ($unknown) {
@@ -54,13 +33,39 @@ if ($unknown) {
     ]);
 }
 
-/* Super Admin's own permissions cannot be handed out. Refused by name, so the
-   person trying learns why rather than seeing the switch silently reset. */
+/* The Super Admin keeps its name and locked permissions; it may only switch its other permissions on or off. */
+if ($isUpdate && (int) Database::scalar('SELECT is_system FROM roles WHERE id = ?', [$in['id']]) === 1) {
+    $before = Rbac::superAdminOff();
+    $off    = Rbac::saveSuperAdmin($wanted);
+    $detail = [];
+    if ($now = array_diff($off, $before))    { $detail[] = 'switched off ' . implode(', ', $now); }
+    if ($back = array_diff($before, $off))   { $detail[] = 'switched on ' . implode(', ', $back); }
+    Database::run(
+        'INSERT INTO audit_logs (ts, actor, actor_user_id, type, description) VALUES (NOW(), ?, ?, ?, ?)',
+        [$actor['name'], $actor['id'], 'system',
+         'Super Admin permissions updated. ' . ($detail ? implode('; ', $detail) . '.' : 'No permission changes.')]
+    );
+    Response::ok([
+        'id'          => (int) $in['id'],
+        'name'        => $data['name'],
+        'permissions' => Rbac::forRole((int) $in['id'], true),
+    ]);
+}
+
+/* Super Admin-only permissions cannot be granted to other roles. */
 $reserved = array_values(array_filter($wanted, [Rbac::class, 'isSystemOnly']));
 if ($reserved) {
     Response::validation('That permission belongs to Super Admin only.', [
         'permissions' => 'Only the Super Admin can hold: ' . implode(', ', $reserved)
             . '. It cannot be granted to another role.',
+    ]);
+}
+
+/* Admin-only permissions (large refunds) can be granted to the Admin role and no other. */
+$adminOnly = array_values(array_filter($wanted, [Rbac::class, 'isAdminOnly']));
+if ($adminOnly && !(isset($in['id']) && Rbac::isAdminRole((int) $in['id']))) {
+    Response::validation('That permission is for the Admin role only.', [
+        'permissions' => 'Only the Super Admin and the Admin role can hold: ' . implode(', ', $adminOnly) . '.',
     ]);
 }
 
@@ -77,15 +82,7 @@ if ($isUpdate) {
     if ($role === null) {
         Response::notFound('That role does not exist.');
     }
-    if ((int) $role['is_system'] === 1) {
-        Response::forbidden(
-            "{$role['name']} is a system role — it holds every permission by definition and cannot be edited. " .
-            'It is the account of last resort if permissions are misconfigured.'
-        );
-    }
-
-    /* Removing rbac.manage from your own role locks permission management away
-       from the person doing it, and there is no way back from inside the app. */
+    /* You cannot remove rbac.manage from your own role. */
     if ((int) $role['id'] === (int) $actor['role_id'] && !in_array('rbac.manage', $wanted, true)) {
         Response::conflict(
             'You cannot remove permission management from your own role — you would not be able to undo it.'

@@ -1,22 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/pos/quote.php
- * Body: { "items": [{id, qty}], "sc_pwd"?: {type, id, name}, "retailer_id"?: "cus-02" }
- *
- * Requires pos.use.
- *
- * The VAT breakdown a sale WOULD have, for the POS to show before the cashier
- * places it: the senior/PWD discount, VAT, any withholding tax and the amount
- * due to tender against. Writes nothing and reserves nothing.
- *
- * WHY A ROUND TRIP AND NOT JAVASCRIPT. The tax rules live in api/core/Tax.php.
- * A copy in the browser would be a second implementation of money rules, and
- * the two would drift — the exact failure that had the POS and the checkout
- * disagreeing about payment methods. pos/checkout.php runs the same compute()
- * again when the order is placed, so what is quoted is what is charged.
- */
+/** POST /api/pos/quote.php (needs pos.use) previews a sale's VAT, discounts, withholding and amount due using the same Tax.php rules as checkout, writing nothing. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -26,9 +11,7 @@ Rbac::require('pos.use');
 $in    = Response::input();
 $rules = Tax::rules();
 
-/* A preview accepts a half-typed SC/PWD block: the discount shows as soon as
-   the type is chosen, and the weekly cap is checked once an ID is present. The
-   checkout is where incomplete details are refused. */
+/* A preview accepts incomplete Senior/PWD details; checkout is where they are required. */
 $scPwd = null;
 $block = $in['sc_pwd'] ?? null;
 if ((int) $rules['sc_pwd_enabled'] === 1 && is_array($block)
@@ -41,8 +24,24 @@ if ((int) $rules['sc_pwd_enabled'] === 1 && is_array($block)
 }
 
 $retailerId = trim((string) ($in['retailer_id'] ?? ''));
+$qty = Tax::itemCount($in['items'] ?? []);
 $tax = Tax::compute(Tax::quoteLines($in['items'] ?? []), $scPwd,
-    $retailerId !== '' ? Tax::withholdingRateFor($retailerId) : null);
+    $retailerId !== '' ? Tax::withholdingRateFor($retailerId, $qty) : null);
+/* Set when the retailer discount is missed only because the sale is under the minimum item count. */
+$tax['discountShortfall'] = $retailerId !== '' ? Tax::discountShortfall($retailerId, $qty) : null;
+
+/* Estimated Delivery Fee for a walk-in delivery (api/core/Shipping.php). */
+if (($in['order_type'] ?? '') === 'delivery' && Shipping::ready()) {
+    $tax = Shipping::applyTo($tax, Shipping::quote(
+        Shipping::wanted($in['items'] ?? []),
+        Shipping::destinationFromPos($in['destination'] ?? '', (string) ($in['address'] ?? ''))
+    ));
+}
+
+/* A Net term for a retailer shows its interest in the breakdown. */
+if ($retailerId !== '') {
+    $tax = Payments::applyInterest($tax, (string) ($in['pay_method'] ?? ''));
+}
 
 Response::ok([
     'tax'   => $tax,

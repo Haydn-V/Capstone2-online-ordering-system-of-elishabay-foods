@@ -1,16 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Email-verified sign-up.
- *
- * shop/register.php validates the form and HOLDS it here, in the PHP session —
- * nothing is written to customers until the emailed code is confirmed by
- * shop/register-verify.php. The password is kept only as its hash.
- *
- * The code: 6 random digits, stored hashed, 10 minutes, 5 attempts, one resend
- * a minute. A new code replaces the old one.
- */
+/** Email-verified sign-up: the form is held in the session (password only as a hash) and nothing is saved until the 6-digit code (hashed, 10 min, 5 attempts, one resend per minute) is confirmed. */
 final class Signup
 {
     private const KEY      = 'eb_signup';
@@ -36,7 +27,7 @@ final class Signup
         unset($_SESSION[self::KEY]);
     }
 
-    /** New code (resend). Throttled; returns what the page needs to show. */
+    /** Send a new code (throttled) and return what the page needs to show. */
     public static function issue(bool $isResend = false): array
     {
         $s = self::pending();
@@ -65,15 +56,14 @@ final class Signup
             'emailed'   => $mailed,
             'mailLive'  => Mailer::isLive(),
         ];
-        /* Dev install with no real mail: hand the code back so the flow can be
-           tested. Never when mail is live (same rule as shop/profile.php). */
+        /* Dev install without real mail: return the code for testing, never when mail is live. */
         if (!Mailer::isLive() && (Database::config()['app']['debug'] ?? false)) {
             $out['devCode'] = $code;
         }
         return $out;
     }
 
-    /** Check a code. Returns the held sign-up on success; responds and exits otherwise. */
+    /** Check a code and return the held sign-up, or respond with an error and exit. */
     public static function verify(string $code): array
     {
         $s = self::pending();

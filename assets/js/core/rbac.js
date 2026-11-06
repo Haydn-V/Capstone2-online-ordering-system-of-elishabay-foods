@@ -1,27 +1,6 @@
 import { EbSession } from "./session.js";
 import { EbUI } from "./ui.js";
-/* ============================================================
- RBAC — showing and hiding by permission
- ------------------------------------------------------------
- Consolidates what used to be spread across three places:
- hasPerm() and applyRBAC() in engine.js, the entry-point check in
- role-gate.js, and admin-gate.js.
-
- THE THING TO KEEP IN MIND
- -------------------------
- Everything in this file is presentation. Hiding a button does not
- protect the endpoint behind it — anyone can open a terminal. Real
- enforcement is Rbac::require() in PHP, on every endpoint, and it
- is tested: a Cashier session calling users/list.php gets 403 even
- though a Cashier's browser never renders that link.
-
- So this file exists to keep the interface honest and legible, not
- to keep anybody out.
-
- Permissions come from the server with the session (EbSession), so
- an edit on the Roles & Permissions screen changes what people see
- as soon as they reload — no hardcoded table to keep in sync.
- ============================================================ */
+/* RBAC in the browser only shows or hides controls using permissions from the server session; real security is Rbac::require() in PHP on every endpoint. */
 
 
 const session = () => EbSession;
@@ -38,17 +17,11 @@ const canAll = (...perms) => perms.every(can);
 /** Any one of them. */
 const canAny = (...perms) => perms.some(can);
 
-/**
- * Hide every [data-perm] element the current user lacks, then collapse any
- * .nav-group left with nothing visible — otherwise a role sees an empty
- * section header with no items under it.
- *
- * Sets style.display rather than a class because the existing stylesheet
- * has no utility class for this and the sidebar's own rules would fight one.
- */
+/** Hide every [data-perm] element the user lacks and collapse nav groups left empty. */
 function apply(root = document) {
   root.querySelectorAll("[data-perm]").forEach(el => {
-    el.style.display = can(el.dataset.perm) ? "" : "none";
+    /* "a|b" means any of the listed permissions. */
+    el.style.display = el.dataset.perm.split("|").some(p => can(p)) ? "" : "none";
   });
 
   root.querySelectorAll(".nav-group").forEach(group => {
@@ -58,12 +31,7 @@ function apply(root = document) {
   });
 }
 
-/**
- * Guard a module before navigating to it. Returns true when allowed.
- *
- * The server refuses the data regardless; this just avoids opening a screen
- * that would only fill with 403s.
- */
+/** Check permission before opening a module (true if allowed); the server enforces it anyway. */
 function guard(permission) {
   if (!permission || can(permission)) return true;
   if (EbUI) EbUI.toast("You don't have access to that section.", "err");

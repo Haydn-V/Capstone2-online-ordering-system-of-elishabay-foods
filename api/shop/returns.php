@@ -1,18 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/shop/returns.php
- *
- * The signed-in customer's return & refund requests, and the orders they can
- * still request one for. Scoped by the session; takes no customer id.
- *
- *   requests[]  newest first, each with its lines and the total asked for
- *   eligible[]  completed orders still inside the 24-hour window that have at
- *               least one unit not already in an open request
- *
- * Staff notes are internal and are not returned; a refusal's reason is.
- */
+/** GET /api/shop/returns.php returns the signed-in customer's return requests and the orders still eligible within the 24-hour window, without internal staff notes. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -68,8 +57,7 @@ $requests = array_map(static function (array $r) use ($items): array {
     ];
 }, $rows);
 
-/* The window is measured on the database clock — the same one that stamped
-   completed_at (Returns::stampCompleted). */
+/* The window uses the database clock, same as completed_at. */
 $eligible = [];
 foreach (Database::all(
     'SELECT id, date, total, completed_at,

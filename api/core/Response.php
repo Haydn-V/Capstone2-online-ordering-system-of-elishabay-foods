@@ -1,15 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * One JSON envelope for every endpoint, success or failure.
- *
- *   { "ok": true,  "data": ..., "meta": { "page": 1, "total": 120 } }
- *   { "ok": false, "error": { "code": "VALIDATION", "message": "...", "fields": {} } }
- *
- * Callers can therefore branch on `ok` alone and never have to guess at the
- * shape of a failure. api.js on the front end unwraps exactly this.
- */
+/** One JSON envelope for every endpoint ({ok, data, meta} or {ok:false, error:{code, message, fields}}) so callers only branch on ok. */
 final class Response
 {
     /** Emit a success envelope and stop. */
@@ -28,19 +20,8 @@ final class Response
         self::ok($data, null, 201);
     }
 
-    /**
-     * Emit a failure envelope and stop.
-     *
-     * @param string $code    machine-readable: VALIDATION, UNAUTHENTICATED,
-     *                        FORBIDDEN, NOT_FOUND, CONFLICT, RATE_LIMITED, SERVER
-     * @param array  $fields  field name => message, for form rendering
-     */
-    /**
-     * @param array $fields form-input errors, rendered against a form by the client
-     * @param array $meta   anything else the client needs to act on the refusal
-     *                      (a retry delay, say) — kept OUT of `fields` so it is
-     *                      never mistaken for an input name
-     */
+    /** Send a failure envelope and stop; $code is machine-readable and $fields maps form fields to messages. */
+    /** @param $fields form-input errors; @param $meta other details the client needs (like a retry delay), kept separate from fields. */
     public static function error(
         string $code,
         string $message,
@@ -90,15 +71,7 @@ final class Response
         self::error('CONFLICT', $message, 409);
     }
 
-    /**
-     * @param int $retryAfter seconds the caller must wait, 0 when unknown.
-     *
-     * NOT PASSED AS A `fields` ENTRY. `fields` means "these form inputs are
-     * wrong" and the client renders it straight onto a form — a `retryAfter`
-     * key in there would have the sign-in modal hunting for an input by that
-     * name. It goes beside `fields` in the envelope instead, and out as a real
-     * `Retry-After` header, which is what the status code already promises.
-     */
+    /** Rate-limited: put retryAfter beside fields (not in it) and send a real Retry-After header. */
     public static function rateLimited(string $message, int $retryAfter = 0): never
     {
         if ($retryAfter > 0) {
@@ -112,11 +85,7 @@ final class Response
         self::error('SERVER', $message, 500);
     }
 
-    /**
-     * Reject anything but the expected HTTP verb.
-     *
-     * @param string|string[] $allowed
-     */
+    /** Reject any HTTP method other than the allowed ones. */
     public static function requireMethod(string|array $allowed): void
     {
         $allowed = (array) $allowed;
@@ -127,13 +96,7 @@ final class Response
         }
     }
 
-    /**
-     * Decode a JSON request body.
-     *
-     * Falls back to form-encoded input so an endpoint keeps working if a
-     * caller posts a plain <form>. Returns [] rather than null so callers can
-     * index it without null checks.
-     */
+    /** Decode the JSON body (falling back to form data), returning [] instead of null. */
     public static function input(): array
     {
         $raw = file_get_contents('php://input') ?: '';
@@ -142,8 +105,7 @@ final class Response
             if (is_array($decoded)) {
                 return $decoded;
             }
-            /* A body that is present but not valid JSON is a caller bug worth
-               naming, rather than silently treating as empty. */
+            /* A body that is present but not valid JSON is reported as an error, not treated as empty. */
             if (json_last_error() !== JSON_ERROR_NONE && !empty($_POST) === false) {
                 self::badRequest('Request body is not valid JSON.');
             }
@@ -154,18 +116,7 @@ final class Response
     /** Set by cacheFor(); null means the default, no-store. */
     private static ?int $cacheSeconds = null;
 
-    /**
-     * Let THIS response be cached by the browser for `$seconds`.
-     *
-     * Everything else stays `no-store`, and that default is right: nearly every
-     * response here is somebody's cart, orders or session. The exception is
-     * public reference data that changes every few years — the PSGC location
-     * lists — where re-fetching the same province's cities on every page is
-     * pure waste. Opt-in per response, never a global switch, so an endpoint
-     * that returns personal data cannot end up cached by forgetting something.
-     *
-     * Applied to successful responses only; an error is never cached.
-     */
+    /** Allow this one response to be cached for $seconds (used for public location lists only); everything else stays no-store and errors are never cached. */
     public static function cacheFor(int $seconds): void
     {
         self::$cacheSeconds = max(0, $seconds);
@@ -173,9 +124,7 @@ final class Response
 
     private static function send(array $body, int $status): never
     {
-        /* Discard anything already buffered. A stray warning printed before
-           this point would otherwise sit in front of the JSON and make the
-           whole response unparseable to the client. */
+        /* Discard anything already buffered so stray output cannot break the JSON. */
         while (ob_get_level() > 0) {
             ob_end_clean();
         }

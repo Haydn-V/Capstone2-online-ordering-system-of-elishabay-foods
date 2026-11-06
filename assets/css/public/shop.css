@@ -1,13 +1,9 @@
-/* =================================================================
-   V4 SHOP PAGE — layered on styles.css
-   ================================================================= */
+/* ===== SHOP PAGE (layered on styles.css) ===== */
 
 /* Entrance animations */
 /* No staggered entrance: main already fades in (styles.css). */
 
-/* =================================================================
-   SHOP HERO — follows theme (matches index hero)
-   ================================================================= */
+/* ===== SHOP HERO: follows the theme, matching the index hero ===== */
 .shop-hero {
   position: relative;
   background: var(--hero-bg);
@@ -89,28 +85,10 @@
   .sw-fill, .sw-gold, .sw-red { animation: none; }
 }
 
-/* =================================================================
-   SHOP PAGE LAYOUT
-   ================================================================= */
+/* ===== SHOP PAGE LAYOUT ===== */
 .shop-page-section { padding-block: clamp(40px,6vw,64px); }
 
-/* WIDER THAN THE SITE'S USUAL 1200px, ON THIS PAGE ONLY.
-
-   --maxw is the width every .container on the site shares — hero banners,
-   the footer, the About section. Shop is the one page with a product MATRIX
-   in it, and 1200px left a 190px card in the 4-column row view: narrow
-   enough that a 4/3.2 photo plus a name, a description, a price and an Add
-   button read as cramped rather than as a product. Grid mode showed the same
-   thing more quietly — its cards were naturally ~256px, wider than the row's
-   forced four, so the two views did not even match each other.
-
-   Both containers on this page widen together — the hero's breadcrumb and
-   title sit in one, the sidebar and grid in the other — so the page keeps
-   one left edge top to bottom instead of the hero re-centering narrower than
-   the content below it. The footer keeps the shared 1200px; it is a
-   different kind of content (columns of links) and widening it was not part
-   of what was asked. 1480px is sized to the row view specifically: it gets a
-   4-column card back to roughly the width Grid mode gives one on its own. */
+/* This page's containers widen to 1480px (hero and content together) so product cards are not cramped; the footer keeps 1200px. */
 .shop-hero .container,
 .shop-page-section .container { max-width: 1480px; }
 
@@ -119,25 +97,10 @@
   grid-template-columns: 256px 1fr;
   gap: 36px; align-items: start;
 }
-/* A grid track's default min-width is auto, which means "at least as wide as
-   my content wants to be" — invisible while the content is a normal grid,
-   but the row view below packs fifteen 252px cards edge to edge with no
-   wrapping, so its CONTENT width is however many cards there are times their
-   width. Without this, the 1fr track grew to fit that instead of clipping it,
-   the "scrollable" row never actually needed to scroll, and the whole layout
-   pushed past the right edge of the window. min-width: 0 lets the track be
-   exactly the space the grid gives it and puts the overflow back inside
-   #product-grid, which is the one place it is supposed to be.
-
-   container-type: inline-size makes .shop-main's OWN width queryable by the
-   column-count breakpoints further down (@container, not @media) — see the
-   comment above them for why measuring the container beats measuring the
-   viewport for this specific thing. */
+/* min-width: 0 keeps the sideways row's overflow inside the grid, and container-type lets the column breakpoints below measure .shop-main itself. */
 .shop-main { min-width: 0; container-type: inline-size; }
 
-/* =================================================================
-   SIDEBAR
-   ================================================================= */
+/* ===== SIDEBAR ===== */
 .shop-sidebar {
   position: sticky; top: calc(var(--nav-h) + 16px);
   display: flex; flex-direction: column; gap: 12px;
@@ -188,34 +151,17 @@
 .sidebar-clear.visible { opacity: 1; pointer-events: auto; }
 .sidebar-clear:hover { text-decoration: underline; }
 
-/* =================================================================
-   SHOP MAIN
-   ================================================================= */
+/* ===== SHOP MAIN ===== */
 .shop-main-header {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 22px; flex-wrap: wrap; gap: 10px;
 }
 .product-count { font-size: var(--fs-base); font-weight: 600; color: var(--text-muted); }
 .product-count strong { color: var(--text); font-weight: 700; }
-/* 252px, not 200px — matches the site-wide .product-grid floor (styles.css)
-   instead of undercutting it. At the widened 1480px container above, a 200px
-   floor let auto-fill pack in a fifth column and shrank every card to 204px
-   — the same slimness this page's row view was just fixed for, reintroduced
-   in Grid mode by the extra width auto-fill went looking for. 252px keeps
-   auto-fill from reaching for that fifth column: four cards at ~260px, which
-   is what the row view gives four cards too, so switching between "Grid" and
-   "Scroll sideways" changes the shape of the list, not the size of a card. */
+/* 252px card minimum, matching the site-wide .product-grid, so Grid and row views show the same card size. */
 .shop-main .product-grid { grid-template-columns: repeat(auto-fill, minmax(252px,1fr)); gap: 18px; }
 
-/* =================================================================
-   VIEW TOGGLE — grid vs. sideways-scrolling row
-
-   Same pill-and-fill language as .chip / .sort-select on this page: plain
-   border at rest, gold fill for the chosen one. Two buttons rather than one
-   button that flips, because a flip-button's OWN label has to describe the
-   state it is NOT in ("Switch to row") to make sense, which reads backwards
-   the instant it is pressed. Two named, mutually exclusive buttons read the
-   same before and after a click. */
+/* View toggle: two named buttons (Grid / Scroll sideways) with gold fill for the chosen one. */
 .view-toggle {
   display: inline-flex; align-items: center; gap: 4px;
   background: var(--bg-soft); border: 1.5px solid var(--border-lift);
@@ -236,43 +182,10 @@
   box-shadow: var(--shadow-sm);
 }
 
-/* THE ROW ITSELF — a 2-row, N-column matrix that scrolls sideways rather
-   than a single strip of cards, because a strip one card tall wastes the
-   vertical space every other layout on this page uses and reads as a
-   completely different (and thinner) product list than "Grid".
-
-   grid-auto-flow: column is what makes this a matrix instead of a strip:
-   auto-placement fills column 1 top-to-bottom before starting column 2, so
-   with grid-template-rows fixed at two the cards stack in pairs and grow
-   SIDEWAYS — card 1 and 2 are one column, 3 and 4 the next, and so on. That
-   is the one line doing the actual "2 rows and 4 columns" — --row-cols below
-   only decides how many of those columns fit in view before the rest scroll
-   offscreen; the count itself comes from the media queries beneath it.
-
-   .shop-main .product-grid.view-row (three classes, not two) is deliberate:
-   .shop-main .product-grid, three lines above, sets grid-template-columns for
-   plain Grid mode and is re-declared inside the 640px breakpoint further
-   down this file. Matching it at the SAME specificity would leave the
-   winner decided by which rule happens to sit lower in the file — true
-   today, silently reversed the next time either block is reordered. The
-   extra class makes this selector win outright, at every width, without
-   depending on source order.
-
-   scroll-snap-type is `proximity`, not `mandatory`: mandatory forces the
-   scroll to always settle on a column edge, which fights a shopper trying to
-   stop mid-scroll to read a card closely. Proximity only snaps when already
-   close, which is the assistance without the fight.
-
-   The scrollbar is left visible on purpose — unlike the tab strips elsewhere
-   in this project, which hide theirs because those rows are meant to be
-   reached by clicking a tab into view, this row's whole point is to be
-   scrolled, so the bar stays as the visible affordance that there is more to
-   the right. */
+/* Row view is a two-row grid that grows sideways (grid-auto-flow: column) with proximity scroll-snap and a visible scrollbar; three classes so it always beats the plain grid rule. */
 .shop-main .product-grid.view-row {
   --row-cols: 4;
-  --row-gap: 18px; /* also feeds the width formula below — never set `gap`
-                       directly here, or the two can disagree the way the
-                       first draft of this rule did at 640px. */
+  --row-gap: 18px; /* Also used in the width formula below, so never set gap directly here. */
   display: grid;
   grid-auto-flow: column;
   grid-template-columns: none; /* cancels the auto-fill Grid mode declares */
@@ -288,35 +201,10 @@
 .shop-main .product-grid.view-row .product-card {
   min-width: 0; scroll-snap-align: start;
 }
-/* Empty state is one card-shaped message, not a matrix — matching it back to
-   a plain block so it reads as the same "no results" panel Grid mode shows,
-   full width, rather than one column-wide sliver of it. flex alone is not
-   enough: .no-results' own grid-column:1/-1 (styles.css) does nothing outside
-   a grid, so without an explicit basis it fell back to fitting its own
-   content instead of the row. */
+/* The empty state is a full-width block, like in Grid mode. */
 .shop-main .product-grid.view-row:has(.no-results) { display: flex; }
 .shop-main .product-grid.view-row .no-results { flex: 1 1 100%; }
-/* THE COLUMN COUNT IS QUERIED AGAINST .shop-main, NOT THE VIEWPORT.
-
-   Four columns is what the desktop screenshot in the request was measured
-   against, and it stays four only as long as the row can give each column
-   something close to that width. A first attempt here dropped to three
-   columns below a 900px VIEWPORT, on the assumption that was also where
-   the sidebar had stacked out of the way and the row got its full column
-   back. It measured 170px cards at a 950px window instead — the sidebar's
-   own stacking point is also 900px, but .shop-sidebar is a fixed 256px
-   until it hits that point rather than shrinking with the window, so a
-   950px viewport and a 1320px one were losing width at completely
-   different rates and one breakpoint could not describe both.
-
-   @container asks the only question that actually matters here: how wide
-   is the box the columns have to fit in right now, sidebar or no sidebar,
-   without this file needing to know which case it is. Three tiers, not the
-   two @media could see cleanly: four columns with room to spare, three once
-   the container is genuinely down to what a stacked, sidebar-less layout
-   leaves it, two in between. The two-column tier is left wide (roughly
-   250–450px across its range) rather than tuned tight to one edge, because
-   a generous card was never the complaint — only a cramped one was. */
+/* Column count uses @container queries on .shop-main (not the viewport), giving 4, 2 or 3 columns based on the real space available. */
 @container (max-width: 993px) {
   .shop-main .product-grid.view-row { --row-cols: 3; }
 }
@@ -325,9 +213,7 @@
   .shop-main .product-grid.view-row .product-card { min-height: 0; }
 }
 
-/* =================================================================
-   RESPONSIVE
-   ================================================================= */
+/* ===== RESPONSIVE ===== */
 @media (max-width: 900px) {
   .shop-page-layout { grid-template-columns: 1fr; }
   .shop-sidebar {
@@ -346,12 +232,7 @@
   .shop-hero-canvas .jar-glow { display: none; }
 }
 
-/* A field the checkout filled in from the customer's saved profile.
-
-   Marked because a value that appears without the user typing it needs to be
-   distinguishable from one they entered — otherwise a wrong saved address gets
-   submitted unnoticed. It is a hint, not a lock: the field stays fully
-   editable (decision I9), and the marker is removed as soon as it is touched. */
+/* Marks a checkout field prefilled from the saved profile (still editable; removed once touched). */
 .control.is-prefilled {
   border-color: var(--gold, #c9a227);
   background-image: linear-gradient(0deg, rgba(201, 162, 39, .06), rgba(201, 162, 39, .06));
@@ -359,3 +240,127 @@
 .control.is-prefilled:focus { background-image: none; }
 
 .co-save-profile.hide { display: none !important; }
+
+/* ===== SHOP ON PHONES (640px and below): products on the first screen ===== */
+/* Wide screens: the sheet wrapper and head have no box, so the sidebar is unchanged. */
+.shop-filter-sheet { display: contents; }
+.shop-sheet-head, .shop-filter-btn, .shop-active-filters { display: none; }
+.shop-sheet-backdrop { display: none; }
+
+@media (max-width: 640px) {
+  /* The bar: search + Filter & Sort on one row. */
+  .shop-sidebar { display: block; }
+  .shop-sidebar > .sidebar-block:first-child {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center;
+    padding: 10px; border-radius: var(--r-md);
+  }
+  .shop-sidebar > .sidebar-block:first-child .sidebar-label { display: none; }
+  .shop-filter-btn {
+    position: relative; display: inline-flex; align-items: center; gap: 6px;
+    min-height: 44px; padding: 0 14px; border-radius: var(--r-md); cursor: pointer;
+    font: 700 var(--fs-2xs) "Montserrat", sans-serif; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--text); background: var(--surface-2); border: 1.5px solid var(--border-lift); white-space: nowrap;
+  }
+  .shop-filter-btn svg { width: 16px; height: 16px; }
+  .shop-filter-btn[data-count]:not([data-count=""])::after {
+    content: attr(data-count); position: absolute; top: -6px; right: -6px;
+    min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+    display: grid; place-items: center; font-size: 11px; color: #fff; background: var(--red);
+  }
+
+  /* Category + sort: a bottom sheet. */
+  .shop-filter-sheet {
+    display: flex; flex-direction: column; gap: 10px;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: calc(var(--z-modal) - 1);
+    max-height: 80vh; max-height: 80dvh; overflow-y: auto;
+    padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    background: var(--bg); border-top: 1px solid var(--border-lift);
+    border-radius: var(--r-xl) var(--r-xl) 0 0; box-shadow: var(--shadow-lg);
+    transform: translateY(105%); visibility: hidden;
+    transition: transform var(--t-slow) var(--ease), visibility 0s linear var(--t-slow);
+  }
+  .shop-filter-sheet.open { transform: none; visibility: visible; transition: transform var(--t-slow) var(--ease); }
+  .shop-sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 2px 4px; }
+  .shop-sheet-head b { font: 700 var(--fs-md) "Montserrat", sans-serif; }
+  .shop-sheet-done {
+    min-height: 44px; padding: 0 18px; border-radius: var(--r-pill); cursor: pointer;
+    font: 700 var(--fs-2xs) "Montserrat", sans-serif; letter-spacing: .08em; text-transform: uppercase;
+    background: var(--gold); color: #1E1A0E;
+  }
+  .shop-filter-sheet .sidebar-block { box-shadow: none; }
+  .shop-sheet-backdrop:not([hidden]) { display: block; position: fixed; inset: 0; z-index: calc(var(--z-modal) - 2); background: rgba(20,8,6,.45); }
+  html.shop-sheet-open, html.shop-sheet-open body { overflow: hidden; }
+
+  /* Active filters, under the bar. */
+  .shop-active-filters:not(:empty) { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+  .af-chip {
+    display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 6px 0 12px;
+    border-radius: var(--r-pill); cursor: pointer; font-size: var(--fs-sm); font-weight: 600;
+    color: var(--text); background: var(--gold-dim); border: 1px solid var(--gold-line);
+  }
+  .af-chip span { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; font-size: 15px; color: var(--text-muted); }
+
+  /* Phones always use the two-column grid; the saved row preference is ignored, not cleared. */
+  .view-toggle { display: none; }
+  .shop-main .product-grid.view-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; overflow: visible;
+    --row-cols: 2;
+  }
+  .shop-main .product-grid.view-row .product-card { width: auto; min-width: 0; }
+}
+
+/* Phone card: photo with info over it, the sold count above, and one full-width Add button, all cards the same height. */
+@media (max-width: 640px) {
+  .shop-main .product-card .pc-foot { flex-direction: column; align-items: stretch; gap: 6px; padding: 8px; }
+  .shop-main .product-card .pc-sold { font-size: var(--fs-2xs); text-align: center; }
+  .shop-main .product-card .btn-add { width: 100%; min-height: 44px; padding: 0 8px; justify-content: center; font-size: var(--fs-2xs); }
+  .shop-main .product-card .pc-overlay { padding: 10px; }
+  .shop-main .product-card .pc-overlay .pc-name {
+    font-size: var(--fs-lg);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .shop-main .product-card .pc-overlay .price { font-size: var(--fs-md); }
+  .shop-main .product-grid { align-items: stretch; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shop-filter-sheet, .shop-filter-sheet.open { transition: none; }
+}
+@media (max-width: 640px) {
+  /* The bar has no card chrome of its own, so the search box keeps the width. */
+  .shop-sidebar > .sidebar-block:first-child { padding: 0; background: none; border: 0; box-shadow: none; }
+  .shop-filter-btn { padding: 0 12px; letter-spacing: .03em; font-size: 11px; }
+  /* Phones: show only the star for Best Seller (the label stays for screen readers). */
+  .shop-main .product-card .ribbon { font-size: 0; gap: 0; padding: 6px 8px 6px 9px; top: 8px; }
+  .shop-main .product-card .ribbon svg { width: 13px; height: 13px; }
+  .shop-main .product-card:has(.ribbon) .pc-overlay .pc-name { padding-right: 26px; }
+}
+
+/* Sort pills exist only for the phone sheet. */
+.sort-pills { display: none; }
+@media (max-width: 640px) {
+  .shop-filter-sheet .sidebar-block { padding: 14px; }
+  .shop-filter-sheet .sidebar-label { margin-bottom: 10px; }
+  /* Category: one swipeable row instead of two wrapped rows. */
+  .shop-filter-sheet .sidebar-cats {
+    flex-wrap: nowrap; overflow-x: auto; gap: 6px; padding-bottom: 2px;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .shop-filter-sheet .sidebar-cats::-webkit-scrollbar { display: none; }
+  .shop-filter-sheet .sidebar-cats .chip { flex: none; white-space: nowrap; min-height: 40px; padding: 0 14px; }
+  /* "Clear filters" was invisible but still took its line. */
+  .shop-filter-sheet .sidebar-clear:not(.visible) { display: none; }
+  .shop-filter-sheet .sidebar-clear.visible { margin-top: 10px; }
+
+  /* Sort: pills, two per row, the chosen one filled. */
+  .shop-filter-sheet .sort-select, .shop-filter-sheet .sidebar-block .ebs { display: none !important; }
+  .sort-pills { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .sort-pill {
+    min-height: 44px; padding: 6px 10px; border-radius: var(--r-md); cursor: pointer;
+    font: 600 var(--fs-sm) "Karla", sans-serif; color: var(--text); text-align: center; line-height: 1.25;
+    background: var(--surface); border: 1.5px solid var(--border-lift);
+    transition: border-color var(--t), background var(--t);
+  }
+  .sort-pill:hover { border-color: var(--gold); }
+  .sort-pill.active { border-color: var(--gold); background: var(--gold-dim); font-weight: 700; }
+  .sort-pill:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+}

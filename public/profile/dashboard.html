@@ -2,11 +2,11 @@
 <html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Dashboard — Elisha Bay</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="../../assets/css/public/styles.css" />
     <link rel="stylesheet" href="../../assets/css/public/profile.css" />
       <!-- Theme before first paint: Light / Dark / System (no flash). -->
@@ -53,24 +53,7 @@
     <!-- ===== SCAFFOLDING required by site.js ===== -->
     <div id="modal-scrim" class="modal-scrim">
       <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <!-- #modal-title WAS MISSING FROM THIS PAGE, AND THAT BROKE EVERY MODAL.
-
-             openModal() opens with `$("#modal-title").textContent = title`. With
-             no such element that line threw before anything opened, so SIGN IN
-             on the signed-out guard and Proceed to Checkout in the cart both
-             looked like dead buttons on all four profile pages while working
-             fine on index.html and shop.html, which have it.
-
-             aria-labelledby="modal-title" was already here, pointing at nothing
-             — a dangling reference, so role="dialog" also had no accessible
-             name. Both are fixed by the element existing.
-
-             The `modal-body` CLASS was missing too; .modal-body carries the
-             dialog's 18px/26px padding, so content sat flush against the edges.
-
-             Same drift as #toast-wrap vs #toast-root, written up on showToast().
-             The shared shell in assets/js/public/modal-shell.js now owns this
-             markup so the copies cannot diverge again. -->
+        <!-- The modal markup (with #modal-title and .modal-body) is required; modal-shell.js now ensures it. -->
         <div class="modal-head">
           <h3 id="modal-title"></h3>
           <button class="modal-close" id="modal-close" aria-label="Close dialog">
@@ -108,10 +91,7 @@
         <div id="mp-content" style="display:none">
           <div class="mp-account-layout">
 
-            <!-- Rendered by EbProfileShell. The sidebar markup used to be
-                 repeated in full on every account page, which is how the same
-                 person came to be labelled "CUSTOMER" here and "Retail
-                 Partner" one page over. -->
+            <!-- Sidebar rendered by EbProfileShell. -->
             <aside class="mp-account-sidebar" id="mp-sidebar"></aside>
 
             <div class="mp-account-main">
@@ -125,10 +105,7 @@
                 <p class="mp-sub" id="db-sub">Everything on your account at a glance.</p>
               </div>
 
-              <!-- Every panel below is filled by JS. They are declared here
-                   rather than built as one innerHTML string so the page has a
-                   shape before the request lands, and so a panel that fails to
-                   fill degrades on its own instead of blanking the dashboard. -->
+              <!-- Panels are declared here and filled by JS, so the page has its shape before data arrives. -->
               <!-- Welcome banner: greeting + the three places people go next. -->
               <div class="db-hero">
                 <div class="db-hero-text">
@@ -144,8 +121,7 @@
               <div class="db-stats" id="db-stats"></div>
 
               <div class="db-grid">
-                <!-- Order Tracking is a popup now: click an order number in
-                     Recent Orders (assets/js/public/order-track.js). -->
+                <!-- Order tracking opens from an order number in Recent Orders (order-track.js). -->
                 <section class="db-panel db-panel-pay" aria-labelledby="db-pay-h">
                   <div class="db-panel-head">
                     <h2 class="db-panel-title" id="db-pay-h"><span class="db-panel-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></span>Payment History</h2>
@@ -178,28 +154,9 @@
     <script defer src="../../assets/js/public/profile-shell.js"></script>
     <script defer src="../../assets/js/public/order-track.js"></script>
     <script>
-    /* WRAPPED IN AN IIFE, and it has to be.
-
-       This is a classic script sharing a global scope with site.js, which
-       already declares `peso` as a top-level const and `esc` as a top-level
-       function. A second top-level `const esc` is not a shadow — it is a
-       SyntaxError that kills the ENTIRE script before a line of it runs, and
-       takes site.js's globals with it. assets/js/core/format.js records the
-       same trap in its own header: it is why EbFormat is published as one
-       object rather than as bare globals.
-
-       Everything below is therefore private to this page. Nothing here needs
-       to be reachable from anywhere else. */
+    /* Wrapped in an IIFE to avoid redeclaring site.js's top-level esc and peso. */
     (function () {
-    /* ── Dashboard page logic ──────────────────────────────────────────
-       One request, one render. api/shop/dashboard.php returns the counts, the
-       tracking timeline, the recent orders and the payment history together —
-       see that file's header for why this is one endpoint and not four.
-
-       Nothing here computes a figure. Totals, penalties, due dates and the
-       tracking step order all arrive decided; the page's job is to lay them
-       out. A dashboard that does its own arithmetic is a dashboard that
-       eventually disagrees with the screen the number came from. */
+    /* Dashboard renders one response from api/shop/dashboard.php without computing any figures itself. */
 
     const esc  = v => EbFormat.escHtml(v == null ? "" : v);
     const peso = n => EbFormat.peso(n);
@@ -209,9 +166,7 @@
       shipping: "Shipping", delivered: "Delivered",
       completed: "Completed", cancelled: "Cancelled",
     };
-    /* The same .status-* classes My Orders uses, from profile.css. A second
-       palette for the same seven statuses would mean an order that is amber on
-       one page and orange on the next. */
+    /* Uses the same .status-* classes as My Orders. */
     const statusClass = st => "status-" + String(st).replace(" ", "-");
     const PAY_LABEL = {
       cash: "Cash", gcash: "GCash", bank: "Bank Transfer",
@@ -228,14 +183,7 @@
       owed:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>',
     };
 
-    /* ---------- STAT TILES ---------------------------------------------
-       Each tile has a FIXED identity — a key that decides its colour — and the
-       value decides only whether it is quieted. See the note above .db-stat in
-       profile.css for why the previous value-driven tone was wrong in both
-       directions.
-
-       Both account types render the same component in the same row. A retailer
-       has four things worth knowing, an ordinary customer three. */
+    /* Stat tiles: each has a fixed colour identity; zero only quiets it (retailers get four tiles, customers three). */
     function renderStats(d) {
       const tiles = [
         { key: "active",  label: "Active Orders",  value: d.counts.active,
@@ -282,15 +230,7 @@
         </a>`).join("");
     }
 
-    /* ---------- PAYMENT HISTORY ----------------------------------------
-       Two different things behind one heading, and the server says which by
-       `paymentsKind` rather than leaving the page to infer it from the shape
-       of an array that may be empty.
-
-       A RETAILER sees credit accounts: scheme, balance, due date, standing.
-       A REGULAR CUSTOMER has none and never will, so they see what they
-       actually paid and whether staff have verified it — the question "did my
-       GCash transfer go through?" had no answer anywhere on this site. */
+    /* Payment history: credit accounts for retailers, paid orders with verification status for customers (paymentsKind says which). */
     function renderPayments(d) {
       const box = document.getElementById("db-payments");
       document.getElementById("db-pay-link").classList.toggle("hide", d.paymentsKind !== "credit");
@@ -368,8 +308,7 @@
             <button type="button" class="db-order-link" data-track="${esc(o.id)}"
                     title="Track this order">#${esc(o.id)}</button>
             <span class="db-list-sub">${
-              /* Named, not counted. "3 items" is not something anyone
-                 recognises their own order by. */
+              /* Show product names instead of "3 items". */
               o.firstItem
                 ? esc(o.firstItem) + (o.itemCount > 1 ? ` +${o.itemCount - 1} more` : "")
                 : "No items"
@@ -386,14 +325,12 @@
     }
 
     function renderLoading() {
-      /* Three placeholders on a plain three-across grid. Which layout applies
-         is not known until the response says whether this is a retailer, and
-         guessing would mean the tiles rearranging under the reader's eyes. */
+      /* Three neutral placeholders until the response says which layout to use. */
       const wrap = document.getElementById("db-stats");
       wrap.className = "db-stats db-stats-plain";
       wrap.innerHTML = '<div class="db-stat db-stat-skeleton"></div>'.repeat(3);
       ["db-payments", "db-recent"].forEach(id => {
-        document.getElementById(id).innerHTML = '<div class="db-empty"><p>Loading…</p></div>';
+        document.getElementById(id).innerHTML = EbUI.skeletonBlock(3);
       });
     }
 
@@ -403,8 +340,7 @@
       try {
         d = (await EbApi.get("shop/dashboard.php")).data;
       } catch (err) {
-        /* One failure, said once. Four panels each announcing the same outage
-           is four times the noise and no more information. */
+        /* Report a load failure once. */
         document.getElementById("db-stats").innerHTML = "";
         document.getElementById("db-recent").innerHTML =
           `<div class="db-empty"><p><strong>Could not load your dashboard.</strong></p>
@@ -429,13 +365,7 @@
       renderRecent(d);
     }
 
-    /* DOMContentLoaded, not immediately.
-
-       An inline classic script runs at PARSE time — before the three tags
-       above it, all of which are deferred or modules and therefore run later.
-       Calling mount() here directly meant EbProfileShell (and EbApi, and
-       state) did not exist yet. Deferred scripts finish before this event
-       fires, which is the same reason become-partner.html waits for it. */
+    /* Mount on DOMContentLoaded, after the deferred scripts. */
     window.addEventListener("DOMContentLoaded", () => {
       EbProfileShell.mount({ page: "dashboard", onReady: loadDashboard });
     });

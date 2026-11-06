@@ -1,23 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/batches/save.php
- * Body: { "id": "bat-201" (omit to create), "lot_code", "product_id",
- *         "harvest_date", "production_date", "expiry_date",
- *         "total_qty", "quality_grade", "lab_status", "qa_inspector", "notes" }
- *
- * Requires batches.manage.
- *
- * Batch registration and QA edits did not persist at all — the Batch Tracking
- * screen wrote to the BATCHES array and the lot vanished on reload, taking the
- * traceability record with it.
- *
- * Registering a batch does NOT add its quantity to product stock. Stock moves
- * only through inventory/adjust.php, which records a reason and writes an audit
- * row; a batch is the provenance record for units, not the act of receiving
- * them. Doing both here would double-count every restock that opens a lot.
- */
+/** POST /api/batches/save.php (needs batches.manage) creates or edits a batch record but never adds stock, because stock only moves through inventory/adjust.php. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -32,14 +16,23 @@ $data = Validate::check($in)
     ->maxLen('lot_code', 50, 'Lot code')
     ->required('product_id', 'Product')
     ->date('production_date', 'Production date')
-    ->date('expiry_date', 'Expiry date')
     ->in('lab_status', ['passed', 'pending', 'failed'], 'Lab status')
     ->values();
 
-if ($data['expiry_date'] <= $data['production_date']) {
-    Response::validation('Check the dates.', [
-        'expiry_date' => 'Expiry must be after the production date.',
-    ]);
+/* The expiry is never typed in: it is the production date plus the product's shelf life (bottled 1 year, deboned
+   6 months), and a production date may be at most a month back. Editing a batch without changing its product or
+   production date keeps the dates it already has. */
+$before = $isUpdate
+    ? Database::one('SELECT product_id, production_date, expiry_date FROM batches WHERE id = ?', [$in['id']])
+    : null;
+if ($before !== null && $before['product_id'] === $data['product_id'] && $before['production_date'] === $data['production_date']) {
+    $data['expiry_date'] = $before['expiry_date'];
+} else {
+    $prodErr = Inventory::productionDateError($data['production_date']);
+    if ($prodErr !== null) {
+        Response::validation('Check the dates.', ['production_date' => $prodErr]);
+    }
+    $data['expiry_date'] = Inventory::autoExpiry($data['product_id'], $data['production_date']);
 }
 
 $harvest = trim((string) ($in['harvest_date'] ?? '')) ?: $data['production_date'];
@@ -58,8 +51,7 @@ if ($product === null) {
     Response::validation('Check the highlighted fields.', ['product_id' => 'That product does not exist.']);
 }
 
-/* Lot codes are the traceability key — a customer types one into the public
-   lookup. A duplicate would make that lookup ambiguous. */
+/* Lot codes must be unique because customers look them up on the public traceability page. */
 $clash = Database::scalar(
     'SELECT COUNT(*) FROM batches WHERE lot_code = ? AND id <> ?',
     [$data['lot_code'], $in['id'] ?? '']
@@ -78,9 +70,7 @@ if ($isUpdate) {
         Response::notFound('That batch does not exist.');
     }
 
-    /* total_qty is not editable on update: remaining_qty is derived from it by
-       every disposal and sale recorded so far, and silently rewriting the
-       original quantity would make those movements stop adding up. */
+    /* total_qty cannot be edited after creation, because remaining_qty and every recorded movement depend on it. */
     Database::run(
         'UPDATE batches
             SET lot_code = ?, product_id = ?, harvest_date = ?, production_date = ?,
@@ -93,8 +83,7 @@ if ($isUpdate) {
     $note = $existing['lab_status'] !== $data['lab_status']
         ? sprintf(' QA %s → %s.', $existing['lab_status'], $data['lab_status'])
         : '';
-    /* A failed batch still has units on the shelf; say so rather than leaving
-       someone to notice later. */
+    /* Warn when a failed batch still has units on the shelf. */
     if ($data['lab_status'] === 'failed' && (int) $existing['remaining_qty'] > 0) {
         $note .= sprintf(' NOTE: %d units remain in stock and should be disposed.', $existing['remaining_qty']);
     }

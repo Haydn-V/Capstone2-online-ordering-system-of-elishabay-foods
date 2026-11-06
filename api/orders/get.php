@@ -1,17 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * GET /api/orders/get.php?id=ORD-20260617-001
- *
- * One order with its line items and its real status history.
- *
- * The history is the point. The Order Status stepper used to be inferred at
- * render time from the current status — so it could show that an order had
- * been accepted, but never who accepted it or when, and a cancelled order's
- * path was unrecoverable. order_status_history records each transition with
- * the user who made it.
- */
+/** GET /api/orders/get.php returns one order with its line items and full status history (who changed it and when). */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -24,7 +14,7 @@ if ($id === '') {
 }
 
 $o = Database::one(
-    'SELECT o.*, c.name AS customer_record_name
+    'SELECT o.*, c.name AS customer_record_name, ' . Orders::cashierSql('o') . ' AS cashier
        FROM orders o
        LEFT JOIN customers c ON c.id = o.customer_id
       WHERE o.id = ?',
@@ -34,9 +24,7 @@ if ($o === null) {
     Response::notFound('That order does not exist.');
 }
 
-/* Line items carry price_at_purchase, deliberately: re-deriving the line total
-   from the product's current price would silently rewrite order history every
-   time somebody edited a price. */
+/* Line items use price_at_purchase so later price edits never rewrite order history. */
 $items = Database::all(
     'SELECT oi.id, oi.product_id, p.name AS product_name, p.tint,
             oi.qty, oi.price_at_purchase
@@ -70,9 +58,14 @@ $lines = array_map(static fn(array $r): array => [
     'lineTotal'   => round((int) $r['qty'] * (float) $r['price_at_purchase'], 2),
 ], $items);
 
-/* Recomputed from the stored line prices rather than trusting orders.total, so
-   a mismatch is visible instead of hidden. */
-$computed = round(array_sum(array_column($lines, 'lineTotal')), 2);
+/* Recompute the total the way checkout builds it (line items, minus any old Senior/PWD discount, plus the delivery
+   fee) so a real mismatch with orders.total is visible, while a delivery fee is not mistaken for one. */
+$computed = round(
+    array_sum(array_column($lines, 'lineTotal'))
+    - (float) ($o['sc_pwd_discount'] ?? 0)
+    + (float) ($o['shipping_fee'] ?? 0),
+    2
+);
 
 /* The Net account this order opened, if it is on terms. */
 $creditRow = Database::one(Payments::accountSelect() . ' WHERE pa.order_id = ?', [$o['id']]);
@@ -90,8 +83,7 @@ Response::ok([
     'customerType' => $o['customer_type'],
     'payMethod'    => $o['method'],
     'total'        => (float) $o['total'],
-    /* The VAT breakdown stored at the sale (api/core/Tax.php) — what the Sales
-       Invoice prints, never recalculated. `amountDue` nets off withholding. */
+    /* The VAT breakdown stored at the sale (api/core/Tax.php), never recalculated; amountDue already subtracts withholding. */
     'tax'          => Tax::describeOrder($o),
     'computedTotal'=> $computed,
     'totalsAgree'  => abs($computed - (float) $o['total']) < 0.01,

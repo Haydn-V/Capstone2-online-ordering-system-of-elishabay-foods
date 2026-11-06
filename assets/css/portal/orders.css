@@ -1,7 +1,4 @@
-/* =================================================================
-   ELISHA BAY — Online Orders (ported from the former OrdersModule)
-   Extends: admin.css
-   ================================================================= */
+/* ===== Online Orders (extends portal.css) ===== */
 
 /* Compact stat chips — used by Transaction History's summary row */
 .mini-stat-group { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -22,9 +19,7 @@
 }
 .mini-stat-val.gold { color: var(--gold-ink); }
 
-/* =================================================================
-   NOTIFICATIONS
-   ================================================================= */
+/* ===== NOTIFICATIONS ===== */
 .notif-panel { padding: 18px 22px 6px; }
 .notif-toolbar {
   display: flex; align-items: center; justify-content: space-between;
@@ -57,10 +52,7 @@
 .notif-row-icon.type-completed { background: rgba(24,169,87,.1);   color: var(--ok-ink); }
 .notif-row-icon.type-inventory { background: rgba(139,92,246,.12); color: #8b5cf6; }
 .notif-row-icon.type-audit     { background: rgba(100,116,139,.12);color: #64748b; }
-/* Types added with the role-scoped feeds. Without these four the new
-   Cashier/Inventory alerts fell through to no pill and plain black text,
-   sitting next to seven coloured ones. Hues chosen to stay clear of the
-   existing gold / blue / red / orange / green / purple / slate. */
+/* Chip colours for the Cashier/Inventory notification types, chosen to differ from the existing ones. */
 .notif-row-icon.type-scheme-due    { background: rgba(99,102,241,.13);  color: #6366f1; }
 .notif-row-icon.type-expiry        { background: rgba(219,39,119,.12);  color: #db2777; }
 .notif-row-icon.type-batch-qa      { background: rgba(14,165,233,.13);  color: #0ea5e9; }
@@ -79,23 +71,19 @@
 .nd-item-icon.type-batch-qa      { background: rgba(14,165,233,.13);  color: #0ea5e9; }
 .nd-item-icon.type-sales-summary { background: rgba(20,184,166,.13);  color: #14b8a6; }
 
-/* Audit sub-kinds. All four are notification type "audit"; only the chip
-   differs, so a run of inventory activity is scannable at a glance. */
+/* Audit sub-kinds share type "audit" but get different chips so activity is easy to scan. */
 .notif-row-icon.type-restock,   .nd-item-icon.type-restock   { background: rgba(5,150,105,.13);  color: #059669; }
 .notif-row-icon.type-replenish, .nd-item-icon.type-replenish { background: rgba(101,163,13,.14); color: #65a30d; }
 .notif-row-icon.type-adjust,    .nd-item-icon.type-adjust    { background: rgba(217,119,6,.13);  color: #d97706; }
 .notif-row-icon.type-archive,   .nd-item-icon.type-archive   { background: rgba(100,116,139,.14);color: #475569; }
 
-/* #475569 measures 2.77:1 against the dark surface — under the 3:1 WCAG
-   floor for non-text graphics, and visibly muddy next to the other chips.
-   Light theme keeps the deeper slate, where it reads fine on cream. */
+/* Lighter slate in dark mode, since #475569 is under 3:1 contrast there. */
 [data-theme="dark"] .notif-row-icon.type-archive,
 [data-theme="dark"] .nd-item-icon.type-archive {
   background: rgba(148,163,184,.16); color: #94a3b8;
 }
 
-/* Definition for every chip, so an unmapped type can never render as a
-   bare black glyph again — it gets the neutral slate treatment instead. */
+/* Default chip so an unmapped type gets neutral slate instead of a bare black glyph. */
 .notif-row-icon,
 .nd-item-icon {
   background: rgba(100,116,139,.10);
@@ -118,40 +106,13 @@
 .notif-row-meta { display: flex; align-items: center; gap: 12px; margin-top: 5px; flex-wrap: wrap; }
 .notif-row-time { font-size: var(--fs-xs); color: var(--text-muted); }
 
-/* ── URGENCY LEVEL — the same pill in all three places ─────────────────
-   The bell dropdown, the dashboard's System Notifications panel and this
-   module each render it from notifLevelChip() in orders.js, so a row that
-   is Critical looks Critical wherever it is seen.
-
-   NEVER COLOUR ALONE. Each pill carries a glyph AND the word — a triangle
-   for Critical, a filled circle for Warning, an i for Info. Colour is the
-   third channel, not the only one: these appear at .66rem against two
-   theme backgrounds, which is exactly where a hue-only signal fails first.
-
-   The text-safe *-ink steps are used for the foreground, since this is
-   text and has to clear 4.5:1; the tinted background is decorative and is
-   held at the low alpha the existing chips use. */
+/* Urgency pill (from notifLevelChip() in orders.js) looks the same in the bell, dashboard and Notifications page, always with an icon and word, never colour alone. */
 .notif-level {
   display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
   padding: 2px 9px; border-radius: var(--r-pill);
   font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .04em;
   text-transform: uppercase; white-space: nowrap;
-  /* THE WORD IS --text, NOT THE LEVEL COLOUR, AND THAT IS THE POINT.
-
-     The obvious build — colour the whole pill with --out-ink / --warn-ink —
-     was written first and measured at 3.65:1 in the dark theme, against the
-     composited backdrop of the pill's own red tint over the row over the
-     glass panel. That is under the 4.5:1 floor, and this text is 10.5px, so
-     the large-text exemption does not apply. --out-ink does not reach 4.5:1
-     on ANY of the dark surface tokens: 4.20 on --surface, 4.39 at best on
-     --surface-2. There is no value of this shape that would have passed.
-
-     So the LABEL takes --text, which is maximum contrast in both themes, and
-     the level colour moves to the icon and the border — non-text graphics,
-     which need 3:1 and clear it comfortably. Nothing is lost: the level was
-     never carried by colour alone, and the word was always the primary
-     channel. The tints are the same three already used by .stat-delta and
-     the type chips above, not new values. */
+  /* The label uses --text for contrast in both themes, while the level colour goes on the icon and border. */
   color: var(--text);
   border: 1px solid var(--level-ink, var(--border-lift));
   background: var(--level-bg, var(--bg-tint));
@@ -163,9 +124,7 @@
 .notif-row-action { font-size: var(--fs-xs); font-weight: 700; color: var(--gold-ink); cursor: pointer; }
 .notif-row-action:hover { text-decoration: underline; }
 
-/* =================================================================
-   ORDER CARDS (Queue view)
-   ================================================================= */
+/* ===== ORDER CARDS (Queue view) ===== */
 .queue-list { display: flex; flex-direction: column; gap: 12px; }
 .order-card {
   background: var(--surface); border: 1px solid var(--border);
@@ -211,9 +170,7 @@
 .order-card-method { font-size: var(--fs-sm); color: var(--text-muted); flex: 1; }
 .order-card-actions { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
 
-/* =================================================================
-   PAYMENT VERIFICATION
-   ================================================================= */
+/* ===== PAYMENT VERIFICATION ===== */
 /* List is a table now; the card opens in the modal from View. */
 .pv-modal-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .pv-card {
@@ -266,41 +223,52 @@
 
 .pv-actions { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; gap: 10px; flex-wrap: wrap; }
 
-/* =================================================================
-   STATUS CHIP / DOT (card views) — table views use the shared .badge
-   ================================================================= */
-/* .status-chip / .status-dot moved to admin.css — every portal loads
-   that file, so the chip is now shared instead of duplicated here. */
+/* ===== STATUS CHIP / DOT (card views; tables use .badge) ===== */
+/* .status-chip and .status-dot now live in portal.css, shared by every portal. */
 
-/* Status transition buttons in modal */
+/* Status buttons in the modal use their own colour (--c) for dot, border and hover. */
+.status-move-heading {
+  font-size: .78rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--text-muted); margin: 4px 0 10px;
+  padding-top: 14px; border-top: 1px solid rgba(110,78,28,.18);
+}
 .status-transition-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(130px,1fr));
-  gap: 8px; margin-top: 12px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr));
+  gap: 10px;
 }
 .status-transition-btn {
-  display: flex; flex-direction: column; align-items: center; gap: 6px;
-  padding: 12px 10px; border-radius: var(--r-md);
-  border: 2px solid var(--border-lift);
-  background: transparent; cursor: pointer;
-  font-family: var(--font-ui);
-  font-size: var(--fs-xs); font-weight: 700;
-  letter-spacing: .04em; text-transform: uppercase;
-  color: var(--text-muted); transition: all var(--t);
+  --c: var(--gold);
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  min-height: 52px; padding: 12px 14px; border-radius: var(--r-md);
+  border: 1.5px solid rgba(110,78,28,.28);
+  border-left: 4px solid var(--c);
+  background: var(--surface); cursor: pointer;
+  font-family: var(--font-ui); font-size: .82rem; font-weight: 700;
+  letter-spacing: .05em; text-transform: uppercase;
+  color: var(--text); transition: background var(--t), border-color var(--t), box-shadow var(--t), transform var(--t);
 }
-.status-transition-btn:hover { border-color: var(--gold); color: var(--text); }
-.status-transition-btn.dest-accepted  { --hover-bg: rgba(59,130,246,.08); }
-.status-transition-btn.dest-shipping  { --hover-bg: rgba(139,92,246,.08); }
-.status-transition-btn.dest-delivered { --hover-bg: rgba(20,184,166,.08); }
-.status-transition-btn.dest-completed { --hover-bg: rgba(24,169,87,.08); }
-.status-transition-btn.dest-on-hold   { --hover-bg: rgba(249,115,22,.08); }
-.status-transition-btn.dest-cancelled { --hover-bg: rgba(214,40,40,.08); }
-.status-transition-btn:hover { background: var(--hover-bg, var(--gold-dim)); }
+.status-transition-btn .status-dot {
+  width: 10px; height: 10px; background: var(--c);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 18%, transparent);
+}
+.status-transition-btn.dest-accepted  { --c: #3b82f6; }
+.status-transition-btn.dest-shipping  { --c: #8b5cf6; }
+.status-transition-btn.dest-delivered { --c: #14b8a6; }
+.status-transition-btn.dest-completed { --c: var(--ok); }
+.status-transition-btn.dest-on-hold   { --c: #f97316; }
+.status-transition-btn.dest-cancelled { --c: var(--red); }
+.status-transition-btn:hover:not(:disabled),
+.status-transition-btn:focus-visible {
+  border-color: var(--c); outline: none;
+  background: color-mix(in srgb, var(--c) 9%, var(--surface));
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--c) 18%, transparent);
+  transform: translateY(-1px);
+}
+.status-transition-btn:disabled { opacity: .6; cursor: progress; }
+[data-theme="dark"] .status-transition-btn { border-color: var(--border-lift); border-left-color: var(--c); }
 
-/* =================================================================
-   ORDER DETAIL VIEW (in modal)
-   ================================================================= */
-/* Each section is its own card so Customer / Items / Payment read as
-   separate blocks instead of one long run of rows. */
+/* ===== ORDER DETAIL VIEW (in modal) ===== */
+/* Each section is its own card so Customer, Items and Payment read as separate blocks. */
 .order-detail-section {
   margin-bottom: 14px; padding: 14px 18px;
   background: rgba(255,255,255,.72);
@@ -343,9 +311,7 @@
 
 .receipt-addr { font-size: var(--fs-sm); color: var(--text-muted); margin-top: 4px; text-align: left; }
 
-/* =================================================================
-   RETURN MODULE
-   ================================================================= */
+/* ===== RETURN MODULE ===== */
 .return-tabs {
   display: flex; gap: 6px; flex-wrap: wrap;
   margin-bottom: 18px;
@@ -457,9 +423,7 @@
 }
 .return-reason.rejected-reason { border-left-color: var(--out-ink); }
 
-/* =================================================================
-   EMPTY STATE (card-based screens)
-   ================================================================= */
+/* ===== EMPTY STATE (card-based screens) ===== */
 .orders-empty {
   display: flex; flex-direction: column; align-items: center;
   justify-content: center; padding: 64px 24px; text-align: center;
@@ -468,3 +432,37 @@
 .orders-empty svg { width: 48px; height: 48px; opacity: .25; }
 .orders-empty h3  { font-size: var(--fs-md); font-weight: 700; color: var(--text); margin: 0; }
 .orders-empty p   { font-size: var(--fs-base); margin: 0; max-width: 300px; }
+
+/* Large refund threshold bar + flags (orders.js renderLargeRefundBar). */
+.ret-limit:empty { display: none; }
+.ret-limit {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 0 12px; padding: 10px 14px; border-radius: 12px;
+  background: var(--gold-dim, rgba(232,163,23,.12)); border: 1px solid var(--gold-line, rgba(232,163,23,.3));
+  font-size: .85rem; color: var(--text);
+}
+.ret-limit-ic {
+  width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  background: var(--gold); color: #1e1a0e; font-weight: 800; font-size: .8rem;
+}
+.ret-limit-txt { flex: 1; min-width: 200px; }
+.ret-large-chip {
+  display: inline-block; margin-left: 4px; padding: 2px 8px; border-radius: 999px; vertical-align: middle;
+  font: 700 10px/1.4 "Montserrat", sans-serif; letter-spacing: .06em; text-transform: uppercase;
+  background: color-mix(in srgb, var(--red, #d62828) 14%, transparent); color: var(--red, #d62828);
+}
+.ret-large-note {
+  display: inline-block; padding: 6px 10px; border-radius: 8px; font-size: .78rem; font-weight: 600;
+  background: color-mix(in srgb, var(--red, #d62828) 10%, transparent); color: var(--red, #d62828);
+}
+
+/* Verify Payment: a long value (address, email) sits under its label at full width, justified, so it has room
+   instead of being squeezed into a narrow right-aligned column. Rows get a little more air too. */
+.pv-card-modal .pv-row { padding: 8px 0; }
+.pv-card-modal .pv-row + .pv-row:not(.pv-row-wrap) { border-top: 1px dashed rgba(110,78,28,.12); }
+.pv-row-wrap { flex-direction: column; align-items: stretch; gap: 4px; border-top: 1px dashed rgba(110,78,28,.12); }
+.pv-row-wrap .pv-row-val {
+  text-align: justify; text-align-last: left; hyphens: auto; overflow-wrap: anywhere;
+  font-weight: 600; line-height: 1.55;
+}
+[data-theme="dark"] .pv-card-modal .pv-row + .pv-row:not(.pv-row-wrap), [data-theme="dark"] .pv-row-wrap { border-top-color: rgba(255,255,255,.08); }

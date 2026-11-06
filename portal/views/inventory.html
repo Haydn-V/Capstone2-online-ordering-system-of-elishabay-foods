@@ -3,27 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <title>inventory module</title>
-  <!-- ============================================================
-       MODULE PARTIAL — section id="mod-inventory".
-
-       Wrapped as a complete HTML document ON PURPOSE.
-
-       Dev servers inject a live-reload script into every .html file
-       they serve, placed just before the closing body tag. A bare
-       fragment has no closing body tag, so VS Code Live Server falls
-       back to injecting before the first closing svg tag instead —
-       which lands inside the Elisha Bay logo mark, corrupts the
-       parse, and leaves the portal showing "Portal failed to load".
-
-       With a real body element the injection lands harmlessly at the
-       end, and Core/module-loader.js strips every script element
-       before using this markup.
-
-       Keep the html/head/body wrapper. Also avoid writing a literal
-       closing body, head or svg tag anywhere in a comment in these
-       files — Live Server matches raw text and will inject there,
-       breaking the comment and everything after it.
-       ============================================================ -->
+  <!-- Module partial for section mod-inventory, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
   </head>
   <body>
 <!-- ── INVENTORY REPORT ── -->
@@ -37,20 +17,25 @@
       <div class="eyebrow">Inventory</div>
       <h2>Inventory Report</h2>
     </div>
+    <!-- Super Admin only (inventory.thresholds): edit the stock-level and movement baselines. -->
+    <div class="actions">
+      <!-- Export the report measured over a chosen window (assets/js/portal/inventory-export.js). -->
+      <button class="btn btn-ghost btn-sm" id="inv-export-csv" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg>
+        Export CSV
+      </button>
+      <button class="btn btn-gold btn-sm" id="inv-export-pdf" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        Export PDF
+      </button>
+    </div>
   </div>
-  <div class="inv-legend">
-    <span class="inv-legend-item"
-      ><span class="inv-dot inv-ok"></span> Safe (&gt;100)</span
-    >
-    <span class="inv-legend-item"
-      ><span class="inv-dot inv-warn"></span> Low (11–100)</span
-    >
-    <span class="inv-legend-item"
-      ><span class="inv-dot inv-crit"></span> Critical (1–10)</span
-    >
-    <span class="inv-legend-item"
-      ><span class="inv-dot inv-out"></span> Out of Stock (0)</span
-    >
+  <!-- The automatic rules (paintInvLegend() in engine.js), worded from meta.inventoryModel on each load. -->
+  <div class="inv-legend" id="inv-legend">
+    <span class="inv-legend-item"><span class="inv-dot inv-ok"></span> Safe</span>
+    <span class="inv-legend-item"><span class="inv-dot inv-warn"></span> Low</span>
+    <span class="inv-legend-item"><span class="inv-dot inv-crit"></span> Critical</span>
+    <span class="inv-legend-item"><span class="inv-dot inv-out"></span> Out of Stock</span>
   </div>
   <div class="view-toolbar view-toolbar-filters">
     <div class="search-box">
@@ -93,10 +78,7 @@
       <option value="slow">Slow Moving</option>
       <option value="non">Non-Moving</option>
     </select>
-    <!-- Its own filter rather than a fifth stock level. Expiry risk is the
-         opposite failure to a shortage: the product is comfortably stocked and
-         still about to be written off, so it cannot be a point on a scale that
-         runs from empty to full. -->
+    <!-- Expiry risk is its own filter, not a stock level. -->
     <select
       class="filter-select"
       id="filter-expiring"
@@ -105,21 +87,15 @@
       <option value="all">All Products</option>
       <option value="1">Expiry Risk Only</option>
     </select>
-    <!-- WHAT THE BANDS ARE MEASURED OVER, not another way to filter them.
-         Level, Movement and Cover are rates over a trailing window, so this
-         control changes what "Critical" means rather than which rows are
-         shown — which is why the caption under the table says, in words,
-         which window answered. Session-scoped: it resets on reload and
-         changes nobody else's screen. -->
+    <!-- The window select changes what the bands are measured over (session only), and the caption under the table names the window used. -->
     <select
       class="filter-select"
       id="filter-inv-window"
       aria-label="Sales window the stock bands are measured over"
     >
-      <option value="default">Measured: Default window</option>
+      <option value="month">Measured: Last 30 days</option>
       <option value="week">Measured: Last 7 days</option>
       <option value="yesterday">Measured: Yesterday</option>
-      <option value="month">Measured: Last 30 days</option>
     </select>
     <select
       class="filter-select"
@@ -139,16 +115,10 @@
           <th>Category</th>
           <th>Stock</th>
           <th>Level</th>
-          <!-- The number the restock decision actually turns on. "Stock" says
-               how much is there; this says how long it lasts. -->
-          <th>Cover</th>
           <th>Movement</th>
-          <th>Rate</th>
           <th>Expiry Risk</th>
           <th>Price</th>
-          <!-- Kept. A lifetime total is real information about a product; it
-               was only ever wrong as a MOVEMENT CLASSIFIER, which the Rate
-               column now does from measured sales. -->
+          <!-- Lifetime sold total is kept as information; Movement uses measured sales. -->
           <th>Total Sold</th>
         </tr>
       </thead>

@@ -1,48 +1,13 @@
-/* =================================================================
-   ELISHA BAY — GLASSMORPHISM SKIN (all staff portals)
-   -----------------------------------------------------------------
-   Loaded AFTER each portal's own stylesheets (admin.html, subadmin.html,
-   cashier.html, inventory.html, orders.html), so it overrides tokens
-   without touching the base files. Remove the <link> from a given
-   portal to revert just that one; remove it everywhere to fully revert.
-
-   Rolled out from the Super Admin trial. Explicit class rules below
-   only exist in the portal's own markup (.panel, .stat-card, etc.),
-   so the --surface / --bg-soft token overrides just below are what
-   actually reach Cashier/Inventory/Orders/SubAdmin's own panel classes
-   (.order-review-col, .sales-stat, .cart-summary, and the like) — those
-   get translucency + the glass border/shadow via the shared tokens,
-   without needing every portal's CSS hand-edited.
-
-   Glassmorphism rules this follows:
-     · A rich, colourful backdrop — frosted glass over flat grey just
-       looks like flat grey. Colour blobs sit behind everything.
-     · Panels are translucent + backdrop-blurred, so the backdrop
-       bleeds through and shifts as you scroll.
-     · A bright 1px hairline reads as the lit edge of the pane.
-     · Layering by opacity, not by shadow: nearer surfaces are more
-       opaque and more blurred.
-     · Text stays fully opaque and dark — translucency is for the
-       panes, never the content sitting on them.
-   ================================================================= */
+/* Glassmorphism skin for all staff portals, loaded after each portal's own CSS: overrides surface tokens so panels become translucent and blurred over a colourful backdrop, while text stays opaque (remove the <link> to revert). */
 
 :root {
   --glass-bg:        rgba(255, 255, 255, .38);
   --glass-bg-strong: rgba(255, 255, 255, .58);
   --glass-bg-soft:   rgba(255, 255, 255, .26);
-  /* Modals/dropdowns/toasts float ON TOP of the entire page — a panel
-     sitting inline can afford to stay translucent since there's just
-     backdrop behind it, but an overlay has other UI text behind it,
-     and .58 opacity let that text ghost straight through (the
-     "PROCEED TO PAYMENT" bleeding into the notif dropdown). These get
-     their own much higher floor. */
+  /* Overlays (modals, dropdowns, toasts) get a much more opaque background so text behind them does not show through. */
   --glass-bg-overlay: rgba(255, 255, 255, .94);
   --glass-border:    rgba(255, 255, 255, .60);
-  /* Keep saturate() close to 1. backdrop-filter only affects pixels behind
-     the pane, so a big saturation boost makes the backdrop jump in colour
-     exactly at the pane's edge — which draws a hard seam down the side of
-     the fixed sidebar and across the top bar. Blur alone is near-seamless
-     because the backdrop is already a smooth gradient. */
+  /* Keep saturate() near 1 to avoid visible colour seams at pane edges. */
   --glass-blur:      blur(16px) saturate(106%);
   --glass-blur-lg:   blur(22px) saturate(110%);
   --glass-shadow:    0 8px 32px rgba(46, 32, 12, .12);
@@ -50,18 +15,13 @@
 
   --border:      rgba(255,255,255,.45);
   --border-lift: rgba(255,255,255,.55);
-  /* Translucent panes lift the effective background, so the stock muted
-     tone loses contrast. Darkened to keep headroom over AA. */
+  /* Darker muted text to keep enough contrast on translucent panes. */
   --text-muted:  #5C5343;
   --shadow-sm:   var(--glass-shadow);
   --shadow-md:   var(--glass-shadow);
   --shadow-lg:   var(--glass-shadow-lg);
 
-  /* Every portal's own CSS (cashier.css, inventory.css, orders.css,
-     admin-pos/orders/inventory.css) paints its panels with
-     var(--surface) / var(--bg-soft). Overriding the tokens themselves
-     — instead of hunting down every selector across 6 files — makes
-     those panels translucent for free, no per-portal edits needed. */
+  /* Override the --surface/--bg-soft tokens so every portal's panels become translucent without per-file edits. */
   --surface: var(--glass-bg);
   --bg-soft: var(--glass-bg-soft);
 }
@@ -88,18 +48,9 @@ body { background: transparent; }
 body::before {
   content: ""; position: fixed; inset: 0; z-index: -1;
   background:
-    /* Yellow light source, top-left corner of the whole page backdrop.
-       Same geometry as the dark theme below; light skin adds reflection
-       on top of it — a diagonal beam, edge sheen along the two lit
-       borders, and a bounce highlight where the beam falls off. Order is
-       brightest/smallest first so the ramp stays continuous. */
-    /* Footprint is viewport-relative on purpose: the glow should cover
-       roughly the left 40% and top 70% of the screen at any size, which
-       is what px sizes stopped doing once the shell got wider. */
-    /* Depth comes from hue travel, not just alpha: every layer ramps
-       white → cream → gold → ochre across its own radius, so the glow
-       gets warmer and denser as it moves away from the source instead of
-       being one yellow at decreasing opacity (which reads flat). */
+    /* Light theme backdrop: a yellow light from the top-left with a beam, edge sheen and bounce highlight. */
+    /* Sized in viewport units so the glow covers the same share of any screen. */
+    /* Each layer shifts from white to cream to gold to ochre for depth. */
     /* Specular core + beam — the direct light. */
     radial-gradient(190px 170px at 0% 0%,
       rgba(255,253,244,.62) 0%, rgba(255,246,214,.44) 42%, rgba(255,222,150,.22) 70%, transparent 84%),
@@ -107,33 +58,23 @@ body::before {
       rgba(255,250,232,.34) 0%, rgba(255,240,200,.18) 16%, rgba(244,192,90,.09) 32%, transparent 52%),
     radial-gradient(26vw 30vh at 0% 0%,
       rgba(255,226,160,.42) 0%, rgba(250,196,96,.26) 46%, rgba(226,152,26,.12) 74%, transparent 88%),
-    /* Edge sheen — a bright band riding the top and left borders, the way
-       a glossy surface catches a light placed off that corner. */
+    /* Edge sheen along the top and left borders. */
     linear-gradient(to bottom, rgba(255,250,228,.30) 0%, rgba(255,232,176,.12) 9%, transparent 24%),
     linear-gradient(to right,  rgba(255,250,228,.26) 0%, rgba(255,232,176,.10) 7%, transparent 20%),
-    /* Main falloff — this is the layer that sets the visible size of the
-       glow: ~40vw across, ~72vh down. Three stops so the middle of the
-       glow has body and the outer edge lands on a deeper amber before it
-       hands off to the cool base. */
+    /* Main glow falloff (about 40vw by 72vh). */
     radial-gradient(44vw 76vh at 0% 0%,
       rgba(240,183,60,.34) 0%, rgba(232,163,23,.26) 40%, rgba(198,126,14,.15) 72%, transparent 88%),
-    /* Shadow side — a deep ochre undertone sitting just past the falloff.
-       Light needs something darker to fall into or it has no volume. */
+    /* Darker ochre shadow just past the glow. */
     radial-gradient(52vw 84vh at -3% -4%, transparent 42%, rgba(176,112,12,.14) 74%, transparent 92%),
-    /* Bounce — a second, softer highlight offset down-right of the source,
-       reading as light reflected back off the page rather than emitted. */
+    /* Softer bounce highlight down-right of the light source. */
     radial-gradient(38vw 46vh at 14% 12%,
       rgba(255,241,205,.20) 0%, rgba(246,205,120,.11) 52%, transparent 74%),
     radial-gradient(62vw 38vh at -4% -2%,
       rgba(243,186,64,.17) 0%, rgba(214,140,18,.10) 54%, transparent 78%),
     radial-gradient(30vw 92vh at -2% -4%,
       rgba(243,186,64,.16) 0%, rgba(214,140,18,.09) 54%, transparent 78%),
-    /* Cool, near-neutral base — a warm cream backdrop under white panes
-       reads as one yellow mass and the glass disappears. Cool blobs
-       carry the colour instead, with gold kept small as a brand note. */
-    /* The base is deliberately a few steps down from white. Light panes
-       can only read as glass if there's something darker behind them —
-       on a near-white backdrop they vanish into the page. */
+    /* Cool, near-neutral base so white panes still read as glass. */
+    /* Base slightly darker than white so light panes stand out. */
     radial-gradient(circle at 14% 14%, rgba(99,108,238,.34), transparent 46%),
     radial-gradient(circle at 86% 12%, rgba(46,170,228,.32), transparent 44%),
     radial-gradient(circle at 80% 86%, rgba(232,163,23,.24), transparent 44%),
@@ -142,8 +83,7 @@ body::before {
 }
 [data-theme="dark"] body::before {
   background:
-    /* Same top-left light source, dimmer and warmer so it glows against
-       the near-black base instead of blowing out to white. */
+    /* Dark theme: the same top-left light, dimmer and warmer. */
     radial-gradient(70px 60px at 0% 0%, rgba(255,240,200,.34), transparent 74%),
     radial-gradient(180px 150px at 0% 0%, rgba(255,206,120,.26), transparent 70%),
     radial-gradient(420px 340px at 0% 0%, rgba(232,163,23,.22), transparent 64%),
@@ -156,14 +96,7 @@ body::before {
     linear-gradient(140deg, #0E1014 0%, #14171D 48%, #0B0D11 100%);
 }
 
-/* ── Breathing room for the content column ──────────────────────
-   .content has zero horizontal padding by design in admin.css (cards
-   sit flush with the topbar above). That's fine for the flat theme,
-   but glass cards carry a soft box-shadow + hover glow that extends
-   past their own edge — with zero padding the shadow/glow has nowhere
-   to render before .admin-main's overflow:hidden clips it, so the
-   first/last card in every row reads as "cut off" against the shell.
-   Give the column a few px on each side so shadows clear it. */
+/* Add side padding to the content column so card shadows and glows are not clipped. */
 .content {
   padding-left: 6px;
   padding-right: 10px;
@@ -198,9 +131,7 @@ body::before {
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
 }
-/* Light mode only: a top-left-to-bottom-right sheen across each pane.
-   A flat translucent fill on a light backdrop reads as a solid card —
-   the falloff is what makes it look like a lit sheet of glass. */
+/* Light mode: a diagonal sheen on each pane so it looks like lit glass. */
 [data-theme="light"] .panel,
 [data-theme="light"] .stat-card,
 [data-theme="light"] .role-card,
@@ -216,8 +147,7 @@ body::before {
   border-left-color: rgba(255,255,255,.72);
 }
 
-/* The header banner leads the page, but only a whisper of brand gold —
-   a heavy wash here was a big part of the yellow cast. */
+/* Header banner gets only a faint gold tint. */
 [data-theme="light"] .dash-welcome,
 [data-theme="light"] .mod-header {
   background: linear-gradient(135deg, rgba(255,255,255,.60) 0%, rgba(232,163,23,.09) 100%);
@@ -284,15 +214,7 @@ body::before {
 }
 .search-box input { background: transparent; border: none; }
 
-/* ── Date range pill (Transaction History "from → to") ──────────
-   Two bare <input type="date"> plus a text arrow read as three
-   disconnected, flat, un-glassed controls — native date-field chrome
-   (the dd/mm/yyyy text, the calendar icon) ignores most custom CSS,
-   so it visually fights the glass look no matter what the inputs
-   themselves are styled as. Fix: group them into one glass pill,
-   strip the inputs' own borders so they blend into the group instead
-   of stacking three separate edges, and re-skin the calendar icon so
-   it doesn't look like a stock OS control. */
+/* Date range pill: group the two date inputs and arrow into one glass pill and restyle the calendar icon. */
 .date-range-group {
   display: inline-flex;
   align-items: center;
@@ -318,10 +240,7 @@ body::before {
 [data-theme="dark"] .date-range-group .control:hover,
 [data-theme="dark"] .date-range-group .control:focus { background: rgba(255,255,255,.08); }
 
-/* The native calendar icon renders as a flat black/gray glyph that
-   clashes with the gold accent everywhere else — recolor it via the
-   only lever Chromium exposes (filter on the picker indicator) and
-   give it a hover state so it reads as clickable, not decorative. */
+/* Recolour the native calendar icon (via filter) and give it a hover state. */
 .date-range-group .control::-webkit-calendar-picker-indicator {
   filter: opacity(.55) sepia(1) saturate(4) hue-rotate(2deg);
   border-radius: 50%;
@@ -364,14 +283,11 @@ body::before {
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
-  border-radius: var(--r-lg); overflow: hidden;
+  /* Rounded corners still clip, but a table wider than the screen scrolls sideways instead of being cut off. */
+  border-radius: var(--r-lg); overflow: hidden; overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
-/* Sticky header ghosting fix, take 2 — near-opaque killed the glass
-   look entirely (read as a flat white bar). What actually needs to
-   happen: the row scrolling underneath needs to become genuinely
-   illegible, which is a blur-radius problem, not an opacity problem.
-   Heavier blur + moderate (not near-opaque) fill keeps it reading as
-   frosted glass while still scrambling the text passing under it. */
+/* Sticky table header uses heavier blur with moderate opacity so rows scrolling under it are unreadable but it still looks like glass. */
 .data-table thead th {
   background: var(--glass-bg-strong);
   -webkit-backdrop-filter: blur(34px) saturate(115%);
@@ -384,27 +300,13 @@ body::before {
 .data-table tbody tr:hover { background: rgba(255,255,255,.30); }
 [data-theme="dark"] .data-table tbody tr:hover { background: rgba(255,255,255,.06); }
 
-/* ── Tabs → pill design ──────────────────────────────────────────
-   Base admin.css's .tab-btn is an underline-tab (no bg, no radius,
-   gold underline on the active one). The glass skin already painted
-   a box behind each tab but left the corners square — this rounds
-   them into actual pills, and drops the underline-era negative
-   margin/reset that the flat design relied on. */
+/* Tabs become rounded pills instead of underline tabs. */
 .tabs {
   border-bottom: none;
   flex-wrap: wrap;
   gap: 8px;
 }
-/* The glass skin gives every pill its frosted body. Shape, hover and active
-   are NOT set here — they come from THE ONE TAB PILL block in portal.css.
-
-   THIS IS WHERE THEY CAME APART. Three of the five had a hover here
-   (a white wash plus a 1px lift) and two did not, so those two fell through
-   to their own gold-edge rule instead. Since this file loads last, the wash
-   won wherever it was listed — which is why Order Queue's tabs lifted and
-   glowed white while Inventory Management's, one screen away, drew a gold
-   edge and stayed put. Naming three of five in a hover rule is the bug; the
-   fix is to name none of them and let the shared block hover everything. */
+/* Only the frosted body is set here; shape, hover and active come from the shared tab pill block in portal.css so all tab rows behave the same. */
 .tab-btn,
 .return-tab-btn,
 .alert-tab,
@@ -417,9 +319,7 @@ body::before {
   border-color: var(--glass-border);
   margin-bottom: 0;
 }
-/* Hover keeps the frosted body and takes the gold edge the shared block
-   defines; only the fill is restated, because `background` above would
-   otherwise hold it flat. */
+/* On hover keep the frosted fill; the gold edge comes from the shared block. */
 .tab-btn:hover,
 .return-tab-btn:hover,
 .alert-tab:hover,
@@ -427,10 +327,7 @@ body::before {
 .range-btn:hover,
 .rs-basis-btn:hover { background: var(--glass-bg); }
 
-/* ── Overlays: near-opaque, not translucent — see the --glass-bg-overlay
-   comment above. Blur stays (still reads as "glass"), but the fill is
-   high enough that whatever's underneath (table rows, other panels)
-   no longer shows through the modal/dropdown text. */
+/* Overlays are near-opaque (still blurred) so content underneath does not show through. */
 .modal,
 .notif-dropdown,
 .user-dropdown,
@@ -442,9 +339,7 @@ body::before {
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow-lg);
 }
-/* Darker + blurrier scrim behind the modal too — .34/blur(3px) was
-   weak enough that the page behind it was still legible and fighting
-   for attention with the modal in front. */
+/* Darker, blurrier scrim behind modals. */
 .modal-overlay,
 .preview-overlay { background: rgba(15,12,4,.55); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 .nd-list, .nd-header, .nd-empty, .nd-footer { background: transparent; }
@@ -452,10 +347,7 @@ body::before {
 .nd-item:hover { background: rgba(255,255,255,.30); }
 [data-theme="dark"] .nd-item:hover { background: rgba(255,255,255,.06); }
 
-/* ── Overlay text: a little heavier + fully opaque, no longer relying
-   on translucent panes for legibility now that the panes themselves
-   are solid. Labels/values were reading as thin and grey against the
-   busy backdrop. ── */
+/* Overlay text is heavier and fully opaque for legibility. */
 .modal-header h3, .modal-title,
 .nd-header span, .detail-row-label, .detail-row-val,
 .field label { font-weight: 700; }
@@ -465,31 +357,13 @@ body::before {
 
 /* ── Misc ────────────────────────────────────────────────────── */
 .stock-bar-wrap, .expiry-bar-wrap { background: rgba(255,255,255,.34); }
-/* NO BACKGROUND HERE ANY MORE. The skin used to paint the off track
-   rgba(255,255,255,.34), which on a frosted cream panel landed lighter than
-   the panel itself — 1.04:1 against the strip behind it, with a white thumb at
-   1.07:1 on top. portal.css now mixes the track from --text, which the skin
-   deliberately does not re-point, and that value is legible on a frosted pane
-   as well as an opaque one.
-
-   The hairline stays, and stays an INSET SHADOW rather than a border: a border
-   on the track changes where the thumb's absolute offsets resolve from — the
-   padding box, not the outer edge — so `top: 3px` came out 4px from the top
-   and 2px from the bottom, and the thumb sat visibly low with this skin on and
-   centred without it. The shadow draws the same line and takes up no layout. */
+/* No toggle track background here (portal.css handles it legibly), and the hairline is an inset shadow so the thumb stays centred. */
 .switch-track { box-shadow: inset 0 0 0 1px var(--glass-border); }
 
-/* backdrop-filter is GPU work — one per pane is fine, but skip it on
-   the long scrolling lists where dozens would stack up. */
+/* Skip backdrop-filter on long scrolling lists to save GPU work. */
 .alert-row, .notif-row, .nd-item { -webkit-backdrop-filter: none; backdrop-filter: none; }
 
-/* ── Popups, light mode: visible separators ────────────────────────────
-   Light glass sets --border to WHITE (.45), which is invisible on the white
-   section cards inside a popup — every divider, dashed row line and card edge
-   in the staff popups disappeared, while dark mode (white .12 on near-black)
-   read clearly. Inside the modal only, light mode gets a warm ink line at the
-   same visual weight dark mode has. Every popup section uses var(--border) /
-   var(--border-lift), so this one override covers them all. */
+/* Light mode popups: use a visible warm border colour, since the light glass border is white on white. */
 :root:not([data-theme="dark"]) .modal {
   --border:      rgba(110, 78, 28, .20);
   --border-lift: rgba(110, 78, 28, .32);
@@ -508,9 +382,7 @@ body::before {
 :root:not([data-theme="dark"]) .modal .order-detail-heading {
   border-bottom-color: rgba(232, 163, 23, .45);
 }
-/* The same white-on-white problem on the popup's own controls and cards:
-   ghost buttons (Cancel, Reject…, Place on Hold), the × and the Verify
-   Payment card had glass-white edges that vanished on the white popup. */
+/* Same fix for ghost buttons, the close button and cards inside popups. */
 :root:not([data-theme="dark"]) .modal .btn-ghost,
 :root:not([data-theme="dark"]) .modal .btn-ghost-danger,
 :root:not([data-theme="dark"]) .modal .modal-close,

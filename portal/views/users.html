@@ -3,27 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <title>users module</title>
-  <!-- ============================================================
-       MODULE PARTIAL — section id="mod-users".
-
-       Wrapped as a complete HTML document ON PURPOSE.
-
-       Dev servers inject a live-reload script into every .html file
-       they serve, placed just before the closing body tag. A bare
-       fragment has no closing body tag, so VS Code Live Server falls
-       back to injecting before the first closing svg tag instead —
-       which lands inside the Elisha Bay logo mark, corrupts the
-       parse, and leaves the portal showing "Portal failed to load".
-
-       With a real body element the injection lands harmlessly at the
-       end, and Core/module-loader.js strips every script element
-       before using this markup.
-
-       Keep the html/head/body wrapper. Also avoid writing a literal
-       closing body, head or svg tag anywhere in a comment in these
-       files — Live Server matches raw text and will inject there,
-       breaking the comment and everything after it.
-       ============================================================ -->
+  <!-- Module partial for section mod-users, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
   </head>
   <body>
 <!-- ── USER MANAGEMENT ── -->
@@ -39,21 +19,7 @@
     </div>
     <div class="actions" id="users-header-actions"></div>
   </div>
-  <!-- Tabs left, filters right, one band — see .view-toolbar in portal.css.
-
-       THE FILTERS CAME OUT OF THE PANELS TO GET HERE. Each .tab-panel below
-       carried its own .table-toolbar, so "tabs then filters" was two stacked
-       bands and the filter row belonged to a different subtree from the tabs —
-       no CSS could have lifted one onto the other.
-
-       They are still two separate sets, because Customers filter by status and
-       Employees by role and the controls are genuinely different. Only the set
-       matching the open tab is shown, toggled by renderUsers() with the same
-       .active flag it already toggles on .tab-panel — one mechanism, not two.
-
-       Every id in here is unchanged (#search-customers, #cust-page-size,
-       #filter-customers, and the employee three), so every listener that reads
-       them keeps working. -->
+  <!-- Tabs on the left, filters on the right; Customers and Employees have separate filter sets, shown by renderUsers() with the same .active flag (all ids unchanged). -->
   <div class="view-toolbar">
     <div class="tabs" id="user-tabs" role="tablist">
       <button

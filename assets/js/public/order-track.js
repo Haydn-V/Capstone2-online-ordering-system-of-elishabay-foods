@@ -1,20 +1,4 @@
-/* =================================================================
-   ORDER TRACKING DROPDOWN — shared by Dashboard and My Orders
-   -----------------------------------------------------------------
-   Clicking an order number drops its tracking open underneath it.
-   One at a time: opening another order closes the one already open,
-   and clicking the open one again closes it.
-
-   The steps arrive decided by the server (Orders::trackingSteps in
-   api/core/Orders.php); this only draws them, using the .db-steps
-   stepper from profile.css.
-
-   Markup contract, inside the root passed to bind():
-     <button data-track="ORDER-ID" aria-expanded="false">…</button>
-     <div class="ot-drop" data-track-panel="ORDER-ID"><div class="ot-drop-inner"></div></div>
-
-   Needs core/index.js (EbFormat).
-   ================================================================= */
+/* ===== ORDER TRACKING DROPDOWN (Dashboard and My Orders): click an order number to open its server-decided tracking steps below it, one at a time ===== */
 (function () {
   const esc  = v => EbFormat.escHtml(v == null ? "" : v);
 
@@ -68,11 +52,7 @@
     panel.classList.toggle("is-open", open);
   }
 
-  /**
-   * Wire every [data-track] button under `root`.
-   * @param {Element} root
-   * @param {(id:string) => object|undefined} findOrder
-   */
+  /** Wire every [data-track] button under root. */
   function bind(root, findOrder) {
     root.querySelectorAll("[data-track]").forEach(btn => {
       const id = btn.dataset.track;

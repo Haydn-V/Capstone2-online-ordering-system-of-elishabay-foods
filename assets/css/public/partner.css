@@ -1,6 +1,4 @@
-/* =================================================================
-   BECOME A RETAILER PARTNER — layered on styles.css
-   ================================================================= */
+/* ===== BECOME A RETAILER PARTNER (layered on styles.css) ===== */
 
 .partner-hero {
   background: var(--bg);
@@ -64,23 +62,10 @@
 .ps-step.done .ps-label { color: var(--ok); }
 .ps-rule { width: clamp(24px,4vw,56px); height: 1px; background: var(--border-lift); flex: none; }
 
-/* Two-column layout — wider than the site's default container so the
-   sidebar and form both get more breathing room */
+/* Two-column layout, wider than the default container. */
 .partner-section { background: var(--bg-soft); }
 .partner-container { max-width: 1360px; }
-/* MORE OF THE ROOM GOES TO THE FORM, AND THE SIDEBAR STOPS LEAVING A HOLE.
-
-   Two things were wrong with the old .72fr / 1.28fr split. The form — the
-   thing the page exists for — got 773px of a 1264px row while a column of
-   marketing copy took 435. And that copy runs out after four blocks, so for
-   most of the scroll the left third of the page was empty cream beside a form
-   that had been squeezed to make room for it.
-
-   The ratio shifts toward the form, and the sidebar sticks: it stays beside
-   whichever part of the form you are filling in instead of scrolling away and
-   leaving its column behind. `align-items: start` was already here, which is
-   what makes a sticky child possible — a stretched grid item is as tall as the
-   row and has nothing to stick within. */
+/* More width goes to the form, and the sidebar is sticky so it stays beside the form while scrolling. */
 .partner-layout {
   display: grid; grid-template-columns: .62fr 1.38fr;
   gap: clamp(32px,4vw,56px); align-items: start;
@@ -89,9 +74,9 @@
   position: sticky;
   /* Clear of the fixed navbar, with a little air. */
   top: calc(var(--nav-h) + 20px);
-  /* If the copy ever grows taller than the window it scrolls on its own rather
-     than pinning its own bottom off-screen where nobody can read it. */
+  /* If the sidebar is taller than the window it scrolls on its own. */
   max-height: calc(100vh - var(--nav-h) - 40px);
+  max-height: calc(100dvh - var(--nav-h) - 40px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -135,46 +120,17 @@
   border-radius: var(--r-xl); box-shadow: var(--shadow-md);
   padding: clamp(30px,4.5vw,46px);
 }
-/* h3/h4 default to the site's serif display font — override to the
-   plain sans body font so form chrome stays easy to scan */
+/* h3/h4 use the plain sans font so the form is easy to scan. */
 .partner-form-title {
   font-family: "Montserrat","Karla",sans-serif;
   font-size: var(--fs-3xl); font-weight: 700; color: var(--text); margin: 0 0 10px;
 }
 .partner-form-sub { font-size: var(--fs-md); color: var(--text-muted); line-height: 1.65; margin: 0 0 30px; }
 
-/* ONE RHYTHM, AND IT IS THE CHECKOUT'S.
-   ------------------------------------
-   The form had four different vertical gaps doing the same job: 20px below a
-   field, 18px inside a .pf-row (which BECAME 38px the moment the row stacked
-   on a phone, because each half kept its own 20px as well), 4px below the
-   address fieldset, and 30+22px above a group heading. Nothing was wrong
-   individually; together they read as untidy, which is exactly the complaint.
-
-   The checkout is the reference form, and its rhythm is: one gap under every
-   field, and a section separated by a hairline with equal space either side
-   (.co-section — 24px above the rule, 24px below, 12px under the heading).
-   That is what is used here. The field gap stays 20px rather than dropping to
-   the checkout's 16, because this card's fields are deliberately larger
-   (.auth-input is 15px of padding against the checkout's 11) and 16px under a
-   bigger field is a tighter rhythm, not the same one.
-
-   ROW GAP ZERO, column gap 18. The halves of a .pf-row already carry the
-   field gap themselves; a row-gap on top of it is what made the stacked
-   layout double up. */
+/* One vertical rhythm like the checkout: 20px under every field and hairline-separated sections; .pf-row has no row gap (only an 18px column gap) so stacked halves do not double up. */
 .pf-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
 
-/* The credentials block is a SECTION, and the rule belongs to the section, not
-   to its heading.
-
-   It used to hang off .pf-group-label with :first-of-type deciding whether to
-   draw it — and :first-of-type counts siblings of the same element type within
-   the same parent, so once this h4 was wrapped in #pf-credentials it became the
-   first h4 of its own div and matched, which switched the separator OFF. The
-   form has had no line between the business details and the credentials since.
-   Putting it on the wrapper cannot go wrong that way: the wrapper is hidden
-   whole for a signed-in applicant (.hide is display:none), so the rule goes
-   with it and nothing is left floating above the first thing on the form. */
+/* The separator belongs to the credentials section wrapper, so it hides with it for signed-in applicants. */
 /* Numbered sections: a divider and a header between each group. */
 #partner-form { counter-reset: pfsec; }
 .pf-sec { counter-increment: pfsec; padding: 26px 0 6px; border-top: 1px solid var(--border); }
@@ -198,23 +154,14 @@
   color: var(--red); margin: 0 0 12px;
 }
 
-/* A field filled in from the customer's saved profile (decision I9).
-
-   shop.css already carries this for the checkout, scoped to `.control`. The
-   partner form's inputs are `.auth-input`, so the rule did not reach them —
-   same marker, same meaning, second selector. A value that appears without
-   being typed has to be distinguishable from one that was, or a wrong saved
-   address gets submitted unnoticed. A hint, never a lock: the field stays
-   editable and the marker goes the moment it is touched. */
+/* Marks a field prefilled from the saved profile (still editable; the marker goes once touched). */
 .auth-input.is-prefilled {
   border-color: var(--gold);
   background-image: linear-gradient(0deg, var(--gold-dim), var(--gold-dim));
 }
 .auth-input.is-prefilled:focus { background-image: none; }
 
-/* Names the account the application will be attached to. Shown only when there
-   is a session, because it is the disclosure that api/b2b/apply.php takes the
-   email from that session and not from the field above. */
+/* Shows which account the application will be attached to (only when signed in). */
 .pf-account-note {
   display: flex; align-items: flex-start; gap: 11px;
   padding: 13px 15px; margin: 0 0 26px;
@@ -226,8 +173,7 @@
 .pf-account-note .pf-account-ic svg { width: 18px; height: 18px; display: block; }
 .pf-account-note strong { font-weight: 700; }
 
-/* Larger, more legible fields than the compact auth-modal defaults,
-   with bold labels; required ones end in a red * (theme.js) */
+/* Larger fields with bold labels; required ones get a red * (theme.js). */
 .partner-form-card .auth-field { margin-bottom: 16px; }
 .partner-form-card .auth-field label {
   font-size: var(--fs-sm); font-weight: 700; color: var(--text);
@@ -238,40 +184,20 @@
 .partner-form-card .auth-input-icon { width: 18px; height: 18px; }
 .partner-form-card .field-error { font-size: var(--fs-base); }
 
-/* The business address sits on the same rhythm as everything else.
-
-   The fieldset carried margin: 0 0 4px, so the block below it started 4px
-   after the picker's own last field instead of the form's one gap — and the
-   <legend> was styled as a THIRD kind of label: .74rem, --text, uppercase with
-   wide tracking, beside .78rem red field labels. It is not a field label, it
-   is the heading of a group of them, which is exactly what the checkout's
-   .co-subtitle is, so it is given those metrics. The picker's own fields are
-   .auth-field and already carry the card's label style and the 20px gap. */
+/* The business address fieldset follows the same spacing, with its legend styled like the checkout's .co-subtitle. */
 .partner-form-card .auth-addr { margin: 0; }
 .partner-form-card .auth-addr-legend {
   font-size: var(--fs-sm); font-weight: 700; letter-spacing: .02em; text-transform: none;
   color: var(--text); margin-bottom: 10px;
 }
 
-/* One field height. EbSelect draws its own trigger over the native <select>,
-   and the trigger's size comes from the shared component: 10px of padding and
-   .92rem against this card's 15px and 1.02rem. Business Type sat 39px tall
-   beside a 51px BIR TIN field in the same row — the single most visible thing
-   about the form's spacing.
-
-   The selector needs .ebs in it. EbSelect injects its own stylesheet from
-   JavaScript, so its rules land AFTER this file; `.ebs--field .ebs-trigger` and
-   `.partner-form-card .ebs-trigger` have the same specificity and the later one
-   wins. One more class puts this ahead of it, for every variant. */
+/* Make EbSelect triggers the same height as the other fields (an extra .ebs class beats EbSelect's later-loaded styles). */
 .partner-form-card .ebs .ebs-trigger {
   font-size: var(--fs-lg);
   min-height: 0;
   padding: 15px 38px 15px 14px;
 }
-/* …except the address picker's, which sit in an icon well like every other
-   field on this card. This file loads after styles.css, so the shared
-   .addr-picker--auth rule there would lose the tie on specificity and the pin
-   would go back over the text. Restated here, one class deeper. */
+/* Except address picker fields, which keep the icon well like other fields (restated here one class deeper). */
 .partner-form-card .addr-picker--auth .ebs .ebs-trigger { padding-left: 44px; }
 
 /* Confirmation panel — mirrors the batch-traceability "verified" result card */
@@ -289,18 +215,45 @@
 .partner-confirm p { font-size: var(--fs-base); color: var(--text-muted); line-height: 1.7; max-width: 46ch; margin: 0 auto 24px; }
 
 @media (max-width: 860px) {
-  .partner-layout { grid-template-columns: 1fr; }
-  .pf-row { grid-template-columns: 1fr; }
+  /* minmax(0, …) so the column can shrink on a 360px phone. */
+  .partner-layout { grid-template-columns: minmax(0, 1fr); }
+  .pf-row { grid-template-columns: minmax(0, 1fr); }
   .ps-label { display: none; }
-  /* ONE COLUMN, SO NOTHING STICKS. In two columns the sidebar sticks beside
-     the form; stacked, "beside" no longer exists and the same rule would pin
-     four blocks of marketing copy across the top of the screen while someone
-     tried to fill the form in underneath it. It also has to give its height
-     back — a max-height of one viewport with overflow:auto turns into a second
-     scrollbar inside the page. */
+  /* One column: the sidebar is no longer sticky or height-limited. */
   .partner-aside {
     position: static;
     max-height: none;
     overflow-y: visible;
   }
 }
+
+/* Phones: the form comes first, with "Why Partner With Us?" after it. */
+@media (max-width: 640px) {
+  .partner-aside { order: 2; }
+  #partner-form-wrap { order: 1; }
+}
+
+/* Phones: add side padding to the hero. */
+@media (max-width: 640px) {
+  .partner-hero { padding: calc(var(--nav-h) + 36px) 22px 32px; }
+  .partner-eyebrow { margin-bottom: 18px; font-size: .8rem; padding: 7px 16px 7px 12px; }
+  .partner-title { font-size: clamp(1.7rem, 7.4vw, 2.1rem); line-height: 1.22; margin-bottom: 14px; }
+  .partner-sub { font-size: 1rem; line-height: 1.65; }
+}
+
+/* Phones: "Wholesale Application Form" on one line — sized to the card width. */
+@media (max-width: 640px) {
+  .partner-form-title { font-size: min(1.45rem, 4.8vw); white-space: nowrap; letter-spacing: -.01em; }
+}
+
+/* Sign-in gate shown in place of the form to a visitor with no account. */
+.pf-gate { text-align: center; padding: 28px 8px 12px; }
+.pf-gate-ic {
+  display: inline-grid; place-items: center; width: 56px; height: 56px; border-radius: 50%;
+  background: var(--gold-dim); color: color-mix(in srgb, var(--gold) 70%, var(--text)); margin-bottom: 14px;
+}
+.pf-gate-ic svg { width: 24px; height: 24px; }
+.pf-gate-title { font-family: "Montserrat", sans-serif; font-size: 1.35rem; font-weight: 800; margin: 0 0 8px; color: var(--text); }
+.pf-gate-text { color: var(--text-muted); line-height: 1.65; max-width: 46ch; margin: 0 auto 20px; }
+.pf-gate-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.pf-gate-actions .btn { min-width: 150px; min-height: 46px; }

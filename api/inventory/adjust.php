@@ -1,26 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/inventory/adjust.php
- *
- * Body: { "product_id": "db-pesto", "qty": 50, "type": "restock",
- *         "reason": "...", "batch_code": "JBF-2026-B120",
- *         "production_date": "2026-08-16", "expiry_date": "2027-08-16" }
- *
- * type: restock | disposal | return
- *
- * Requires inventory.manage. The first WRITE endpoint, so it establishes the
- * pattern for every other one:
- *
- *   - permission checked server-side before any work
- *   - every value validated, including ones the UI "already checks"
- *   - the whole thing in a transaction, because stock, batch and audit rows
- *     must move together or not at all
- *   - the audit trail written here rather than by the client, which could
- *     simply decline to
- *   - quantities computed from the database, never taken from the browser
- */
+/** POST /api/inventory/adjust.php (needs inventory.manage) restocks, disposes or returns stock in one transaction with validated input and a server-written audit row. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -51,19 +32,7 @@ if ((int) $product['archived'] === 1 && $data['type'] === 'restock') {
     Response::conflict('This product is archived. Restore it before restocking.');
 }
 
-/* ---------------------------------------------------------------
-   The lot, for a disposal or a return
-   ---------------------------------------------------------------
-   REQUIRED, not optional. This field used to be a free-text box the form
-   labelled "(optional)", which defeated the module it belongs to: Batch
-   Tracking exists so a unit can be traced to the lot it came from and so a
-   recall can name the affected lots, and a disposal with no lot is
-   untraceable. It was also free text meeting a foreign key —
-   inventory_adjustments.batch_code references batches.lot_code (migration
-   002), so a typo produced a database error rather than a field message.
-
-   `restock` is excluded on purpose. There the field names a NEW lot being
-   opened, validated further down against a different set of rules. */
+/* A disposal or return must name an existing lot, so every unit removed stays traceable (restock opens a new lot instead). */
 $batchCode = trim((string) ($in['batch_code'] ?? ''));
 $batch     = null;
 
@@ -85,10 +54,7 @@ if ($data['type'] !== 'restock') {
         ]);
     }
 
-    /* A lot that exists but belongs to a different product satisfies the
-       foreign key and means nothing — it would file a disposal of one product
-       against another product's production run. The FK cannot catch this
-       because it only checks that the code exists somewhere. */
+    /* The lot must belong to this product. */
     if ($batch['product_id'] !== $product['id']) {
         Response::validation('That lot belongs to a different product.', [
             'batch_code' => sprintf('Lot %s is not a lot of %s.', $batch['lot_code'], $product['name']),
@@ -96,13 +62,10 @@ if ($data['type'] !== 'restock') {
     }
 }
 
-/* Disposal and customer returns move stock in opposite directions. Signed
-   here, once, so the sign cannot be dictated by the client. */
+/* Disposal subtracts and return adds; the sign is set here, not by the client. */
 $delta = $data['type'] === 'disposal' ? -$data['qty'] : $data['qty'];
 
-/* Nothing can be discarded from a lot that does not hold it. Checked before
-   the transaction for the message; the UPDATE below is still written so it
-   cannot drive the column negative if this row moves underneath us. */
+/* Cannot dispose more than the lot holds. */
 if ($data['type'] === 'disposal' && (int) $batch['remaining_qty'] < $data['qty']) {
     Response::conflict(sprintf(
         'Lot %s holds only %d unit(s) — cannot discard %d.',
@@ -110,8 +73,20 @@ if ($data['type'] === 'disposal' && (int) $batch['remaining_qty'] < $data['qty']
     ));
 }
 
-/* Stock must not go negative. Checked against the row just read, inside the
-   transaction below, so a concurrent adjustment cannot slip underneath. */
+/* Cannot return more into a lot than it was made with (remaining never above total). */
+if ($data['type'] === 'return') {
+    $lotTotal = (int) Database::scalar('SELECT total_qty FROM batches WHERE id = ?', [$batch['id']]);
+    $room     = max(0, $lotTotal - (int) $batch['remaining_qty']);
+    if ($data['qty'] > $room) {
+        Response::conflict($room > 0
+            ? sprintf('Lot %s started with %d unit(s) and holds %d — only %d more can be returned to it.',
+                $batch['lot_code'], $lotTotal, (int) $batch['remaining_qty'], $room)
+            : sprintf('Lot %s is already full (%d of %d) — nothing more can be returned to it.',
+                $batch['lot_code'], (int) $batch['remaining_qty'], $lotTotal));
+    }
+}
+
+/* Stock must not go negative, checked inside the transaction. */
 if ((int) $product['stock'] + $delta < 0) {
     Response::conflict(
         "Cannot remove {$data['qty']} units — only {$product['stock']} in stock."
@@ -121,27 +96,10 @@ if ((int) $product['stock'] + $delta < 0) {
 try {
     $pdo->beginTransaction();
 
-    /* An adjustment is not a sale: `sold` is deliberately untouched. Stock::adjust
-       is the only movement with that property, which is why it has its own name
-       (api/core/Stock.php). */
+    /* An adjustment is not a sale, so sold is untouched (Stock::adjust). */
     Stock::adjust($product['id'], (int) $delta);
 
-    /* The lot moves with the stock.
-       ---------------------------
-       Nothing in this system decremented batches.remaining_qty before this. A
-       disposal reduced products.stock and left the lot at its full quantity, so
-       a discarded lot kept claiming stock that was in a bin: it stayed in the
-       Expiry Monitor asking to be disposed, and disposing it again drew the
-       product's stock down a second time. Requiring a lot without this would
-       have made choosing one purely decorative.
-
-       GREATEST(...,0) for the same reason Stock.php guards `sold`: the check
-       above reads the row before the transaction, and the floor means a
-       concurrent adjustment can at worst make this a no-op rather than write a
-       negative quantity.
-
-       Restock is not handled here — it opens a NEW lot below, whose
-       remaining_qty is set at creation. */
+    /* Reduce the lot's remaining_qty along with product stock (never below 0) so disposed lots stop claiming stock. */
     if ($batch !== null) {
         Database::run(
             $data['type'] === 'disposal'
@@ -151,47 +109,25 @@ try {
         );
     }
 
-    /* ORDER MATTERS: the new lot is created BEFORE the adjustment row.
-       inventory_adjustments.batch_code is a foreign key onto batches.lot_code
-       (migration 002), so writing the adjustment first meant a restock opening
-       a new lot referenced a row that did not exist yet. InnoDB checks foreign
-       keys per statement rather than at commit, so this did not fail at the end
-       of the transaction — it failed on the spot, and a restock with a new lot
-       code returned a 500 with a raw SQLSTATE in it rather than working. */
-    /* A restock may also open a new batch. Only when a lot code was supplied —
-       topping up an existing batch is a legitimate restock too.
-
-       $newLot, not $batch: $batch above holds the EXISTING lot a disposal or
-       return draws from, and reusing the name here put two different meanings
-       on one variable in one function. */
-    /* WHAT OPENS A LOT IS NOW THE EXPIRY DATE, NOT THE CODE.
-       ------------------------------------------------------
-       It used to be `!empty($in['batch_code'])`, which made the operator's
-       typing the thing that decided whether a production run was recorded. The
-       code is the system's to assign (Inventory::nextLotCode), so it can no
-       longer be the signal. The expiry date is: a lot without one is not a lot
-       this business can trace, and a restock without one is a top-up of stock
-       already on the shelf — which stays legitimate and still writes no batch
-       row.
-
-       A caller may still supply its own code; it is validated and used as
-       before. Nothing that worked stops working. */
-    $opensLot = $data['type'] === 'restock' && !empty($in['expiry_date']);
+    /* Create the new lot before the adjustment row, because the adjustment's batch_code foreign key must already exist. */
+    /* A restock may also open a new batch ($newLot, separate from the existing $batch used by disposals). */
+    /* A restock opens a new lot when a production date is given (the code is assigned by the system unless supplied);
+       without one it just tops up stock. The expiry is never taken from the form: it is the production date plus the
+       category's shelf life (Inventory::autoExpiry), and the production date may be at most a month back. */
+    $opensLot = $data['type'] === 'restock' && (!empty($in['production_date']) || !empty($in['expiry_date']));
 
     if ($opensLot) {
         $newLot = Validate::check($in)
             ->date('production_date', 'Production date')
-            ->date('expiry_date', 'Expiry date')
             ->values();
 
-        if ($newLot['expiry_date'] <= $newLot['production_date']) {
-            Response::validation('Check the dates.', [
-                'expiry_date' => 'Expiry must be after the production date.',
-            ]);
+        $prodErr = Inventory::productionDateError($newLot['production_date']);
+        if ($prodErr !== null) {
+            Response::validation('Check the dates.', ['production_date' => $prodErr]);
         }
+        $newLot['expiry_date'] = Inventory::autoExpiry($data['product_id'], $newLot['production_date']);
 
-        /* Supplied or assigned. The exists-check stays for the supplied case —
-           nextLotCode() has already stepped past anything taken. */
+        /* Use the supplied code (checked for duplicates) or an assigned one. */
         $lotCode = trim((string) ($in['batch_code'] ?? ''));
         if ($lotCode === '') {
             $lotCode = Inventory::nextLotCode();
@@ -203,10 +139,7 @@ try {
         }
         $newLot['batch_code'] = $lotCode;
 
-        /* So the adjustment row below references the lot this restock actually
-           opened. Without this an assigned code left inventory_adjustments.
-           batch_code null, and the movement that CREATED a lot would be the one
-           movement in the table not traceable to one. */
+        /* Point the adjustment row at the lot this restock opened. */
         $batchCode = $lotCode;
 
         Database::run(
@@ -237,19 +170,15 @@ try {
         [
             $product['id'],
             $delta,
-            /* The adjustments table only models disposal and return; a restock
-               is recorded as a positive return-to-stock movement, matching how
-               the existing seed rows use it. */
+            /* A restock is stored as a positive return movement, matching the existing rows. */
             $data['type'] === 'disposal' ? 'disposal' : 'return',
             $data['reason'],
-            /* The validated, trimmed code — not the raw input. For a
-               restock with no lot this is null, which the column allows. */
+            /* The validated code, or null for a restock with no lot. */
             $batchCode !== '' ? $batchCode : null,
         ]
     );
 
-    /* Audit written server-side. If the client were responsible for this, the
-       one action worth hiding would be the one that never gets logged. */
+    /* The audit row is written on the server so it cannot be skipped. */
     $verb = ['restock' => 'Restocked', 'disposal' => 'Disposed', 'return' => 'Returned'][$data['type']];
     Database::run(
         'INSERT INTO audit_logs (ts, actor, actor_user_id, type, description)
@@ -282,9 +211,6 @@ $fresh = Database::one('SELECT id, name, stock FROM products WHERE id = ?', [$pr
 Response::ok([
     'product'  => ['id' => $fresh['id'], 'name' => $fresh['name'], 'stock' => (int) $fresh['stock']],
     'movement' => $delta,
-    /* Returned so the form can TELL the operator which lot was opened. The
-       code is assigned here now, so without this the one person who needs to
-       write it on the carton would have to go and look it up. Null when the
-       movement opened no lot. */
+    /* Return the opened lot code so the form can show it (null when no lot was opened). */
     'lotCode'  => $opensLot ? $batchCode : null,
 ]);

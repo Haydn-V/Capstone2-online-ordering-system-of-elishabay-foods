@@ -1,19 +1,4 @@
-/* ============================================================
- FORMAT — display formatting, one implementation
- ------------------------------------------------------------
- These helpers existed twice: once in engine.js for the portal
- and once in site.js for the public pages, with small differences
- that had drifted (the public stockInfo returned {cls,label}, the
- portal's returned {cls,label,level}; the public one wrote the
- quantity into the label, the portal's did not).
-
- Published as EbFormat rather than as bare globals, because
- engine.js already defines `peso`, `escHtml`, `fmtDate` and
- friends at top level. Two files declaring the same top-level
- `const` is a SyntaxError that kills the entire script — the exact
- failure that made the pre-RBAC portal engines impossible to load
- side by side. engine.js now delegates to this file instead.
- ============================================================ */
+/* Display formatting helpers shared by portal and storefront, published as EbFormat (engine.js already has top-level names like peso and escHtml). */
 
 
 const CURRENCY = "₱";
@@ -31,12 +16,23 @@ const pesoExact = n => CURRENCY + Number(n || 0).toLocaleString("en-PH", {
 
 function fmtDate(str) {
   if (!str) return "—";
-  /* A bare YYYY-MM-DD parses as UTC midnight, which in a UTC+8 timezone
-     renders as the previous day. Forcing local midnight avoids the
-     off-by-one. */
+  /* Force local midnight so a bare date does not show as the previous day. */
   const d = new Date(str + (String(str).length === 10 ? "T00:00:00" : ""));
   if (isNaN(d)) return "—";
   return d.toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" });
+}
+
+/* Estimated arrival window, "Oct 29 – Oct 31, 2026" (one date when both ends match; "" when unknown). */
+function etaRange(from, to) {
+  if (!from) return "";
+  const d = s => new Date(s + "T00:00:00");
+  const a = d(from), b = d(to || from);
+  if (isNaN(a) || isNaN(b)) return "";
+  const md = x => x.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  if (+a === +b) return `${md(a)}, ${a.getFullYear()}`;
+  return a.getFullYear() === b.getFullYear()
+    ? `${md(a)} – ${md(b)}, ${b.getFullYear()}`
+    : `${md(a)}, ${a.getFullYear()} – ${md(b)}, ${b.getFullYear()}`;
 }
 
 function fmtDateTime(str) {
@@ -48,25 +44,7 @@ function fmtDateTime(str) {
 const initials = name => String(name || "")
   .split(" ").filter(Boolean).map(w => w[0]).join("").slice(0, 2).toUpperCase();
 
-/* ============================================================
-   STOCK LEVEL AND MOVEMENT
-   ------------------------------------------------------------
-   Both are decided by the SERVER now, in api/core/Inventory.php, from
-   measured sales velocity. Read that file for why — in short, a fixed
-   piece count cannot tell a shortage from three years of cover, and
-   `products.sold` is a lifetime counter that never decays, so given
-   enough trading it classifies every product as fast moving.
-
-   These functions no longer hold thresholds. They TRANSLATE what the
-   server decided into a badge class, and fall back to a piece count
-   only when handed a bare number.
-
-   PASS THE PRODUCT, NOT THE COUNT. `stockInfo(p)` uses the measured
-   band; `stockInfo(p.stock)` cannot, because a number carries no
-   velocity. The numeric path exists for the screens that genuinely
-   only have a quantity — a cart line, a batch quantity — and it is
-   deliberately conservative rather than clever.
-   ============================================================ */
+/* Stock level and movement are decided by the server (api/core/Inventory.php); these functions only turn that into a badge, so pass the product, not just the count. */
 
 const STOCK_BADGE = {
   out:  { cls: "badge-out",  label: "Out of Stock" },
@@ -81,9 +59,7 @@ const MOVE_BADGE = {
   non:  { cls: "badge-muted", label: "Non-Moving"  },
 };
 
-/* The floor from Inventory::DEFAULTS, and only the floor. Used when there is
-   no server verdict to read. It is intentionally NOT the full model: guessing
-   at velocity from a number nobody measured is how the old bands went wrong. */
+/* The fallback floor from Inventory::DEFAULTS, used only when there is no server verdict. */
 const STOCK_FLOOR_CRITICAL = 10;
 
 function stockInfo(input) {
@@ -93,9 +69,7 @@ function stockInfo(input) {
       return {
         ...STOCK_BADGE[inv.level],
         level:     inv.level,
-        /* Carried through so a screen can explain the badge on hover rather
-           than leaving the reader to reconcile "Critical" with a healthy
-           looking number. */
+        /* Carry the reason so screens can explain the badge on hover. */
         reason:    inv.levelReason || null,
         daysCover: inv.daysCover ?? null,
         perMonth:  inv.perMonth ?? null,
@@ -119,26 +93,16 @@ function movementType(input) {
     }
     return { ...MOVE_BADGE.non, movement: "non", perMonth: null };
   }
-  /* A bare number reaching here is the retired lifetime-total call. There is
-     no honest rate to derive from it, so it reports unknown rather than
-     resurrecting the thresholds this change removed. */
+  /* A bare number has no sales rate, so movement is reported as unknown. */
   return { cls: "badge-muted", label: "—", movement: null, perMonth: null };
 }
 
-/* The canonical payment keys the database stores. Never return undefined —
-   it used to render as the literal word "undefined" in the payment column. */
+/* Payment method labels; never return undefined. */
 const PAY_METHODS = {
   cash: "Cash", gcash: "GCash", bank: "Bank Transfer",
   net30: "Net 30", net60: "Net 60", net90: "Net 90",
 };
-/* An unrecognised key falls through to the key ITSELF on purpose: a method
-   added to the database before this map knows about it should read "paymaya"
-   rather than a dash that hides it.
-   The two strings below are the exception. They are what a missing value looks
-   like after it has been through string interpolation somewhere upstream, and
-   passing them through prints the word "undefined" in the Method column —
-   which is how this column read for a whole release once already. A value that
-   stringified from nothing is missing, not a new payment method. */
+/* Unknown keys show as themselves, except "undefined"/"null", which mean missing. */
 const payMethodLabel = m =>
   PAY_METHODS[m] || (m && m !== "undefined" && m !== "null" ? m : "—");
 
@@ -150,50 +114,16 @@ const STATUS_LABELS = {
 const statusLabel = s => STATUS_LABELS[s] || s || "—";
 
 
-/* ============================================================
-   IMAGES — one resolver for the whole system (decision I6)
-   ------------------------------------------------------------
-   No screen builds an image src inline any more. Every one of them
-   calls imageUrl().
+/* imageUrl() is the one resolver for every image src; stored paths are app-root-relative (/uploads/...), with the install prefix added here. */
 
-   WHY THIS EXISTS
-   ---------------
-   Three separate "the image doesn't show" defects had three separate
-   causes that were really one cause: nothing owned the question "given
-   a record, what goes in the src?". The storefront read `p.img` while
-   the API sent `image`; the landing editor read `slide.img` from a
-   column nothing wrote; the POS read `p.image` and worked, which is
-   what made the whole thing look like three unrelated bugs instead of
-   one missing function.
-
-   WHAT A STORED VALUE LOOKS LIKE
-   ------------------------------
-   api/uploads/image.php returns, and the database stores, an
-   APPLICATION-root-relative path:
-
-       /uploads/products/ab12….webp
-
-   Not "uploads/…" and not "../uploads/…". A relative path resolves
-   against whatever page is asking, which is exactly why staff screens
-   at /portal/admin/ found images that customer screens at /public/
-   could not. And not "/elishabay/uploads/…" either: the install prefix
-   is config, not data, so it is prepended here rather than baked into
-   every row.
-   ============================================================ */
-
-/* Project root, derived from this module's own URL — the same derivation
-   api.js uses. Deliberately not imported from api.js: format.js is a leaf
-   of the module graph and should stay one. */
+/* Project root from this module's URL (same as api.js, not imported so this stays a leaf module). */
 const APP_BASE = (() => {
   const src = import.meta.url;
   const i = src.indexOf("assets/js/core/");
   return i >= 0 ? src.slice(0, i) : "/";
 })();
 
-/* Rendered whenever an image is absent or fails to load. A defined mark, never
-   a broken-image icon and never an empty box. Inline SVG so it costs no
-   request and cannot itself 404. `currentColor` is not available inside a data
-   URI, so the grey is fixed — chosen to sit acceptably on both themes. */
+/* Inline SVG placeholder for missing or broken images. */
 const IMAGE_PLACEHOLDER =
   "data:image/svg+xml;charset=utf-8," +
   encodeURIComponent(
@@ -206,22 +136,11 @@ const IMAGE_PLACEHOLDER =
     "</svg>"
   );
 
-/**
- * Resolve anything image-shaped to a usable src.
- *
- * Accepts a record ({image} or the legacy {img}) or a bare string, so a caller
- * can pass the row it already has without knowing which endpoint produced it.
- * Returns "" when there is no image — callers branch on that to render their
- * own placeholder markup, and the delegated fallback below covers the case
- * where a path exists but the file has gone.
- */
+/** Turn a record ({image} or legacy {img}) or a string into a usable src, or "" when there is no image. */
 function imageUrl(input) {
   let raw = input;
   if (input && typeof input === "object") {
-    /* `image` is what every endpoint sends after Phase 3. `img` is the
-       storefront's historical spelling and is read for one release so a
-       half-migrated screen degrades to a placeholder rather than to
-       `src="undefined"`. */
+    /* image is current; img is the old storefront name, still accepted for now. */
     raw = input.image ?? input.img ?? "";
   }
   if (typeof raw !== "string" || raw === "") return "";
@@ -229,8 +148,7 @@ function imageUrl(input) {
   const v = raw.trim();
   if (v === "") return "";
 
-  /* Data URLs: the pre-pipeline storage format, and what a local preview
-     produces before a save. Passed through untouched. */
+  /* Data URLs pass through unchanged. */
   if (v.startsWith("data:")) return v;
 
   /* Already absolute — an external CDN, or a full URL somebody stored. */
@@ -239,22 +157,19 @@ function imageUrl(input) {
   /* The canonical form: application-root-relative. */
   if (v.startsWith("/")) return APP_BASE + v.slice(1);
 
-  /* Anything else is a bare relative path from before this existed. Resolved
-     against the application root rather than the page, because resolving
-     against the page is the original bug. */
+  /* Old relative paths are resolved against the app root, not the page. */
   return APP_BASE + v.replace(/^\.\//, "");
 }
 
-/**
- * Swap any image that fails to load for the placeholder.
- *
- * One delegated capture-phase listener rather than an `onerror` attribute on
- * every tag: the attribute is an inline handler, which this project rules out,
- * and half the img tags in the portal are built inside template strings where
- * nobody would remember to add it. Installed once from core/index.js.
- *
- * The `error` event does not bubble, hence capture.
- */
+/** A smaller copy of an uploaded product or landing photo (api/uploads/thumb.php, width 400 or 800); anything else returns imageUrl() unchanged. */
+function thumbUrl(input, width) {
+  const full = imageUrl(input);
+  const m = full.match(/\/uploads\/((?:products|content)\/[0-9a-f]{32}\.webp)$/);
+  if (!m) return full;
+  return APP_BASE + "api/uploads/thumb.php?f=" + m[1] + "&w=" + width;
+}
+
+/** One capture-phase error listener (installed from core/index.js) swaps broken images for the placeholder, instead of inline onerror attributes. */
 function installImageFallback(doc) {
   const d = doc || document;
   if (d.__ebImageFallback) return;
@@ -276,10 +191,10 @@ function installImageFallback(doc) {
 
 export const EbFormat = {
   CURRENCY, escHtml, peso, pesoExact,
-  fmtDate, fmtDateTime, initials,
+  fmtDate, fmtDateTime, etaRange, initials,
   stockInfo, movementType,
   payMethodLabel, statusLabel,
   PAY_METHODS, STATUS_LABELS,
-  imageUrl, installImageFallback, IMAGE_PLACEHOLDER, APP_BASE,
+  imageUrl, thumbUrl, installImageFallback, IMAGE_PLACEHOLDER, APP_BASE,
 };
 

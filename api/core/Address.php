@@ -1,51 +1,10 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Address — a Philippine address, resolved from PSGC codes, in one place.
- *
- * Four endpoints take an address: shop/checkout.php (delivery), shop/register.php
- * (the new account's), shop/profile.php (the saved one) and b2b/apply.php (the
- * business's). Four copies of "check the barangay belongs to the city" would
- * disagree within a release; this is the one copy.
- *
- * THE CLIENT SENDS CODES. NAMES COME FROM HERE.
- * --------------------------------------------
- * The picker posts region, province, city and barangay CODES plus the typed
- * street and ZIP. Every name that ends up stored — and printed on an invoice —
- * is looked up from ph_* by code. A name taken from the request would be a free
- * text field again with extra steps: "Makati" posted beside Dagupan's code.
- *
- * THE CHAIN IS CHECKED, NOT ASSUMED. The barangay must be in the city, the city
- * in the province (or, for a city with no province, in the region), the province
- * in the region. The picker cannot produce a broken chain; a stale form, a
- * PSGC refresh between page load and submit, or a hand-built request can. Each
- * is refused against the field that is wrong.
- *
- * CITIES WITH NO PROVINCE — Metro Manila, and highly urbanised cities
- * elsewhere — have province_code NULL. The picker offers them in its Province
- * list under their own name, so what it posts in the province slot is the
- * CITY's code. Accepted, and stored as a NULL province: see 015's header.
- *
- * BEFORE THE LOCATION DATA IS LOADED
- * ----------------------------------
- * db/seed-ph-locations.sql is generated from the PSA's file and loaded
- * separately. Until it is, there is nothing to pick from, and a checkout that
- * cannot take an address is a shop that cannot sell. So when ph_barangays is
- * empty this accepts the single free-text line the forms used to take, and the
- * picker shows that box instead of four empty dropdowns. The moment the seed is
- * loaded, both switch over with no deploy.
- */
+/** Address resolves a Philippine address from PSGC codes for every endpoint: names always come from the ph_* tables, the region/province/city/barangay chain is checked, and a free-text line is accepted only while the location data is not loaded. */
 final class Address
 {
-    /* How much of an address a form insists on.
-         true        everything — a delivery, a business: couriers need the
-                     street and the ZIP
-         LOCATION    region through barangay, street and ZIP optional — the
-                     Create Account form, whose old box asked only for
-                     "barangay, city, province" and required it
-         false       none of it — Profile — but anything started must be
-                     finished */
+    /* How much of an address a form requires: true = everything (delivery, business), LOCATION = region to barangay (sign-up), false = optional but anything started must be finished (profile). */
     public const LOCATION = 'location';
 
     /** The error keys the picker maps back onto its own fields. */
@@ -61,7 +20,7 @@ final class Address
 
     private static ?bool $available = null;
 
-    /** Is there location data to resolve against? Cached per request. */
+    /** Is location data loaded? Cached per request. */
     public static function available(): bool
     {
         if (self::$available !== null) {
@@ -75,21 +34,7 @@ final class Address
         }
     }
 
-    /**
-     * Resolve a posted address, or refuse with field errors.
-     *
-     * @param array|null $in        the `address` object from the request body
-     * @param bool       $required  true: all of it must be present (a delivery,
-     *                              a business). false: entirely empty is fine
-     *                              and returns null, but anything STARTED must
-     *                              be finished — half an address saved to a
-     *                              profile would prefill half a checkout.
-     *
-     * @return array{region_code:?string, region:?string, province_code:?string,
-     *   province:?string, city_code:?string, city:?string, barangay_code:?string,
-     *   barangay:?string, sub_municipality:?string, street:?string, zip:?string,
-     *   line:string}|null
-     */
+    /** Resolve a posted address or stop with field errors; when $required is false an empty address returns null but a partly filled one must be completed. */
     public static function resolve(?array $in, bool|string $required): ?array
     {
         [$address, $errors] = self::check($in, $required);
@@ -99,16 +44,7 @@ final class Address
         return $address;
     }
 
-    /**
-     * resolve(), without stopping: returns [address|null, errors].
-     *
-     * For an endpoint that validates several things and reports them TOGETHER.
-     * shop/checkout.php collects its field errors before refusing, and an
-     * address refused on its own first would make a customer fix it, resubmit,
-     * and only then learn the contact number was wrong too.
-     *
-     * @return array{0: ?array, 1: array<string,string>}
-     */
+    /** Like resolve() but returns [address, errors] instead of stopping, so callers can report all field errors together. */
     public static function check(?array $in, bool|string $required): array
     {
         $in = $in ?? [];
@@ -136,8 +72,7 @@ final class Address
         $full = $required === true;
 
         $err = [];
-        /* In order, and one message per field, so the first thing a person sees
-           is the first thing to fix. */
+        /* One message per field, in order, so the first error shown is the first thing to fix. */
         if (!$region)   { $err[self::FIELD['region']]   = 'Choose your region.'; }
         if (!$city)     { $err[self::FIELD['city']]     = 'Choose your city or municipality.'; }
         if (!$barangay) { $err[self::FIELD['barangay']] = 'Choose your barangay.'; }
@@ -156,8 +91,7 @@ final class Address
             return [null, $err];
         }
 
-        /* One query walks the whole chain from the leaf up. Everything below
-           checks what it returns against what was posted. */
+        /* One query walks the chain up from the barangay, and the code below checks it against what was posted. */
         $row = Database::one(
             'SELECT b.code AS barangay_code, b.name AS barangay, b.sub_municipality,
                     c.code AS city_code, c.name AS city, c.province_code, c.region_code,
@@ -181,8 +115,7 @@ final class Address
             return [null, [self::FIELD['city'] => 'That city is not in the region you chose. Choose it again.']];
         }
         if ($row['province_code'] === null) {
-            /* Province-less city: the picker put the CITY's code in the province
-               slot, or nothing. Anything else is a province it does not belong to. */
+            /* For a city with no province, the province slot must hold the city's own code or nothing. */
             if ($province !== null && $province !== $row['city_code']) {
                 return [null, [self::FIELD['province'] => 'That city is not part of a province. Choose it again.']];
             }
@@ -209,17 +142,7 @@ final class Address
         return [$a, []];
     }
 
-    /**
-     * The single printable line: receipts, invoices, courier labels.
-     *
-     *   123 Rizal St, Poblacion, Dagupan City, Pangasinan 2400
-     *   Blk 4 Lot 2, Barangay 105, Tondo I, City of Manila, National Capital Region (NCR) 1013
-     *
-     * The REGION appears only when there is no province — it is what gives a
-     * courier the context a province otherwise would. Barangay names are used
-     * as published: prefixing "Brgy." to one already called "Barangay 105"
-     * prints "Brgy. Barangay 105".
-     */
+    /** Build the single printable address line for receipts, invoices and courier labels, showing the region only when there is no province. */
     public static function compose(array $a): string
     {
         $parts = array_filter([

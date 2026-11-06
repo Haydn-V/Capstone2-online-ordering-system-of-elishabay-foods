@@ -1,24 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * POST /api/shop/return-request.php
- * Body: { "order_id": "ORD-…", "scope": "whole" | "items",
- *         "items": [{ "product_id": "…", "qty": 1 }],   (scope = items)
- *         "reason": "…", "proof": "/uploads/references/<hex>.webp" }
- *
- * Files a return & refund request for the signed-in customer's own order.
- * Everything that decides whether they may is re-derived here, never taken
- * from the page:
- *
- *   - the order is theirs and is `completed`
- *   - it completed no more than Returns::WINDOW_HOURS ago (database clock)
- *   - each unit asked for was bought and is not already in an open request
- *   - the amount is the price they paid for those units, computed here
- *
- * The request lands at `received` in the staff Return Module, which decides
- * eligibility. Nothing about stock or money changes until staff process it.
- */
+/** POST /api/shop/return-request.php files a return for the signed-in customer's own completed order within Returns::WINDOW_HOURS, re-checking units and computing the amount on the server; nothing changes until staff process it. */
 
 require __DIR__ . '/../core/bootstrap.php';
 
@@ -43,12 +26,10 @@ if (mb_strlen($reason) > 1000)       $errors['reason']   = 'Keep the reason unde
 if (!preg_match('#^/uploads/references/[a-f0-9]{32}\.webp$#', $proof)) {
     $errors['proof'] = 'Attach a photo of the product.';
 } elseif (!in_array($proof, $_SESSION['eb_issued_uploads'] ?? [], true)) {
-    /* Must be a photo THIS session uploaded (api/uploads/image.php keeps the
-       list) — not a path to somebody else's picture. */
+    /* The proof photo must have been uploaded by this session. */
     $errors['proof'] = 'Please attach the photo again.';
 }
-/* Where the refund goes (migration 017). GCash or bank transfer only — the
-   shop does not refund in cash. A name, plus a number or a QR code. */
+/* Refund destination (migration 017): GCash or bank only, with a name plus a number or QR code. */
 $refund = null;
 if (Returns::refundReady()) {
     $pref   = (string) ($in['refund_pref'] ?? '');
@@ -115,7 +96,8 @@ try {
     }
 
     $lines = Returns::orderLines($order['id']);
-    $picked = [];   // productId => qty
+    $picked = [];      // productId => qty
+    $pickedLots = [];  // productId => [lot code ('' = no batch) => qty], when the customer chose the batch
     if ($scope === 'whole') {
         foreach ($lines as $pid => $l) {
             if ($l['remaining'] > 0) $picked[$pid] = $l['remaining'];
@@ -129,7 +111,21 @@ try {
                 $pdo->rollBack();
                 Response::validation('Please check the items.', ['items' => 'One of those products is not on this order.']);
             }
-            if ($qty > $lines[$pid]['remaining']) {
+            /* A chosen batch must be one this order's units came from, with that many still returnable. */
+            if (array_key_exists('batch_code', $it) && $lines[$pid]['lots']) {
+                $lot = (string) ($it['batch_code'] ?? '');
+                $match = null;
+                foreach ($lines[$pid]['lots'] as $l) { if ((string) $l['lot'] === $lot) { $match = $l; break; } }
+                $already = $pickedLots[$pid][$lot] ?? 0;
+                if ($match === null || $qty + $already > $match['remaining']) {
+                    $pdo->rollBack();
+                    Response::validation('Please check the items.', ['items' => sprintf(
+                        'Only %d of %s from batch %s can still be returned.',
+                        $match['remaining'] ?? 0, $lines[$pid]['name'], $lot !== '' ? $lot : '(no batch)')]);
+                }
+                $pickedLots[$pid][$lot] = $already + $qty;
+            }
+            if ($qty + ($picked[$pid] ?? 0) > $lines[$pid]['remaining']) {
                 $pdo->rollBack();
                 Response::validation('Please check the items.', ['items' => sprintf(
                     'Only %d of %s can still be returned.', $lines[$pid]['remaining'], $lines[$pid]['name'])]);
@@ -169,11 +165,47 @@ try {
             [...$refund, $refund[0], $id]
         );
     }
+    /* One line per batch: the returned units are matched to the lots this order's units were taken from, skipping
+       units already claimed by earlier requests on this order. Orders from before lot tracking get one line, no batch. */
     foreach ($picked as $pid => $qty) {
-        Database::run(
-            'INSERT INTO product_return_items (return_id, product_id, qty, unit_price) VALUES (?, ?, ?, ?)',
-            [$id, $pid, $qty, $lines[$pid]['unitPrice']]
-        );
+        /* The customer chose the batches: one line per chosen batch. */
+        if (isset($pickedLots[$pid])) {
+            foreach ($pickedLots[$pid] as $lot => $q) {
+                Database::run(
+                    'INSERT INTO product_return_items (return_id, product_id, qty, unit_price, batch_code) VALUES (?, ?, ?, ?, ?)',
+                    [$id, $pid, $q, $lines[$pid]['unitPrice'], $lot !== '' ? $lot : null]
+                );
+            }
+            continue;
+        }
+        $claimed = [];
+        foreach (Database::all(
+            "SELECT i.batch_code, SUM(i.qty) AS q FROM product_return_items i JOIN product_returns r ON r.id = i.return_id
+              WHERE r.order_id = ? AND i.product_id = ? AND r.id <> ? AND r.status <> 'rejected' GROUP BY i.batch_code",
+            [$order['id'], $pid, $id]
+        ) as $c) {
+            $claimed[(string) $c['batch_code']] = (int) $c['q'];
+        }
+        $left = $qty;
+        foreach (Stock::lotsFor($order['id'], $pid) as $lot) {
+            if ($left <= 0) { break; }
+            $key  = (string) $lot['lot'];
+            $free = $lot['qty'] - ($claimed[$key] ?? 0);
+            if ($free <= 0) { $claimed[$key] = ($claimed[$key] ?? 0) - $lot['qty']; continue; }
+            $claimed[$key] = 0;
+            $take = min($left, $free);
+            Database::run(
+                'INSERT INTO product_return_items (return_id, product_id, qty, unit_price, batch_code) VALUES (?, ?, ?, ?, ?)',
+                [$id, $pid, $take, $lines[$pid]['unitPrice'], $lot['lot']]
+            );
+            $left -= $take;
+        }
+        if ($left > 0) {
+            Database::run(
+                'INSERT INTO product_return_items (return_id, product_id, qty, unit_price) VALUES (?, ?, ?, ?)',
+                [$id, $pid, $left, $lines[$pid]['unitPrice']]
+            );
+        }
     }
 
     Database::run(
@@ -188,8 +220,7 @@ try {
 
     $pdo->commit();
 
-    /* Claimed: off the discard list, so the evidence staff review cannot be
-       deleted through api/uploads/discard.php afterwards. */
+    /* Remove the photo from the discard list so the evidence cannot be deleted later. */
     $_SESSION['eb_issued_uploads'] = array_values(array_filter(
         $_SESSION['eb_issued_uploads'] ?? [],
         static fn($p) => $p !== $proof && $p !== ($refund[4] ?? null)));
