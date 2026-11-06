@@ -1,0 +1,31 @@
+# Elisha Bay — /storage/
+#
+# NOTHING IN HERE IS PUBLIC.
+#
+# This directory holds application state that happens to live on disk. Today
+# that is storage/mail/*.eml — the complete text of every email the system has
+# sent, including the recipient's name, their email address, their business
+# details and the reference codes for their partner application.
+#
+# The directory listing was already refused (Options -Indexes at the server
+# level), which is exactly what made this dangerous: it looked protected. A
+# direct request for a filename returned 200 and the full message —
+#
+#     GET /elishabay/storage/mail/probe.eml   ->   200
+#
+# Verified before this file existed, and verified as 404 after.
+#
+# `Require all denied` rather than a RedirectMatch in the project root, because
+# a rule that lives next to the data it protects travels with it: a future
+# storage/exports/ or storage/backups/ is covered the moment it is created,
+# with nobody having to remember to add a line somewhere else.
+
+Require all denied
+
+# Belt and braces for a server where .htaccess AllowOverride is narrowed and
+# the directive above is ignored: nothing here should ever execute either.
+<FilesMatch "\.(?i:php[0-9]?|phtml|phps|pht|phar|cgi|pl|py|sh)$">
+    SetHandler None
+</FilesMatch>
+
+Options -ExecCGI -Includes -Indexes

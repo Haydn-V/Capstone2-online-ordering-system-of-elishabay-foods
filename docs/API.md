@@ -1,0 +1,2808 @@
+# API Reference — Elisha Bay
+
+Base URL: `http://localhost/elishabay/api/`
+
+Browser JavaScript cannot query MySQL. Every data operation goes through these
+PHP endpoints, and only PHP touches the database.
+
+---
+
+## The rule that governs everything here
+
+**Client-side checks are user experience. They are not security.**
+
+`applyRBAC()` hides nav items and buttons the signed-in role lacks. That makes
+the interface comprehensible — it does not stop anyone. Any person who can open
+the site can also open a terminal and `curl` an endpoint directly, with a valid
+session cookie and no interface at all.
+
+Therefore **every endpoint checks authentication and permission for itself**,
+server-side, before doing anything. An endpoint that trusts the client because
+"the button is hidden" is a security hole. This is verified, not assumed: a
+Cashier session calling `users/list.php` receives 403 even though a Cashier's
+browser never renders that link.
+
+Equally: never trust a value from the client because a form supplied it. Ids,
+prices, quantities and hidden fields are all attacker-controlled. Money is
+computed server-side and returned; the browser displays it, it does not decide
+it.
+
+---
+
+## Response envelope
+
+Every response, success or failure, uses one shape. Callers branch on `ok`.
+
+**Success**
+
+```json
+{ "ok": true, "data": { }, "meta": { "page": 1, "limit": 25, "total": 42, "pages": 2 } }
+```
+
+`data` is the payload. `meta` appears only on paginated lists.
+
+**Failure**
+
+```json
+{ "ok": false, "error": { "code": "VALIDATION", "message": "Please correct the highlighted fields.", "fields": { "email": "Enter a valid email address." } } }
+```
+
+`fields` maps a field name to a message so a form can render errors inline. It
+is `{}` when the failure is not field-specific.
+
+### Error codes and statuses
+
+| Code | HTTP | Meaning |
+|---|---|---|
+| `VALIDATION` | 422 | Input failed a rule. Check `fields`. |
+| `BAD_REQUEST` | 400 | Malformed request, e.g. a body that is not JSON. |
+| `UNAUTHENTICATED` | 401 | Not signed in, or the session expired. The client should show the login view. |
+| `FORBIDDEN` | 403 | Signed in, but lacks the permission. Show a message; do not redirect to login. |
+| `NOT_FOUND` | 404 | No such record. |
+| `CONFLICT` | 409 | Violates a uniqueness rule, e.g. a duplicate email. |
+| `METHOD_NOT_ALLOWED` | 405 | Wrong HTTP verb. |
+| `RATE_LIMITED` | 429 | Too many failed sign-in attempts. |
+| `SERVER` | 500 | Unhandled fault. Details go to the PHP error log, not the response, unless `app.debug` is on. |
+
+Client-side only, produced by `api.js` rather than the server: `NETWORK`
+(unreachable), `TIMEOUT` (over 15s), `BAD_RESPONSE` (the body was not JSON,
+which usually means a PHP fatal — check the error log).
+
+---
+
+## Authentication
+
+Sessions are PHP's own, carried in an **httponly** cookie (`eb_session`, path
+`/elishabay/`, SameSite=Lax). JavaScript cannot read it — which is the point.
+All requests are same-origin and send it automatically.
+
+Passwords are bcrypt hashes verified with `password_verify()`. No plaintext
+password exists anywhere in the project.
+
+The session stores a user id and nothing else. Role and permissions are re-read
+from the database on **every** request, so archiving an account or changing its
+role takes effect on the very next call rather than whenever the user happens to
+sign out.
+
+Idle sessions expire after `security.session_lifetime` (default 2 hours). The
+session id is regenerated on sign-in to prevent session fixation.
+
+---
+
+### POST `auth/login.php`
+
+Public.
+
+**Request**
+
+```json
+{ "email": "cashier@elishabay.ph", "password": "…", "portal_role": "Cashier" }
+```
+
+`portal_role` is optional. When present, the account must hold that role or the
+request is refused — this is what stops a Cashier signing in at the Super Admin
+portal, and it is enforced here because the browser-side version of that check
+stopped nobody.
+
+**Response 200**
+
+```json
+{ "ok": true, "data": {
+    "user": { "id": "emp-03", "name": "Ana Cruz", "email": "cashier@elishabay.ph", "avatar": "AC", "role": "Cashier" },
+    "permissions": ["sales.report", "payments.manage", "transactions.view", "pos.use"]
+} }
+```
+
+**Errors**
+
+| Status | When |
+|---|---|
+| 422 | Email or password missing. |
+| 401 | Wrong password **or unknown email** — deliberately the same message, so the endpoint cannot be used to discover which staff addresses exist. |
+| 403 | Account archived, has no role, or does not match `portal_role`. |
+| 429 | Too many recent failures (requires the `login_attempts` table). |
+
+---
+
+### GET `auth/me.php`
+
+Requires a session. The front end bootstraps from this on every page load.
+
+**Response 200** — same `user` and `permissions` as login, plus `catalogue`:
+the full permission list (`permission_key`, `area`, `label`) for rendering the
+Roles screen.
+
+**401** when not signed in. `api.js` surfaces this as `err.isAuth`, and the
+portal drops to its login view rather than rendering an empty dashboard.
+
+---
+
+### POST `auth/logout.php`
+
+Destroys the session and clears the cookie. **Always returns 200**, even with no
+active session — logging out of nothing is not an error, and a 401 here would
+show a sign-in prompt to somebody trying to leave.
+
+---
+
+## Sign-in lockout
+
+One policy, in `api/core/Lockout.php`, used by every path that checks a
+password: `auth/login.php`, `shop/login.php`, `shop/password.php` and
+`users/me-password.php`. The last two share sign-in's counter deliberately — a
+stolen session must not become an unlimited password oracle.
+
+**It replaced a flat 15 minutes after 5 failures.** Two problems with that: a
+real customer who mistyped was locked out of their own account for a quarter of
+an hour, and the counter was keyed on the **email alone**, so anyone who knew a
+customer's address could lock them out of it on purpose by failing five times.
+
+### The policy
+
+| Consecutive failures | Result |
+|---|---|
+| 1–3 | free — typos happen, and three attempts deter nobody |
+| 4 | locked 2 minutes |
+| 5, 6, 7 … | +2 minutes each: 4, 6, 8, 10 |
+| cap | **10 minutes** customer · **30 minutes** staff |
+
+A successful sign-in clears the streak. So does 30 minutes with no attempt at
+all, so somebody who failed twice this morning does not arrive this evening one
+attempt from a lock.
+
+The lock is **derived, not stored**: the streak length gives a penalty and the
+penalty runs from the moment of the last failure. Nothing is scheduled and
+nothing needs cleaning up.
+
+### Keyed on email **and** IP, plus context
+
+Keying on the email alone makes the throttle aimable at a victim. Keyed on
+(email, IP) an attacker locks out only themselves.
+
+The cost is that a distributed attacker gets a fresh budget per address, so
+there is a second, looser limit on the IP alone: too many **distinct** emails
+failing from one address inside the window and that address is refused outright
+(`lockout_ip_distinct_emails`, default 12). One machine failing against many
+accounts is the pattern per-key limits cannot see.
+
+`login_attempts.context` (migration 012) separates the customer and staff
+buckets. It is not cosmetic: the storefront sign-in form probes the **staff**
+endpoint before the customer one, so a single wrong password recorded two
+failures and a shopper hit a lockout on their second press. It also stopped a
+customer's typos filling the staff counter for the same address.
+
+A staff-bucket lock does **not** block storefront sign-in — the staff attempt
+there is speculative, so `site.js` falls through to the customer path on a 429.
+The portal's own sign-in page calls `auth/login.php` directly, where a 429 is
+final.
+
+### Why the staff cap is higher
+
+This is a **weakening** of a security control: ten minutes is less than fifteen
+and the first three attempts now cost nothing. For a storefront that is a good
+trade — the realistic victim is a customer locked out of their own order
+history. It is a worse trade for the portal, where an account carries stock
+adjustments, refunds, price changes and, for Super Admin, the permission table.
+Staff keep the same free attempts and escalate to a 30-minute ceiling.
+
+### The 429 envelope
+
+A rate-limited refusal carries the wait **beside** `fields`, never inside it —
+`fields` is rendered straight onto form inputs, and a `retryAfter` key there
+would have the sign-in modal hunting for an input by that name. It also goes out
+as a real `Retry-After` header.
+
+```json
+{ "ok": false,
+  "error": { "retryAfter": 120, "code": "RATE_LIMITED",
+             "message": "Too many failed sign-in attempts. Try again in 2 minutes.",
+             "fields": {} } }
+```
+
+`EbApi` exposes it as `err.retryAfter` with an `err.isRateLimited` getter. The
+sign-in modal counts it down and disables the submit button until it reaches
+zero — a form that accepts a submission it knows will be refused teaches people
+that the message is advisory.
+
+### Three failures, three messages
+
+The old form answered `Email or password is incorrect.` for a wrong password, a
+locked-out account **and** an account with no password set. That is why a
+sign-in bug took a fortnight to find.
+
+| Situation | Answer |
+|---|---|
+| Wrong password · unknown email · **no password set** | 401, one shared message (see below) |
+| Locked out | 429, names the wait, counts down |
+| Archived account | 403, "no longer active" |
+
+**The first row is deliberately not split three ways.** Saying "that email has
+no password set" tells a stranger the address is registered here, which is
+exactly the enumeration the dummy-hash timing guard in `Auth::attemptCustomer`
+spends effort preventing. What was fixed instead is the advice: the message now
+ends "If you have not set a password for this email yet, use Sign Up to create
+one" — true in all three cases, and actionable in the one that needs it, without
+revealing which case applies.
+
+The state itself is shown where it is safe to show it: to staff, in Customer
+Accounts.
+
+---
+
+## CSRF
+
+Authentication rides in a cookie, and browsers attach cookies to requests made
+on any page's behalf — so a form on another origin could POST here carrying the
+victim's session. `SameSite=Lax` blocks the classic cross-site form POST, but a
+token the attacker's page cannot read is the actual defence.
+
+- A token is minted per session and returned by `auth/login.php` and
+  `auth/me.php` as `data.csrf`.
+- `api.js` sends it back as an **`X-CSRF-Token`** header on every
+  POST/PUT/DELETE, automatically.
+- `bootstrap.php` enforces it centrally, so an endpoint cannot forget to.
+- **GET is exempt.** A GET that changes state is itself the bug; no token fixes
+  that.
+- `auth/login.php` and `auth/logout.php` are exempt: there is no session to
+  forge at login, and refusing a stale token on logout would strand a user who
+  cannot leave.
+
+A missing or wrong token returns **403** with code `CSRF`. (Not 419 — that is a
+Laravel convention, not a registered HTTP status, and PHP silently turns it into
+a 500 that reads as "the server broke" rather than "refused".)
+
+Comparison uses `hash_equals`, so a wrong token cannot be discovered one
+character at a time by timing.
+
+---
+
+## Uploads
+
+### POST `uploads/image.php` — `multipart/form-data`
+
+**The only upload endpoint in the system** (decision I1). Product photos,
+landing content images and customer payment references all come through it.
+
+Before it existed there were four upload controls and zero lines of
+server-side upload code: two of them base64'd the file into a JSON body, two
+sent nothing at all, and each screen had its own idea of where an image lives.
+Three separate "the image doesn't show" defects came out of that. There is one
+place now that decides what a valid image is, and one place that names the file.
+
+**Body (multipart):**
+
+| field | value |
+|---|---|
+| `file` | the image — JPEG, PNG or WebP |
+| `purpose` | `products` \| `content` \| `references` |
+
+**Permission is decided by `purpose`**, because it is decided by what the image
+is *for*:
+
+| purpose | who | requires | lands in |
+|---|---|---|---|
+| `products` | staff | `products.manage` | `/uploads/products/` |
+| `content` | staff | `landing.manage` | `/uploads/content/` |
+| `references` | customer | a customer session | `/uploads/references/` |
+
+A staff session asking for `references` is refused, and vice versa. The check
+runs before the file is looked at, so an unauthorised caller cannot use this as
+a free image validator or a way to fill the disk.
+
+**Returns:**
+
+```json
+{ "ok": true, "data": {
+    "path": "/uploads/products/c8442dea7f6640f894ca2176a621073b.webp",
+    "bytes": 2364, "width": 1600, "height": 800 } }
+```
+
+**The path is application-root-relative** — it starts at the project root, not
+at the web server root, and never at the calling page. It is deliberately *not*
+`/elishabay/uploads/…`: the install prefix is `app.base_path` in config and can
+differ between machines, so baking it into every row would mean a database that
+resolves on one deployment only. `EbFormat.imageUrl()` prepends the prefix.
+
+Relative paths (`uploads/…`, `../uploads/…`) are what made staff screens resolve
+an image while customer screens 404'd, so a stored value always begins with `/`.
+
+**What it does to the file:**
+
+- MIME read from the bytes with `finfo`. `$_FILES['type']` is a browser-supplied
+  string and is not evidence of anything.
+- Extension derived from the verified MIME. **The client's filename is never
+  used** — not in the path, not for the extension, not stored anywhere. There is
+  no traversal to defend against because no caller-supplied string reaches the
+  path.
+- Decoded by GD and re-encoded to WebP at quality 82, longest edge 1600. That
+  drops EXIF, ICC profiles and anything appended to the container.
+- Named `bin2hex(random_bytes(16)) . '.webp'`.
+- Audit row written, attributed to the staff user or, for a customer upload,
+  to their name with a NULL `actor_user_id`.
+
+**Verified, not asserted.** A 2400×1200 JPEG with `<?php echo "PWNED"; ?>`
+appended came back as a 1600×800 WebP with no trace of the payload; a text file
+renamed `.jpg` was refused on MIME; an anonymous request got 401; a request
+without the CSRF header got 403 code `CSRF`.
+
+**Limits:** 8MB posted, 50 megapixels decoded (a 40,000×40,000 PNG is a few
+hundred KB on the wire and about 6GB in memory — the byte cap does not catch it,
+the pixel cap does).
+
+**`/uploads/` has its own `.htaccess`** that stops PHP executing there. Read the
+comments in it before changing it: the two obvious ways to write that rule both
+fail, one with a blank 500 on every request and one silently.
+
+**Reference uploads are remembered.** A successful `references` upload appends
+its path to `$_SESSION['eb_issued_uploads']` (capped at 50, oldest dropped).
+Nothing reads that list except `uploads/discard.php` below, and it is the only
+reason that endpoint can be trusted with a path. `products` and `content`
+uploads are deliberately *not* recorded: a staff member who is also signed in
+as a customer in the same browser would otherwise be able to discard a product
+photo through the customer-facing endpoint.
+
+---
+
+### POST `uploads/discard.php`
+
+**Requires a customer session.** Deletes a payment screenshot that was uploaded
+but never attached to an order.
+
+**Body:** `path` — `/uploads/references/<32 hex>.webp`
+
+**Why it exists.** `uploads/image.php` writes the file the moment the shopper
+picks it, because uploading at submit time would mean a checkout that fails
+halfway with the order already priced. The cost of that choice is orphans:
+every screenshot removed or replaced before the order is placed is a file no
+row will ever point at. The checkout's **Remove** and **Replace** controls call
+this, so `uploads/references/` does not grow without bound.
+
+**Why letting a client name a file to delete is safe here.** It doesn't. The
+posted path is compared, whole, against `$_SESSION['eb_issued_uploads']` — the
+list of paths `uploads/image.php` actually issued to *this* session — and the
+absolute path is then built from the matched entry, never from the request. The
+regex is defence in depth, not the gate: shape proves only that a string *looks*
+like one of ours. A caller cannot delete another customer's screenshot, cannot
+reach `/uploads/products/`, and cannot traverse.
+
+**A path that reached an order is no longer discardable.** `shop/checkout.php`
+removes the proof it used from the session list in the same request that writes
+the order, so a shopper cannot place an order and then delete the payment
+evidence staff are meant to verify.
+
+**Idempotent.** A repeat discard, or one whose file is already gone, answers
+200 — the caller asked for the file to be gone and it is gone. A path that was
+never issued and a path that does not exist return the *same* message, so the
+endpoint cannot be used to probe for other customers' uploads.
+
+Writes an audit row, balancing the one `uploads/image.php` writes. Without it
+the log shows a file being created and never mentions that it was thrown away.
+
+---
+
+## Products
+
+### GET `products/list.php`
+
+Requires any signed-in staff member. Not gated behind `products.manage`,
+because the catalogue is displayed in POS, inventory and reports — screens that
+read it without managing it. Writes are gated separately.
+
+**Query**
+
+| Param | Default | Notes |
+|---|---|---|
+| `page` | 1 | |
+| `limit` | 25 | Clamped to 200. An absurd value is a typo, not a licence to fetch everything. |
+| `search` | — | Matches name, id or description. |
+| `category` | — | Category name. `All` is ignored. |
+| `status` | `active` | `active`, `archived` or `all`. |
+| `sort` | `name` | `name`, `price`, `stock`, `sold`, `newest`, `urgency`, `cover`, `movement`. Resolved through a whitelist — a sort column is an identifier and cannot be bound as a parameter, so it is never taken from input directly. |
+| `level` | — | `out`, `crit`, `warn`, `ok`. Filters on the measured band, not on a piece count. |
+| `movement` | — | `fast`, `slow`, `non`. Measured rate, not the lifetime `sold` total. |
+| `expiring` | — | `1` to return only products whose earliest-dated lot will not sell before it expires. |
+
+**Response 200** — array of products with `meta` paging. Numeric columns are
+cast at the edge, so `price` is a number and `best` is a boolean rather than the
+strings MySQL returns for `DECIMAL` and `TINYINT`.
+
+**Each product carries an `inventory` block.** Stock level and movement are
+computed from measured sales velocity — units sold in completed orders over a
+trailing window — rather than from fixed piece counts and the lifetime `sold`
+counter. See `api/core/Inventory.php` for why both of those were the wrong
+instrument; in short, a piece count cannot tell a shortage from three years of
+cover, and a lifetime total never decays, so it eventually calls every product
+fast moving.
+
+| Field | Notes |
+|---|---|
+| `level` / `levelLabel` | `out`, `crit`, `warn`, `ok`. The **more urgent** of a days-of-cover band and an absolute floor, so the floor can escalate a status but never soften one. |
+| `levelReason` | Why the band says what it says — whether it came from the shelf being low or from cover falling under the restock lead time. `null` when `ok`. |
+| `movement` / `movementLabel` | `fast`, `slow`, `non`, from units per month. |
+| `perDay`, `perMonth`, `windowUnits`, `windowDays` | The measured rate and what it was measured over. |
+| `daysCover` | Stock ÷ daily rate. **`null` when nothing sold in the window** — that is "no rate to measure against", not "infinite cover", and it must not sort as the safest thing in the catalogue. |
+| `leadDays` | The restock lead time the bands were compared against. |
+| `expiryRisk` | `null`, or an object naming the lot, its quantity, `daysToExpiry`, `daysToSell` and a plain-language `note`. |
+
+`meta.inventoryModel` echoes the thresholds in force, so a screen can label its
+own bands without a second request.
+
+**`expiryRisk` is a second axis, not a fifth stock level.** For a fast mover the
+risk is running out; for a slow one it is holding stock that spoils first. A
+product can be comfortably stocked, correctly labelled `ok`, and still be about
+to be written off — which is not a point on a scale running from empty to full.
+
+**Thresholds are settings, not constants.** `velocity_window_days`,
+`restock_lead_days`, `movement_fast_per_month`, `movement_slow_per_month` and
+`stock_floor_critical` are written through `settings/save.php` behind
+`inventory.manage`. The shipped defaults are calibrated against the transaction
+volume present when this was written; a business trading at real volume should
+raise the movement thresholds, and that is a settings change rather than a
+deployment.
+
+### POST `products/save.php`
+
+**Requires `products.manage`.** Creates when `id` is absent, updates when
+present — one endpoint because the validation, permission and audit rules are
+identical, and two files would be two places to forget a rule.
+
+**Body:** `id?`, `name`, `category_id`, `price`, `description?`, `tint?`,
+`is_best?`, `image?`
+
+**Deliberately not accepted: `stock`, `sold`, `rating`.** Stock moves only
+through `inventory/adjust.php`, which records a reason and writes an audit row;
+letting the product form set it would be a way to change stock with no trace.
+Verified: a save posting `stock: 99999` leaves stock at its real value.
+
+**`image` is a PATH, not an image.** Upload the file to `uploads/image.php`
+first and send the `path` it returns. Accepted shape is exactly
+`/uploads/products/<32 hex>.webp`, and the file must exist on disk.
+
+A data URL is **refused**, with a message saying to upload first. It used to be
+the only accepted form: the client posted the whole file inside this JSON body
+and it went into `products.image_url` as LONGTEXT. Three rows held 1.81MB
+between them, and every public storefront request carried all of it. Silently
+accepting that shape into today's `VARCHAR(255)` would truncate it to 255
+characters of base64 — a value that looks like data and renders as nothing.
+
+**`image` is read three ways on update**, because "the key is missing" and "the
+key is null" are different requests:
+
+| Body | Result |
+|---|---|
+| key absent | keeps the stored photo — protects any caller that posts a partial body |
+| `"/uploads/products/<32 hex>.webp"` | stored, after the shape and `is_file()` checks |
+| `null` or `""` | `image_url` set to **NULL** — the photo is removed |
+
+Until the Remove control was added, only the first two were reachable: the read
+was `$image ?? $existing['image_url']`, so no request could clear the column and
+a wrong photo could be replaced but never taken off. The audit entry
+distinguishes *image set*, *image replaced* and *image removed*.
+
+**Clearing or replacing an image leaves the `.webp` on disk.** Nothing is
+unlinked inside the save. The file is not deleted here for the same reason
+`uploads/image.php` writes the file before the row exists: at save time the only
+thing known is that *this* row no longer names it, and a delete that raced a
+second administrator's in-flight edit would produce "that upload is no longer on
+the server" for a file they had just chosen. Collection is the job of
+`tools/prune-uploads.php`, which checks **every** column that can name a file
+(`products.image_url`, `hero_slides.image_path`, `orders.proof_image_path`) and
+only touches files older than its grace window:
+
+```bash
+php tools/prune-uploads.php            # report only
+php tools/prune-uploads.php --apply    # delete the orphans
+```
+
+Run it on a schedule; otherwise `/uploads/products/` grows monotonically and
+nothing else will ever clean it.
+
+`tint` must match `#[0-9a-f]{3,8}` — it ends up in a style attribute.
+
+New ids are slugs in the seed's style (`bg-ui-test-tinapa-bangus`), uniquified
+on collision, rather than an opaque timestamp.
+
+The audit entry **names what changed**: `name 'X' → 'Y'; price ₱265.00 →
+₱289.00`, not "Updated product X".
+
+**Errors:** 403 · 404 unknown id · 422 (missing name, bad category, negative
+price, bad tint, non-image data URL).
+
+---
+
+### POST `products/archive.php`
+
+**Requires `products.manage`.** Body: `{ id, archived: true|false }`.
+
+**Archive, never delete.** Orders and batches reference products under
+`ON DELETE RESTRICT`; deleting one would either fail or take order history with
+it. Archiving hides it from shop and POS while past transactions stay readable.
+
+Returns a `notice` when archiving a product that still holds stock — the units
+do not disappear and are still counted in inventory, which is better said than
+discovered later. 409 if it is already in the requested state.
+
+---
+
+### POST `categories/save.php` · `categories/archive.php`
+
+**Require `products.manage`.** Same create-or-update shape.
+
+`archive.php` **refuses to archive a variety that still has active products**,
+naming the count: *"Cannot archive 'Deboned Bangus' — 6 active products still
+use it."* Otherwise those products would be filed under a variety that appears
+in no filter — visible on some screens, missing from others, for no reason the
+operator can see.
+
+Duplicate variety names are refused with 409; the name appears in filters and on
+the storefront, so a duplicate is confusing rather than merely untidy.
+
+---
+
+## Users
+
+### GET `users/list.php`
+
+**Requires `users.manage`.**
+
+**Query:** `page`, `limit`, `search` (name or email), `status`
+(`active` / `archived` / `all`).
+
+Password hashes are never selected — the column does not appear in the query at
+all, rather than being fetched and then removed.
+
+**403** for any role without `users.manage`, including via a direct request.
+
+---
+
+## Categories
+
+### GET `categories/list.php`
+
+Requires any signed-in staff member. `?status=active|archived|all`.
+Returns id, name, desc, archived and a live `products` count per category.
+
+---
+
+## Inventory
+
+### POST `inventory/adjust.php`
+
+**Requires `inventory.manage`.** The reference implementation for every write
+endpoint — read it before adding another.
+
+**Request**
+
+```json
+{ "product_id": "db-pesto", "qty": 50, "type": "restock",
+  "reason": "Weekly production run",
+  "batch_code": "JBF-2026-B120",
+  "production_date": "2026-08-16", "expiry_date": "2027-08-16" }
+```
+
+`type` is `restock`, `disposal` or `return`. The **sign is decided server-side**
+from the type — the client does not get to send a negative quantity.
+
+**On a restock, `expiry_date` is what decides whether a lot is opened.** It used
+to be the presence of `batch_code`, which made the operator's typing the thing
+that determined whether a production run was recorded. A restock carrying an
+expiry date opens a lot; one without tops up stock already on the shelf and
+writes no batch row, which remains a valid restock.
+
+**`batch_code` is optional on a restock, and is assigned when omitted.**
+`Inventory::nextLotCode()` issues the next code in sequence for the year,
+stepping past anything taken — `batches.lot_code` is `UNIQUE`, and the form
+previously suggested `Math.random()` over 900 values, so a collision surfaced as
+a rejected form with no explanation. A caller may still supply its own code (to
+match a label already printed off-system); it is checked for uniqueness and used
+as given. The code that lands is returned as `lotCode`, `null` when no lot was
+opened — the operator no longer chooses it, so the response is where they learn
+what to write on the carton.
+
+`GET batches/list.php` carries the same next code in `meta.nextLotCode` so a
+form can prefill it. That value is a **suggestion**: this endpoint re-derives it
+at save time, so two operators reading the same suggestion cannot both write it.
+
+**`batch_code` is REQUIRED for `disposal` and `return`.** It was optional, and
+that defeated the module it belongs to: Batch Tracking exists so a unit can be
+traced to the lot it came from and so a recall can name the affected lots, and a
+disposal with no lot is untraceable. It was also free text meeting a foreign key
+(`inventory_adjustments.batch_code` → `batches.lot_code`, migration 002), so a
+typo produced a raw database error rather than a field message.
+
+The lot must **belong to the named product**. A lot code that exists but sits
+under a different product satisfies the foreign key and means nothing — it files
+one product's disposal against another product's production run.
+
+**The lot quantity moves with the stock.** A disposal decrements
+`batches.remaining_qty`; a return increments it. Nothing decremented that column
+before, so a disposed lot kept its full quantity, stayed in the Expiration
+Monitor asking to be disposed, and could be disposed again. A disposal is capped
+at what the lot actually holds.
+
+**Restock ordering:** the new lot row is written **before** the adjustment row
+that references it. InnoDB checks foreign keys per statement rather than at
+commit, so the previous order made every restock opening a new lot fail with a
+500 and a raw SQLSTATE.
+
+**Response 200** — the product's fresh stock level, read back from the database
+rather than calculated in PHP, plus the signed `movement`.
+
+**Errors:** 403 without the permission · 404 unknown product · 409 archived
+product, duplicate lot code, a disposal larger than the lot holds, or a removal
+that would drive stock negative · 422 field errors, including a missing lot, an
+unknown lot, or a lot belonging to another product.
+
+**Sales still do not draw lots down.** Nothing allocates an order against a lot,
+so `remaining_qty` drifts above the truth as stock sells. This endpoint makes
+disposal and returns exact; it does not make lot quantities exact everywhere.
+Fixing that means FIFO allocation at checkout and order acceptance.
+
+**What makes it the pattern:**
+
+- Permission checked before any work.
+- Everything validated, including values the UI "already checks".
+- Stock update, adjustment row, optional batch row and audit row all inside one
+  transaction — they move together or not at all.
+- **The audit entry is written here, not by the client.** If the browser were
+  responsible for logging, the one action worth hiding is the one that would
+  never get logged.
+- Rolls back and rethrows on any failure.
+
+---
+
+### GET `batches/list.php`
+
+Requires `batches.manage` **or** `inventory.report` — the list feeds both QA
+Traceability and Expiration Monitoring, which different roles hold.
+
+**Query:** `page`, `limit` (default 50), `product_id`, `lab_status`
+(`passed`/`pending`/`failed`), `search` (lot code or product), `expiring_within`
+(days), `sort` (`expiry`/`lot`/`product`/`remaining`).
+
+**`days_to_expiry` is computed by MySQL against `CURDATE()`**, not by the
+browser. `inventory.js` used to calculate it from `INV_TODAY = "2026-06-17"`,
+a constant frozen in the file, so every "days left" figure drifted further from
+reality each day. The response `meta` also carries `today`, which the client
+records so all its date defaults use the same clock.
+
+**`meta.nextLotCode`** is the code the next lot would be assigned. It rides on
+this response rather than having an endpoint of its own because the inventory
+screens already load this list on entry and reload it after every stock
+movement — so the suggestion refreshes exactly when it goes stale, at no extra
+request. It is only a suggestion; `inventory/adjust.php` re-derives the code at
+save time and rejects a duplicate.
+
+`expiring_within` deliberately includes already-expired lots: a batch that went
+out of date last week is more urgent than one going next week, and excluding it
+is how expired stock stays on a shelf.
+
+Each row carries an `expiryLevel` band (`gone`/`crit`/`warn`/`ok`) so every
+screen applies the same thresholds instead of re-deciding what "critical" means.
+
+---
+
+### GET `inventory/adjustments.php`
+
+Requires `inventory.report` or `inventory.manage`. The stock adjustment log.
+
+**Query:** `page`, `limit`, `product_id`, `type` (`disposal`/`return`), `search`.
+
+Product name is joined, not stored on the row, so renaming a product does not
+leave the log describing something that no longer exists under that name.
+
+---
+
+## Orders
+
+### GET `orders/list.php`
+
+Requires any of `orders.view`, `transactions.view`, `orders.accept`,
+`orders.status` — the same list backs the Order Queue, Online Transactions and
+Transaction History screens, which different roles reach.
+
+**Query:** `page`, `limit`, `status` (one value or a comma-separated set),
+`type`, `customer_type`, `pay_verified`, `search`, `from`/`to` (YYYY-MM-DD,
+validated — a malformed date would otherwise match nothing and read as "no
+orders that week"), `sort`.
+
+**Line items are included**, fetched in one grouped query for the whole page.
+A 25-row page costs 3 queries, not 27. `items` is never null; every renderer
+maps over it without checking.
+
+---
+
+### GET `orders/get.php?id=…`
+
+One order with items and **real status history**. The Order Status stepper used
+to be inferred from the current status, so it could show that an order was
+accepted but never who accepted it or when, and a cancelled order's path was
+unrecoverable.
+
+`price_at_purchase` is returned as stored — re-deriving line totals from the
+product's current price would silently rewrite order history every time
+somebody edited a price. The response also carries `computedTotal` and
+`totalsAgree` so a mismatch between the stored total and its line items is
+visible rather than hidden.
+
+---
+
+### POST `orders/status.php`
+
+Requires `orders.status` or `orders.accept`. Body: `{ id, status, note? }`.
+
+**The transition table is enforced here.** `STATUS_TRANSITIONS` in `engine.js`
+decides what the modal offers — that is a dropdown, and it stops nobody from
+posting `{"status":"completed"}` against a pending order, which would skip
+payment verification entirely. The same table lives server-side and that copy
+is the one that counts.
+
+| Rule | Response |
+|---|---|
+| Illegal transition | 409, naming what *is* allowed from the current status |
+| `completed` / `cancelled` | terminal — 409, "cannot be changed further" |
+| `on-hold` / `cancelled` without a reason | 422 |
+| `accepted` while `pay_verified = 0` | 409, "Verify the payment before accepting" |
+| Another user moved it first | 409, "Somebody else just changed this order" |
+
+That last one comes from a conditional `UPDATE … WHERE status = <what we read>`;
+if no row matches, the move is abandoned rather than overwriting someone else's.
+
+Writes `order_status_history` (from, to, who, note) and an audit row, in one
+transaction.
+**Courier tracking number (optional body field `tracking_number`).**
+
+The stated Limitation says the system does not integrate with courier APIs but
+that "tracking numbers will be issued upon dispatch and will serve as proof of
+shipment". There was no field for one anywhere in the schema or the interface,
+so the limitation promised something the system could not do.
+
+- **Required** when a `delivery` order moves to `shipping` — the moment the
+  promise is made and the only moment the number exists.
+- **Ignored** for a `pickup` order and for every other transition, so a value
+  posted alongside an unrelated status change is discarded rather than stored
+  against the wrong event.
+- Max 60 characters. An existing number is preserved through later transitions;
+  a later `delivered` move does not wipe it.
+- Appears in the audit description, because a shipment recorded without it is
+  exactly the gap the field exists to close.
+
+Its own field, not the free-text note. The note's placeholder used to read
+*"e.g. Tracking number, reason for hold…"* — which is where the number went
+before this: into a text blob nothing could read back. Proof has to be
+retrievable.
+
+**`orders.delivered_at`** is stamped in the same UPDATE that moves an order to
+`delivered`, and cleared when it leaves. Same statement so the two can never
+disagree; a column on `orders` rather than a lookup into
+`order_status_history` because that table is optional and the one-hour sweep
+must not silently stop running without it.
+
+Surfaced as `trackingNumber` and `deliveredAt` by `orders/get.php`,
+`orders/list.php` and `shop/my-orders.php`.
+
+---
+
+### POST `orders/verify-payment.php`
+
+Requires `orders.accept`. Body: `{ id, verified, note? }`.
+
+Verification is a human judgement about a payment proof. What the server does is
+refuse the obviously wrong cases — no proof uploaded (for `gcash`/`bank`; cash
+on pickup has none to upload), or an order already completed/cancelled — and
+record who made the call, which is the part that matters when a payment is
+later disputed.
+
+A **short or over payment is reported, not blocked**: it returns a `mismatch`
+string and writes it to the audit trail, because a partial may be accepted
+deliberately. Testing this surfaced a seed-data inconsistency — order
+`ORD-20260617-005`'s note claims "expected ₱2,390" while its line items compute
+to ₱2,260.
+
+---
+
+## Point of Sale
+
+### POST `pos/checkout.php`
+
+**Requires `pos.use`.** Creates a walk-in order, decrements stock and writes the
+audit entry — in one transaction.
+
+**Body:** `items: [{id, qty}]`, `order_type`, `customer_type`, `pay_method`,
+`customer_name?`, `contact?`, `address?`, `ref_num?`, `tendered?`,
+`retailer_id?`
+
+**Credit terms.** `pay_method` accepts `net30`, `net60` and `net90` **only when
+`customer_type` is `retailer`**, and the accepted set comes from
+`Payments::methods()` rather than a list written out in the endpoint. It used to
+be a hardcoded `['cash','gcash','bank']` while the POS offered Net 30/60/90 the
+moment a cashier picked "Retailer" — so a credit sale returned
+
+```
+422  pay_method: Payment method must be one of: cash, gcash, bank.
+```
+
+and `placeOrder()` had no branch for a `pay_method` field error, so **nothing
+was displayed at all**. The cashier saw the button do nothing, no order row was
+written, and the payment never reached Payment History. That was the reported
+defect.
+
+A credit sale requires `retailer_id` — a `customers.id` whose `status` is
+`retailer`, re-checked against the database, not trusted from the dropdown. It
+opens a `payment_accounts` receivable **in the same transaction** as the order,
+the line items, the stock decrements and the audit row (decision I8): a sale
+without its debt is money the business cannot see it is owed, and a debt without
+its sale is one nobody can explain.
+
+The response carries `creditAccount: {id, scheme, balance, dueDate}` for a
+credit sale and `null` otherwise. The due date is computed by MySQL with
+`DATE_ADD(CURDATE(), …)`; the receipt prints that value rather than deriving its
+own.
+
+`pay_verified` is **0** for a credit sale — nothing has been paid — and 1 for an
+immediate method taken at the till.
+
+---
+
+### GET `pos/retailers.php`
+
+**Requires `pos.use`.** The retailers a cashier may sell to on credit, with what
+each already owes.
+
+Not `customers/list.php`, which requires `users.manage` — a permission a Cashier
+does not hold and should not — and returns every customer with their email,
+contact number and join date. This returns `id`, `name`, `outstanding` and
+`overdue` for retailers only. Same reasoning as `shop/products.php` against
+`products/list.php`: give the screen the slice, not the permission to read the
+whole table.
+
+`outstanding` and `overdue` are computed against `CURDATE()` at read time, never
+stored. They are shown next to the name in the picker because deciding whether
+to extend more credit is a person's call, and not showing them the number is how
+it stops being a call at all.
+
+Archived customers are never returned.
+
+**The client sends ids and quantities. Nothing else about money is believed.**
+Prices come from `products.price`; line totals and the grand total are computed
+here. **Verified:** a request sending `price: 1` and `total: 2` for two units of
+a ₱285 product was charged ₱570.
+
+| Guard | Behaviour |
+|---|---|
+| Duplicate lines for one product | Merged *before* the stock check. Two lines of 5 against 9 in stock would otherwise pass two separate checks and oversell. |
+| Insufficient stock | 409, naming what is left and what was asked |
+| Archived product | 409 |
+| Cash under the total | 422 — checked against the **server's** total, not the browser's |
+| Delivery without address / e-payment without reference | 422 |
+
+Rows are locked with `SELECT … FOR UPDATE` for the life of the transaction: two
+cashiers selling the last unit simultaneously would otherwise both read
+`stock = 1`, both pass, and land at −1. The decrement is additionally guarded
+with `WHERE stock >= ?`.
+
+Pickups are `completed` on the spot; deliveries enter the fulfilment flow as
+`accepted`.
+
+The response carries everything the receipt prints, computed server-side, so the
+printed figures and the stored figures cannot disagree.
+
+---
+
+### GET `users/me.php`
+
+**Any signed-in staff member.** The caller's own record: `id`, `name`, `email`,
+`avatar`, `role`, `roleId`, `status`.
+
+**No permission check and no `id` parameter, both deliberate.** Every staff
+member owns an account, so there is nothing to gate on beyond being signed in;
+and the session decides whose row is read, so there is no parameter a caller
+could point at a colleague. An `?id=` would make this `users/list.php` with a
+weaker guard.
+
+`role` and `status` are returned so the Profile screen can *show* them. They are
+not editable here — see below.
+
+The password hash is never selected, let alone returned.
+
+---
+
+### POST `users/me-save.php`
+
+**Any signed-in staff member.** Updates the caller's own `name`, `email` and
+`avatar`.
+
+**Body:** `name`, `email`, `avatar` (two letters; derived from the name when
+blank).
+
+**`role_id`, `role`, `status`, `password` and `id` are REFUSED with 403** — not
+ignored. Leaving them out of the `UPDATE` and relying on the form not to offer
+them is not enough: the form is not the caller. A hand-written POST carrying
+`role_id: 1` would then be silently accepted and silently discarded, which looks
+exactly like being applied. Presence of the key is the error, whatever its
+value. The `UPDATE` also names only the three permitted columns, so a bug in
+that check still cannot write the other two.
+
+A staff member editing their own role is privilege escalation; one archiving
+themselves is a support call. Both belong to an administrator, and the refusal
+message says so.
+
+`users.email` is UNIQUE and is re-checked with `id <> ?`, so saving without
+changing your own address is not a clash with yourself.
+
+**Audit:** one row naming what actually changed (`name → …`, `email → …`), or
+none when nothing did.
+
+---
+
+### POST `users/me-password.php`
+
+**Any signed-in staff member.** Changes the caller's own password.
+
+**Body:** `current_password`, `new_password`, `confirm_password`
+
+**Why it is separate from `me-save.php`** — the same reason `shop/password.php`
+is separate from `shop/profile.php`, and that file's header carries the full
+argument: a profile save changes a display name, this changes a credential.
+Folded together, the endpoint that edits a name could also take over the
+account, and the name save would inherit re-authentication and rate limiting it
+does not need — or, far more likely, this would inherit their absence.
+
+**Why it exists at all:** only `users/save.php` could set a staff password, and
+that requires `users.manage`. A staff member wanting to change their own
+password had to ask an administrator, who then knew it.
+
+The three rules, matching the customer endpoint:
+
+| Rule | |
+|---|---|
+| Re-verify the current password | A session cookie proves the browser was signed in at some point, not that the person at the keyboard is the account holder. Without it an unattended signed-in terminal — which is what a POS station is — is a permanent account takeover. |
+| Rate limit it | On the same `login_attempts` counter sign-in uses, so a stolen session cannot become an unlimited password oracle. |
+| Regenerate the session id | Any other session riding the old id dies. Changing a password because you fear someone else has access must actually remove that access. |
+
+Both the throttle and the re-verification live in **`Auth::reauthenticateStaff()`**,
+added beside `Auth::reauthenticateCustomer()` so the two are read together and
+cannot drift. Same failure shape: 401 from `require()`, 429 from the throttle,
+422 from the password check.
+
+A mismatched confirmation is rejected **before** re-authentication, so a typo
+does not burn a rate-limit attempt. `new === current` is rejected **after** it,
+so the message cannot be used to probe whether a guessed password was right.
+
+**Audit:** records *that* the password changed and never what it was set to —
+not the old value, not the new one, not its length. Unlike the customer
+endpoint this one can write to `audit_logs`, because `actor_user_id` is a
+`users.id` foreign key and a staff member is exactly what that column means.
+
+---
+
+### POST `users/save.php`
+
+**Requires `users.manage`.** Create when `id` absent, update when present.
+
+Passwords are hashed here and never stored, logged or echoed back. A blank
+password on update means "leave it alone", not "clear it". Minimum 8 characters.
+
+**Privilege escalation guard:** only a holder of `rbac.manage` may assign a role
+that itself carries `rbac.manage`. Without this, an Admin — who holds
+`users.manage` but not `rbac.manage` — could create a Super Admin account and
+sign into it. **Verified:** that exact request returns 403, while the same Admin
+creating a Cashier succeeds.
+
+You also cannot change your own role: that is how an account either locks itself
+out mid-session or quietly grants itself more.
+
+### POST `users/archive.php`
+
+**Requires `users.manage`.** Archive, never delete — `orders.cashier` and
+`audit_logs.actor_user_id` reference users, so deletion would either fail or
+detach the record of what they did.
+
+Refuses two things: archiving **yourself**, and archiving the **last active
+account that can manage roles**. The second is a door that locks from the
+outside with the key inside — nobody could restore it or fix permissions
+afterwards.
+
+Takes effect immediately on a live session, because `Auth::user()` re-reads
+status from the database on every request.
+
+---
+
+## Customers
+
+### GET `customers/list.php`
+
+**Requires `users.manage`.** Order count and lifetime spend are aggregated in
+SQL, not by loading every order and summing in PHP. Cancelled orders are
+excluded from spend. Walk-in orders (`customer_id NULL`) correctly count toward
+nobody.
+
+
+**`canSignIn`** (added) — false when `customers.password` is NULL, i.e. the
+record cannot be signed into. `customers/save.php` deliberately never sets a
+password (an admin form that could set someone else's is an account-takeover
+vector), so **every customer staff create through Add Customer starts this
+way** — and nothing said so, while the storefront answered "Email or password
+is incorrect" indefinitely. The Customer Accounts table now shows a **No
+sign-in** marker.
+
+The hash itself is never sent; only the yes/no leaves the server. Showing the
+state is safe inside the portal behind `users.manage` and would be account
+enumeration on the public sign-in form, which is why `shop/login.php` still
+refuses all three failure cases identically.
+---
+
+## Audit log
+
+### GET `audit/list.php`
+
+**Requires `audit.view`.** Filters: `type`, `actor`, `search`, `from`/`to`.
+
+**Read-only, permanently.** There is no create, update or delete endpoint for
+audit rows — a log the system can edit is not evidence of anything. Entries are
+written by the endpoints performing the actions, inside their transactions.
+
+`to` is expanded to `23:59:59`, or "up to today" would silently exclude
+everything logged today. Rows flag `actorArchived` so a since-archived employee
+is visible as such without rewriting the name history recorded at the time.
+
+---
+
+## Roles
+
+### GET `roles/list.php` · POST `roles/save.php`
+
+**Require `rbac.manage`.** Reading is already privileged — this screen decides
+what everyone else can do.
+
+A **system role (Super Admin) cannot be edited** and holds every permission by
+definition; it owns no `role_permissions` rows, and `list.php` reports the full
+catalogue for it so the matrix does not misleadingly show zero ticks.
+
+You **cannot remove `rbac.manage` from your own role** — there is no way to undo
+that from inside the application.
+
+Unknown permission keys are rejected rather than silently dropped, so a typo
+cannot leave the screen showing a permission as granted that was never stored.
+Grants are replaced wholesale in a transaction; a partial apply would leave a
+role holding a mixture of old and new rights. The audit entry names exactly what
+was granted and revoked.
+
+---
+
+## Philippine addresses
+
+Four endpoints take an address: `shop/checkout.php` (delivery),
+`shop/register.php` (the new account's), `shop/profile.php` (the saved one) and
+`b2b/apply.php` (the business's). They all take **the same object** and resolve
+it through one class, `api/core/Address.php`, so there is one copy of the rule
+that a barangay must belong to the city it is posted with.
+
+Every one of them used to take a free-text string. "Dagupan", "Dagupan City" and
+"dagupan city pang." were three cities to anything that had to group or route by
+one. And `shop/register.php` documented an `address` field it never read: every
+address typed at sign-up was discarded.
+
+### The `address` object
+
+**When the location list is loaded** (the normal case), the client sends CODES,
+from the PSA's Philippine Standard Geographic Code:
+
+```json
+{ "address": {
+    "region":   "<10-digit PSGC code>",
+    "province": "<10-digit PSGC code>",
+    "city":     "<10-digit PSGC code>",
+    "barangay": "<10-digit PSGC code>",
+    "street":   "148 Rizal Street",
+    "zip":      "2400" } }
+```
+
+**The client sends codes; the server looks up the names.** A name taken from the
+request would be free text again — "Makati" posted beside Dagupan's code. Each
+level is checked against the one above: the barangay must be in the city, the
+city in the province (or, if it has none, in the region), the province in the
+region. A broken chain is refused against the field that is wrong.
+
+**Cities with no province** — Metro Manila, Pateros, and highly urbanised cities
+such as Cebu City — have `province_code` NULL. The picker offers them in its
+Province list under their own names, so for those the `province` slot carries
+the **city's** code (or nothing). Accepted, and stored as a NULL province.
+
+**Before the location list is loaded** (`db/seed-ph-locations.sql`, see
+SETUP.md 3d), there is nothing to pick from, so the forms fall back to one box
+and send:
+
+```json
+{ "address": { "line": "9 Quezon St, Brgy. Poblacion, Urdaneta City, Pangasinan 2428" } }
+```
+
+The server accepts that line in the same case and only then. Loading the seed
+switches every form and every endpoint over at once, with no code change.
+
+### How much each endpoint insists on
+
+| Endpoint | Mode | Region → barangay | Street, ZIP |
+|---|---|---|---|
+| `shop/checkout.php` (delivery) | full | required | required |
+| `b2b/apply.php` | full | required | required |
+| `shop/register.php` | location | required | optional |
+| `shop/profile.php` | optional | all-or-nothing | optional |
+
+`location` keeps what the Create Account form always demanded — its old box said
+"Barangay, city, province" and was required — without adding two fields it
+never asked for. `optional` lets a profile save **clear** the address (post it
+entirely empty), but anything started must be finished: half an address saved
+to a profile would prefill half a checkout. A pickup order sends and stores **no**
+address; one sent anyway is ignored.
+
+ZIP is exactly four digits. Street is at most 160 characters; the fallback line
+at most 300.
+
+### Errors
+
+Field errors are keyed `addr_region`, `addr_province`, `addr_city`,
+`addr_barangay`, `addr_street`, `addr_zip` and, in fallback mode, `addr_line`.
+The picker lays each on its own field. They arrive with the endpoint's other
+field errors in one response — checkout does not make a customer fix the address,
+resubmit, and only then learn the contact number was wrong too.
+
+### What is stored
+
+Codes AND names, plus the composed single line every receipt, invoice and courier
+label already prints:
+
+| | codes | names | printable line |
+|---|---|---|---|
+| `orders` | `ship_region_code` … `ship_barangay_code` | `ship_region` … `ship_barangay`, `ship_street`, `ship_zip` | `address` |
+| `b2b_applications` | `biz_*_code` | `biz_*` | `business_address` |
+| `customers` | `addr_*_code` | `addr_region`, `addr_province`, `addr_city`, `addr_barangay`, `addr_street`, `addr_zip` | built on read |
+
+**Orders freeze the names.** An order is a historical record: if a barangay is
+renamed or recoded in a later PSGC release, last year's invoice must still print
+what the parcel was actually shipped to — the same reasoning as
+`order_items.price_at_purchase`. Orders placed before migration 015 keep the free
+text they were shipped to; they are not rewritten.
+
+The line reads `street, barangay[, district], city, province ZIP`, with the
+**region** in place of the province when there is none — it is what gives a
+courier the context a province would have.
+
+---
+
+### GET `locations/list.php?level=…&parent=…`
+
+**Public.** One level of the location list, for the picker.
+
+| `level` | `parent` | Returns |
+|---|---|---|
+| `regions` | — | every region |
+| `provinces` | region code | its provinces **and** its province-less cities (`kind: "city"`) |
+| `cities` | province code | its cities and municipalities (`type`: City / Municipality) |
+| `barangays` | city code | its barangays, with `district` for the City of Manila |
+
+```json
+{ "ok": true,
+  "data": [ { "code": "<10-digit PSGC code>", "name": "<barangay name>", "district": null, "kind": "barangay" } ],
+  "meta": { "loaded": true, "level": "barangays", "count": 1 } }
+```
+
+**One parent's children, never a whole table.** Every level below `regions`
+requires `parent`, validated as exactly ten digits, and there is no way to ask for
+every barangay. That is the one query here that would be slow, and nothing needs
+it; one city's barangays is an index read on `idx_barangay_city` whose cost does
+not grow with the table. It is also the whole argument for keeping ~42,000
+barangays in the database rather than in a script every visitor would download.
+
+**Natural order**, not the collation's: the City of Manila's ~900 barangays are
+numbered, and `ORDER BY name` puts "Barangay 10" before "Barangay 2". Accented
+names sort with their plain letter ("Parañaque" with the Ps).
+
+**Cached.** Successful responses carry `Cache-Control: public, max-age=604800`
+(a week) through `Response::cacheFor()` — the data changes every few years. It is
+opt-in per response: everything else in the API stays `no-store`, and errors are
+never cached. The picker also keeps every list it has fetched for the page's
+lifetime.
+
+Before the seed is loaded every list is empty with `meta.loaded: false`, which is
+what tells the picker to fall back to the single box.
+
+`400` for an unknown level, a missing parent, or a parent that is not ten digits.
+
+---
+
+## Storefront (public)
+
+These two are the only endpoints reachable without a session. Everything else
+returns 401.
+
+### GET `shop/products.php`
+
+**Public.** The storefront catalogue.
+
+**Query:** `category`, `search`, `sort`.
+
+`sort` accepts `featured` (default), `best-selling`, `price-asc`, `price-desc`,
+`rating`, `name` / `name-asc`.
+
+`featured` and `best-selling` are **not** the same ranking. `featured` is
+`is_best DESC, sold DESC` — the products an administrator flagged first, units
+sold only as a tie-break. `best-selling` is `sold DESC, rating DESC`, the
+unedited ranking, and it is what the shop's Best Selling / Top 5 / Top 10
+options mean. `name-asc` is an alias of `name`; the storefront's select has
+always sent that spelling and the map did not have it, so "Name (A–Z)" silently
+fell through to the default.
+
+**The shop grid does not page through this endpoint.** `loadShopCatalog()` in
+`assets/js/public/site.js` fetches the whole catalogue once with no `page` or
+`limit`, and every filter, sort and Top-N limit is applied to that array in the
+browser. `sort` is therefore offered here for correctness and for any future
+server-paged consumer, not because the grid uses it.
+
+#### Response
+
+| Field | |
+|---|---|
+| `inStock` | boolean |
+| `stock` | **the exact available quantity** |
+| `stockLevel` | `out` / `crit` / `warn` / `ok` — drives the pill colour |
+| `stockLabel` | the shopper-facing sentence, from `Inventory::shopLabel()` — "In Stock · 160 available", "Only 6 left", "Out of Stock" |
+
+**`stock` is a reversal, and it is deliberate.** This endpoint used to send the
+band alone, on the reasoning that "Low stock" is useful to a shopper while "7
+units left in Dagupan" is operational detail a competitor can poll on a timer
+and read the sales rate off. That reasoning has not stopped being true; the
+adviser asked for the available quantity to be shown, and a storefront cannot
+display a number it was never sent.
+
+**If the group later decides to narrow it,** the change is one line: return
+`stock` only when `$inv['level']` is `crit` or `out`. `Inventory::shopLabel()`
+already words exactly those bands with the count in them, so nothing else moves.
+
+Velocity is still not sent. Archived products are still never returned.
+
+`shop/cart.php` sends the same four fields per line, from the same helper, so
+the drawer cannot describe a product differently from the grid.
+
+### POST `shop/verify-code.php`
+
+**Requires a customer session.** Completes a change `shop/profile.php` held back
+pending an emailed code.
+
+**Body:** `ticket`, `code` (six digits)
+
+The Scope says "the system sends a verification code to the registered email
+whenever the user attempts to change important account details". `profile.html`
+has always carried the hint *"A verification code will be sent to confirm email
+changes"* under the email input; the mechanism did not exist.
+
+**Important means email and contact number** — the two ways an account is
+reached and recovered. Name and address save immediately. The password form
+keeps its own current-password re-verification (`shop/password.php`) and does
+**not** also require a code; that would be two mechanisms guarding one door.
+
+**The change waits, rather than being applied and rolled back.** `profile.php`
+writes nothing sensitive — the pending values sit in
+`verification_codes.payload` as JSON until a correct code arrives. An abandoned
+verification leaves the account exactly as it was, with no window in which it is
+reachable at an address the owner has not confirmed.
+
+**The code goes to the address already on file**, never the proposed one.
+Somebody holding a stolen session cannot receive it; the real owner does, and
+learns an attempt was made.
+
+| Rule | |
+|---|---|
+| Stored | `password_hash()` of the code, never the code. For the minutes it lives it is a bearer credential |
+| Expiry | 10 minutes |
+| Attempts | 5, counted **on the row** — a lockout a client can reset by clearing a cookie is not a lockout. A wrong code increments even if the request later fails for another reason |
+| Resend | Reuses an unexpired code issued in the last 60 seconds rather than minting a new one. Otherwise Resend silently invalidates the code already in the inbox and the customer is told the one they can see is wrong |
+| Replay | `consumed_at` is stamped conditionally, so a double-clicked button cannot apply the change twice |
+| Uniqueness | `customers.email` is UNIQUE and is re-checked **at both ends** — someone can register the address during the ten minutes a code is live |
+
+**This reverses a decision recorded in `shop/profile.php`.** Its note read *"never
+the email … changing it is an account-recovery operation, not a profile edit."*
+That was correct while nothing could prove the request came from the account
+holder rather than from a stolen session. The code closes exactly that gap.
+
+**`password_hash()` directly, not `Auth::hashPassword()`** — that helper enforces
+the account password policy (`Auth::PASSWORD_MIN`, 8) and a six-digit code fails
+it. Lowering the constant to fit would weaken every real password to accommodate
+one unrelated thing. A code's strength is that it is random, single-use,
+attempt-capped and short-lived, not that it is long.
+
+**Without SMTP configured:** `mailLive` is `false`, the code still goes to
+`storage/mail/`, and the endpoint additionally returns it as `devCode` — but
+**only** when `app.debug` is on *and* mail is not live. Never when mail is live,
+whatever debug says. The panel says plainly that no email was sent rather than
+pretending one was.
+
+**This one writes an audit row**, where an ordinary profile edit does not. An
+email change moves where password resets and order confirmations go; if it
+happens without the owner's knowledge there has to be something to find. The old
+address is recorded, because afterwards it is the only place it still exists.
+
+---
+
+### GET `shop/my-payments.php`
+
+**Requires a customer session, and `status = 'retailer'`.** The retailer's own
+credit accounts.
+
+The Scope promises retailers "all outstanding and upcoming payments in one
+place", with notification when a payment nears its deadline or is overdue,
+"including any penalties incurred". The `payment_accounts` table, the due dates
+and `settings.penalty_rate` all existed, and staff could see them at
+`portal/views/payments.html` — there was no customer-facing screen at all. A
+retailer could find out what they owed only by asking the person they owed it to.
+
+Scoped by the session's customer id, never by a parameter.
+
+**A non-retailer is refused, not shown an empty list.** An empty list reads as
+"you owe nothing" — true, but it answers a question a regular customer never
+asked and implies a facility they do not have.
+
+**The numbers come from the same place the cashier's do.**
+`Payments::accountStanding()` was extracted from `api/payments/list.php` when
+this endpoint was written, precisely so there is one calculation instead of two.
+It was three lines and copying them would have been quicker; that is the mistake
+this codebase has already paid for twice, with the stock quartet and the
+`proof_uploaded` expression. A retailer shown a penalty a peso different from
+the cashier's screen will not assume a rounding rule — they will assume they are
+being overcharged.
+
+Verified against an overdue account: customer and cashier both report
+`balance 12800 · penalty 256 · totalDue 13056`.
+
+Returns each account with `scheme`, `balance`, `dueDate`, `paid`,
+`daysUntilDue` (negative when overdue — the sign carries the meaning),
+`penalty`, `totalDue`, and a `state` of `paid` / `overdue` / `due-soon` /
+`pending`. Plus a `summary`: `totalOutstanding` (**including penalties** — a
+figure that quietly excludes them is the one that causes the argument at the
+counter), `overdueCount`, `dueSoonCount`, `nextDueDate`, `penaltyRate`.
+
+Overdue days are `DATEDIFF(CURDATE(), due_date)` in SQL, derived at read time
+and never stored, so an account does not sit at "3 days late" for ever because
+nobody reopened the page.
+
+`public/profile/my-payments.html` is the screen, modelled on
+`my-orders.html` — same shell, same auth guard, same `EbApi` usage. The sidebar
+link is shown only to a retailer (`shop/me.php` now returns `status` for that),
+which is presentation: the endpoint refuses everyone else regardless.
+
+---
+
+### POST `shop/password.php`
+
+**Requires a customer session.** Changes the signed-in customer's own password.
+
+**Body:** `current_password`, `new_password`, `confirm_password`
+
+**Deliberately not part of `shop/profile.php`.** A profile save changes an
+address; this changes a credential. One endpoint doing both would mean the
+address save inherits re-authentication and rate limiting it does not need — or,
+far more likely, this inherits their absence.
+
+Three rules, each with a reason:
+
+1. **The current password is re-verified.** A session cookie proves the browser
+   was signed in at some point, not that the person at the keyboard is the
+   account holder. Without this, an unattended logged-in laptop is a permanent
+   account takeover.
+2. **Rate limited on the same counter as sign-in** (`login_attempts`,
+   `security.max_login_attempts`). Otherwise this is an unlimited password
+   oracle for anyone holding a stolen session — weaker than the login form,
+   which is throttled. Verified: after five wrong attempts, **the correct
+   password is refused too**, with `429 RATE_LIMITED`.
+3. **The session id is regenerated on success**, so any other session riding the
+   old id dies. Changing a password because you fear someone else has access has
+   to actually remove that access. The customer doing it stays signed in.
+
+Refusals: a wrong current password is `422` on `current_password`; a mismatch is
+`422` on `confirm_password`, checked *before* the current password so a mistyped
+confirmation does not burn a rate-limit attempt; reusing the current password is
+refused *after* re-authentication, so the message cannot be used to probe
+whether a guessed password was right.
+
+**Password rules live in `Auth::hashPassword()`** — minimum length and the
+bcrypt call, in one place. They had been written out four times (twice in
+`users/save.php`, once in `shop/register.php`, and this would have been a
+fifth). `PASSWORD_BCRYPT` explicitly rather than `PASSWORD_DEFAULT`: DEFAULT
+changes between PHP versions, and a hash one server writes that another cannot
+verify locks people out.
+
+**No audit row**, for the reason given under `shop/profile.php`. Customer
+security events deserve their own log; widening the staff audit trail to hold
+them would corrupt what the Audit screen means. Recorded as a known gap.
+
+**What it replaces:** the Security form on `public/profile/profile.html` was a
+mock — it cleared the fields and showed *"Password updated successfully!"* while
+writing nothing.
+
+---
+
+### POST `shop/cancel-order.php`
+
+**Requires a customer session.** Cancels the customer's own **pending** order.
+
+**Body:** `order_id`, `reason` (required, max 500)
+
+The Scope names an "Order Cancellation Module". `my-orders.html` rendered a
+Cancel button whose handler called `confirm()` then `showToast("Order
+cancelled")` — nothing reached the server, no reason was captured, and the order
+stayed pending. There was no customer-facing cancel endpoint at all.
+
+**The reason is mandatory** because the Scope says it is recorded, and because a
+queue of orders that vanished without explanation tells the business nothing.
+`orders/status.php` already refuses a staff cancellation without one.
+
+**Only `pending`** — the Scope says "before they are approved for processing".
+Any other status is a `409` naming the current one and saying what to do
+instead, e.g. *"This order is already accepted and can no longer be cancelled.
+Contact us if you need to change it."*
+
+**Scoped by session.** A missing order and somebody else's order both return
+`404 "Not found."` — telling the caller which would confirm the id is real.
+
+**No stock reversal, deliberately.** An online order commits stock when staff
+*accept* it, so a pending order has never committed any. Reversing it would
+credit inventory that was never debited. `orders/status.php` reverses only from
+a committed state, which this endpoint cannot reach.
+
+Conditional UPDATE inside a transaction, `order_status_history` row
+(`changed_by` NULL, note = the reason), audit row (`actor` = customer name,
+`actor_user_id` NULL). Returns `{ id, status, reason }`.
+
+---
+
+### POST `shop/confirm-received.php`
+
+**Requires a customer session.** Moves the customer's own **delivered** order to
+`completed`.
+
+**Body:** `order_id`
+
+The Scope says the customer "confirms receipt by pressing the received button".
+That button existed and was a stub; a delivered order had no route to
+`completed` except staff doing it by hand.
+
+**A separate file from `cancel-order.php` on purpose.** Both are "customer
+changes their own order's status" and could share one endpoint with a `to`
+parameter — but cancellation requires a reason and refuses anything but
+`pending`, while confirmation requires none and refuses anything but
+`delivered`. A shared endpoint carries both sets of branches and a parameter
+deciding which apply, which is how a customer eventually cancels a delivered
+order. Same reasoning as the header of `shop/password.php`.
+
+No stock movement: stock was committed at accept, and the goods have already
+left. Inserts a `notifications` row of type `completed` so staff see it.
+
+Races with the auto-complete sweep are expected and handled — the conditional
+UPDATE means whichever gets there first wins and the other is told to reload.
+
+---
+
+## Product reviews
+
+Four endpoints, two audiences. They are documented together because their rules
+interlock: what the customer may write is what the staff queue may act on, and
+both read the same `products.rating` / `products.review_count` pair.
+
+**The three rules that decide everything else:**
+
+1. **Only a verified purchase produces a review.** `product_reviews.order_id` is
+   `NOT NULL` and a real foreign key. The order is found by the server, never
+   supplied by the client.
+2. **Moderation triggers on the TEXT, never on the score.** A 1-star review
+   publishes immediately, exactly like a 5-star one, and raises a Warning
+   notification. Nothing in `reviews/moderate.php` reads `rating`.
+3. **The filter is a keyword list**, not content classification — case
+   insensitive, on word boundaries, read from `settings.review_flag_words`. It
+   will miss abuse and it will flag innocent text, which is why its output is a
+   queue for a person rather than a decision.
+
+`products.rating` and `products.review_count` are a cache maintained by
+`Reviews::recompute()` from **published rows only**, rewritten inside the same
+transaction as every save and every moderation decision. Render "No ratings yet"
+whenever `review_count` is 0 — the rating is 0.00 there, and a surface that shows
+it as a score is claiming something nobody said.
+
+---
+
+### Fields the reviews feature added to existing endpoints
+
+| Endpoint | Field | Why |
+|---|---|---|
+| `shop/products.php` | `reviewCount` | Travels with `rating` so no caller has to decide whether a score is real. `starRating()` in `site.js` takes it as a **required** argument — a call site that forgets it throws in development rather than quietly reprinting the old lie. |
+| `products/list.php` (staff) | `reviewCount` | Same rule for the portal. `ratingText()` in `engine.js` is the single renderer; it prints "No ratings yet" at zero. |
+| `shop/my-orders.php` | per item: `productId`, `myRating`, `myComment`, `myStatus` | So My Orders can render and pre-fill the rating control without one request per line. The review join is scoped by the **session's customer**, not by the order — `uq_review_customer_product` is per customer per product, so the same review attaches to every order of that product. |
+
+`products.rating` also changed default, from `5.00` to `0.00` (migration 011). Nothing
+inserts a product without an explicit rating today, so this changes no behaviour —
+it removes the trap that produced the invented scores in the first place.
+
+---
+
+### POST `shop/review-save.php`
+
+**Requires a customer session.** Creates the customer's review of a product, or
+edits the one they already left.
+
+**Body:** `product_id`, `rating` (1–5), `comment` (optional, ≤ 1000 chars)
+
+**`order_id` is not a parameter.** The endpoint finds the earliest `completed`
+order belonging to *the session's customer* that contains *that product*. Taking
+an order id from the body and validating it would look equivalent and is not: it
+invites the check to be relaxed later, and it is one edit away from reviewing a
+product on the strength of somebody else's order. Same rule as the delivery
+address in `shop/checkout.php` — "Always the session's address. Never read from
+the request."
+
+`completed`, not `delivered`: completion is the customer's own confirmation that
+the goods arrived, not staff marking a parcel as sent.
+
+**One vote per customer per product** — `uq_review_customer_product`. A second
+submission edits the first; buying the same product five times does not buy five
+votes. `order_id` is written once and never updated on an edit, because it is
+provenance rather than a pointer at the latest order.
+
+**Entitlement is re-derived on every write, edits included:**
+
+| Situation | What happens |
+|---|---|
+| Order refunded | Review stands, stays editable. A refund is a `product_returns` row; it does not touch `orders.status`, so the order still qualifies. The refunded customer is the one person who knows what went wrong. |
+| Product archived | Review stands, stays editable and stays reviewable. Withdrawing a product from sale does not un-eat it. (Orders are never archived — there is no such column.) |
+| Every qualifying order cancelled | Edit refused with `409`. The existing review is **left exactly as it is, not deleted** — it was written while entitled, and destroying it because staff changed a status afterwards is the worse failure. Staff can unpublish it, with a reason, on the record. |
+
+A review a moderator already rejected re-enters the queue when its author edits
+it, rather than quietly reappearing.
+
+**Returns:** `status`, `held`, `edited`, `avg_rating`, `review_count`. `held` is
+reported plainly — a customer told "posted" who then cannot find their review
+learns that the shop lies to them. The matched keyword is **not** returned;
+naming it turns the filter into a list to be probed.
+
+A rating of 2 or lower that publishes raises a `notifications` row of type
+`review` (Warning). Early warning, not a gate — the review is already live.
+
+---
+
+### GET `shop/reviews.php?product_id=…&page=&limit=`
+
+**Public.** The reviews shown on a product.
+
+Published rows only, with one exception: a signed-in customer gets their own
+review back in `mine` **whatever its status**, including the moderator's
+`reason` if it was taken down. Somebody who cannot see what they wrote cannot
+edit it, and a rejection with no reason given to the person rejected is
+indistinguishable from censorship.
+
+**Returns:** `avg_rating`, `review_count`, `spread` (the 1–5 histogram — twenty
+fives and four ones is a different product from twenty-four fours, and both
+average 4.2), `reviews`, `mine`, `can_review`.
+
+Reviewers are named "Maria S." — first name, last initial. The full name is a
+real person's identity attached to a public opinion and a purchase, on a page a
+crawler can index. Emails and order ids are never sent.
+
+"Verified purchase" is not a field and is not sent as one: it is true of every
+row by construction, so the badge is rendered unconditionally rather than
+trusted from a flag.
+
+The average is computed here rather than read from `products.rating`, so a page
+listing five reviews can never show an average from a drifted cache.
+
+---
+
+### GET `reviews/list.php?status=&search=&page=&limit=`
+
+**Requires `reviews.moderate`.** The staff moderation queue.
+
+Separate from `shop/reviews.php` on purpose: this returns held and rejected
+text, full customer names, emails, order ids and moderator reasons. One endpoint
+trimmed by a flag would, the day the flag is wrong, serve all of that publicly.
+
+`status` is `pending` · `published` · `rejected` · `all`. **Pending sorts oldest
+first** — a moderation queue is a queue, and the longest-waiting review is the
+one a customer is currently wondering about. The other lists are records, so
+they sort newest first.
+
+Each row carries `hold_reason` (the keyword that held it — a queue saying only
+"held for review" asks the moderator to guess what the machine objected to),
+`order_status` as it stands *today*, and `product_archived`.
+
+`meta.counts` is over all rows, not the filtered page, so the tab badges do not
+change with the current filter.
+
+---
+
+### POST `reviews/moderate.php`
+
+**Requires `reviews.moderate`.** One staff decision about one review.
+
+**Body:** `id`, `action` (`publish` · `reject` · `unpublish`), `reason`
+
+| Action | From | To | Reason |
+|---|---|---|---|
+| `publish` | `pending`, `rejected` | `published` | not required |
+| `reject` | `pending` | `rejected` | **required** |
+| `unpublish` | `published` | `rejected` | **required** |
+
+**Three named actions rather than a `status` parameter.** The rules differ per
+action, and an endpoint taking a target state has to rediscover which apply by
+branching on it anyway. Naming the action also lets the audit log say
+"Unpublished" instead of "set status to rejected" for two quite different
+decisions.
+
+**A reason is required to take something down.** The customer is shown it on
+their own review. Publishing needs none — it is the outcome they asked for.
+
+**Nothing here reads `rating`.** Moderation is for abuse and policy. If a rating
+could be moderated away, the average would measure which reviews staff were
+willing to keep.
+
+Every decision writes an `audit_logs` row — including `publish`, because a
+moderation log that records only refusals cannot answer "who cleared this".
+`Reviews::recompute()` runs in the same transaction, so the shop page and the
+queue cannot disagree. Concurrent moderation is caught by a conditional UPDATE
+and answered with `409`.
+
+---
+
+### GET · CLI `system/auto-complete.php`
+
+Runs the one-hour delivered → completed sweep.
+
+```
+CLI:   php api/system/auto-complete.php
+HTTP:  GET /api/system/auto-complete.php     (requires audit.view)
+```
+
+The Scope promises a delivered order becomes completed an hour later if the
+customer never confirms. Nothing scheduled it, and nothing recorded *when* an
+order became delivered — `orders.delivered_at` (migration 006) is that record.
+
+**A sweep, not a cron.** XAMPP ships no scheduler, and a capstone that only
+behaves correctly where somebody configured Task Scheduler does not behave
+correctly. `Orders::sweepIfDue()` is called by `orders/list.php` and
+`shop/my-orders.php`, throttled to once every five minutes through a `settings`
+row (`autocomplete_last_run`) and wrapped so it can never turn somebody's order
+list into a 500.
+
+This endpoint is the same function behind a door a scheduler can knock on, so a
+real deployment gets punctual completion instead of completion-on-next-page-load.
+**One implementation, two routes** — there is no second copy of the rule to
+drift. It calls `autoCompleteDelivered()` directly rather than `sweepIfDue()`:
+a scheduler that asked for the run should get it, not be skipped because a page
+load happened four minutes ago.
+
+**The CLI path is unauthenticated** — a scheduled task has no session, and it is
+reached only by something already running on the server, which has the database
+credentials anyway. The HTTP path requires `audit.view`.
+
+Audit rows are written with `actor` = **"System"** and `actor_user_id` NULL.
+Attributing them to whichever staff member happened to load a page would make
+the trail actively misleading.
+
+---
+
+### GET · POST `shop/profile.php`
+
+**Requires a customer session.** The signed-in customer's saved contact number
+and delivery address.
+
+**Identity comes from the session and only from the session** (D6, D7). There is
+no `customer_id` parameter and no `email` parameter — supplying one changes
+nothing, because nothing reads them. Same rule as `shop/checkout.php`: an
+endpoint that lets the client name the account is an endpoint that lets any
+client edit any account.
+
+**GET** returns:
+
+```json
+{ "id": "cus-t01", "name": "…", "email": "…", "contact": "0917…",
+  "address": { "street": "…", "barangay": "…", "city": "…", "province": "…",
+               "zip": "…", "region": "…",
+               "region_code": "…", "province_code": null, "city_code": "…", "barangay_code": "…",
+               "line": "…, …, …", "hasAny": true } }
+```
+
+The **codes** are what the picker prefills its four dropdowns from; an address
+saved before the location list existed has none, and prefills the street line
+only. `address.line` is composed by `Address::compose()` — the same function that
+writes `orders.address` — so the line a checkout prefills and the line an invoice
+later prints are joined by one rule.
+
+**POST** accepts `name?`, `contact?` and `address?` — the shared object described
+under **Philippine addresses**, in `optional` mode. It is **all or nothing**: post
+it entirely empty to clear the saved address; anything started must be finished.
+It used to be five independently clearable free-text parts, which suited five text
+boxes and not a picker — a city saved without its barangay is not a partial
+address, it is a question with no answer. It returns exactly what a fresh GET
+would.
+
+**Not accepted: `email`** — it is the login identifier and the key other records
+join on; changing it is account recovery, not a profile edit. **Not accepted:
+passwords** — that needs the current password re-verified and its own rate
+limiting, and a profile save that could also change credentials is a different
+security problem wearing a form's clothes.
+
+**No audit row is written.** `audit_logs` records staff actions against the
+business's data — its actor columns are a staff name and a `users.id` foreign
+key. A customer editing their own address is not that, and writing it with a
+NULL `actor_user_id` would quietly turn the staff audit trail into a general
+activity log that the Audit screen then pages through.
+
+**One address, not an address book.** `db/migrations/005` adds five nullable
+columns to `customers`, and 015 the barangay and the four codes. Before it there was no address storage anywhere — the
+only address the system had ever kept was `orders.address`, one per order — and
+the storefront's own Profile > Delivery Address form was a mock that validated a
+field and called `showToast("Address saved!")` with no endpoint behind it. All
+five columns are nullable and partial is a legitimate state.
+
+---
+
+### POST `shop/checkout.php`
+
+**Public.** Places a real order.
+
+**This is the flow that did not exist.** The storefront validated its form,
+rendered a receipt and threw the order away — the customer saw "Order Placed!"
+and nothing reached the staff portal.
+
+Differences from `pos/checkout.php`, all deliberate:
+
+| | POS | Storefront |
+|---|---|---|
+| Status | `completed` (pickup) | **`pending`** — a claim to be checked |
+| Payment | verified at the till | `pay_verified = 0` |
+| Stock | decremented immediately | **not decremented** |
+
+Stock is not committed at order time, because an unverified stranger must not
+be able to zero the inventory by placing orders nobody accepts. Availability
+*is* checked, so the shopper is told immediately rather than after staff chase
+them. **Stock commits when staff accept the order** — see below.
+
+Prices come from the database; the storefront's own JS copy is editable by
+anyone with a console open. An email that matches an existing customer links the
+order to them, but no account is ever created as a side effect of buying —
+signup is a deliberate act.
+
+**The delivery address is the shared object** (see **Philippine addresses**) in
+`full` mode — region through barangay, street and ZIP all required — and its
+errors come back with the rest of the form's, in one response. Names are looked
+up from the codes and frozen onto the order beside them. **A pickup order stores
+no address**: the field is hidden for pickup, but its value used to be sent and
+saved anyway, so a pickup order could carry, and its receipt print, an address it
+was never shipped to.
+
+Also writes a `new-order` notification so the staff bell lights up.
+
+**Empties the customer's `cart_items` inside the same transaction that writes
+the order.** Not from the browser afterwards and not in a follow-up request: an
+order that does not commit must not cost the shopper their cart, and a dropped
+connection between two requests empties everything or nothing at random.
+
+### Retailer credit terms at checkout
+
+`pay_method` accepts `net30`, `net60` and `net90` **when the buyer is a
+retailer**, alongside `cash`, `gcash` and `bank`.
+
+This used to pass `Payments::methods(false)` unconditionally, with a comment
+saying the storefront "has no retailer selection". That stopped being true when
+D6 made checkout require a customer session: the endpoint now knows exactly who
+is buying. Retailer status is **re-derived from the `customers` row inside the
+request** (`Auth::customer()` re-reads it every request), never taken from the
+client. The storefront renders the Net tiles from `state.auth.status`, which is
+presentation; a regular customer posting `net30` gets
+`Payment method must be one of: cash, gcash, bank.`
+
+**A credit order carries no reference number and no screenshot.** Nothing has
+been paid, so there is nothing to reference. `Payments::orderFields()` returns
+`pay_verified = 0`, both proof columns null and `proof_amount = 0` for any
+credit method, and the `ref_num` requirement lists `gcash`/`bank` explicitly
+rather than testing `!== 'cash'` — written that way so adding a credit method
+could not silently start demanding a screenshot for it.
+
+**The receivable is opened in the same transaction as the order** (decision I8),
+via `Payments::openCreditAccount()`. A sale recorded without its receivable is
+money the business cannot see it is owed; a receivable without its sale is a
+debt nobody can explain. The due date is computed by the database with
+`DATE_ADD(CURDATE(), INTERVAL ? DAY)` — not in PHP, and certainly not in the
+browser (D1) — so the receipt, the retailer's Payment Schemes page and the
+cashier's screen all print the same date.
+
+**Credit is refused while an earlier account is overdue.** 409, naming the
+amount and the oldest due date:
+
+> You have ₱13,056.00 overdue on your account (due 6 Aug 2026). Settle it to use
+> credit terms again — you can still place this order on cash, GCash or bank
+> transfer.
+
+A decision, recorded because it is a business rule rather than an obvious one.
+The alternative is an unbounded credit line, which nobody asked for: the
+partnership grants *terms*, not a *limit*, and with no limit in the schema the
+only bound available is "settle the last one first". It refuses the **terms**,
+not the order — the shopper switches to cash, GCash or bank and completes.
+The figure includes accrued penalty via `Payments::accountStanding()`, because
+a total that quietly excludes it is the one that causes the argument. Checked
+inside the transaction so it reads the same snapshot the INSERT is written
+against.
+
+**Response** gains `credit`: `null` for an immediate sale, otherwise
+`{ id, scheme, balance, dueDate }` — the `payment_accounts` row that was opened.
+`message` names the scheme and the due date.
+
+---
+
+### Stock and the order lifecycle
+
+`orders/status.php` now moves stock for **online orders only**:
+
+- **On `accepted`** — stock is decremented and `sold` incremented. If it sold
+  out between the customer ordering and staff accepting, the transition is
+  refused naming the product and the shortfall, rather than driving stock
+  negative.
+- **On `cancelled` from a committed state** — stock is returned and `sold`
+  rolled back.
+
+A walk-in sale already decremented at the till, so it is excluded. Before this,
+online orders never touched stock at all, which meant the shop could sell the
+same jar indefinitely.
+
+---
+
+---
+
+## B2B applications
+
+### POST `b2b/apply.php`
+
+**PUBLIC** — no session and no CSRF token. An applicant has no account yet, so
+there is no session to ride and nothing to forge. That is why the rate limit
+below matters more here than on an authenticated endpoint.
+
+**Body:** `business_name`, `applicant_name`, `email`, `phone`, `business_type`,
+`address` (all required); `bir_tin?`, `username?`, `password?`,
+`requested_terms?`, `monthly_volume?`, `notes?`
+
+`address` is the shared object (see **Philippine addresses**) in `full` mode. It
+replaced a required free-text `business_address` string: a retailer's address is
+where stock is delivered on credit terms, the last address in the system that
+should be typed freehand. The composed line is still stored in
+`business_address`, so the staff screen and the approval email that print it are
+unchanged; the parts and codes sit beside it in `biz_*`.
+
+**What was missing.** `public/become-partner.html` has had a complete
+twelve-field form since the beginning, and `b2b_applications` has a column for
+every one of them. The staff side worked — `b2b/list.php` reads applications,
+`b2b/decide.php` approves or rejects them. **The customer side sent nothing:**
+no `fetch`, no endpoint, and no `INSERT INTO b2b_applications` anywhere in the
+codebase. The submit handler validated, advanced a stepper and displayed
+*"Application Submitted! … we'll reach out within 2 business days"*. The only
+applications that could exist were the eight seeded rows, and a real business
+owner was told it worked while no member of staff ever saw it.
+
+Worse, the inline script on that page ran **before** the deferred `site.js` it
+depended on, so `ICONS.eye` threw `ReferenceError` and killed the function
+before `form.addEventListener('submit', …)` — the handler was never even
+attached. Fixed by waiting for `DOMContentLoaded`.
+
+**Rules:**
+
+| | |
+|---|---|
+| Rate limit | 3 applications per IP per hour. A public endpoint that writes a row is a spam target, and the table feeds a review queue that is useless when flooded. Counted per IP, not per email — the sender picks the email and changing it is free |
+| Duplicate | A second *pending* application from the same email is refused with its existing reference. It is an impatient resubmit, not a new request |
+| Already a retailer | Refused — they should sign in, not apply |
+| `bir_tin` | Optional; 9 or 12 digits however punctuated. A new business may not have one, and refusing over it loses a real customer |
+| `requested_terms` | Normalised: the form's `"Net 60 Days Credit Terms"` is stored as `"Net 60"`, matching `payment_accounts.scheme` and `Payments::schemeLabel()`. `"Cash on Delivery"` stores NULL |
+| `password` | Hashed on arrival via `Auth::hashPassword()`, so a pending application never holds a readable one |
+
+Writes the application, a staff notification and an audit row in one
+transaction, then emails the applicant an acknowledgement with their reference.
+The email is sent **after** the commit and cannot fail the request.
+
+Returns `{ appId, status, business, emailed }`.
+
+
+**A signed-in customer applying is bound to their session.** This endpoint took
+`email` from the request body and resolved `customer_id` by looking that address
+up in `customers`. Safe while every applicant was a stranger; **not** safe once
+an authenticated customer can apply — they could file an application naming
+somebody else's address, and on approval `b2b/decide.php` would promote *that
+person's* account to retailer, opening a trade credit line against an account
+the applicant does not own.
+
+When a customer session exists the email and `customer_id` come from the session
+and the body is not consulted, the same rule `shop/checkout.php` states outright
+("Always the session's address. Never read from the request."). The override
+happens **before** validation, so the duplicate-application lookup, the
+already-a-retailer refusal and the customer link all run against the session's
+address. With no session the old behaviour stands — a stranger applying is still
+the normal case.
+
+**Credentials are required from a stranger and refused from a signed-in
+applicant.** Server-side they were previously optional for everybody; only the
+form's `required` attributes asked, and an attribute is not a check. An approved
+application with no username left `decide.php` inserting a customer row with
+NULL credentials — an account nobody can sign in to, created silently. A
+signed-in applicant already has a username and password, so asking for a second
+set invites a collision on the UNIQUE `customers.username` column;
+`decide.php` promotes with `COALESCE(username, ?)`, so the existing login
+survives approval untouched. The form hides the credentials block for them, and
+this refusal is what makes that hiding true.
+
+---
+
+### Approval creates the partner account
+
+`b2b/decide.php` gained this. It previously carried the comment *"approval does
+not invent one — the partner account is created at signup"*, but **there is no
+separate signup**: `b2b/apply.php` collects a username and password precisely
+because applying *is* the signup for a wholesale account. Approving without
+creating it left an approved partner with no way to log in.
+
+On approval, if the applicant has no customer row and chose credentials, one is
+created with `status = 'retailer'` and the application is linked to it. If they
+already had a row, it is promoted, and a missing username/password is filled in
+from the application — `COALESCE`, so an existing password is never overwritten.
+A rejected applicant never gets an account.
+
+Verified end to end: application submitted through the real form → approved at
+Silver tier → `cus-12` created as `retailer` → **that customer signed in with
+the password typed on the application form**.
+
+---
+
+### Email
+
+`b2b/decide.php` emails the applicant on both outcomes. `api/core/Mailer.php`
+speaks SMTP directly — this project has no Composer, and PHP's `mail()` shells
+out to a sendmail XAMPP ships unconfigured whose failure mode is to return true
+having delivered nothing.
+
+**Mail is never part of a transaction.** `Mailer::send()` does not throw and is
+called *after* the commit. A decision is a database fact; whether the
+notification arrived is separate, and rolling back an approval because a mail
+server timed out would be the wrong trade every time.
+
+The response reports what actually happened — `emailed`, `mailLive`,
+`mailError` — so the staff screen can say "emailed" or "could not email" rather
+than implying one and doing the other.
+
+Two transports, set by `mail.transport` in config:
+
+- **`smtp`** — real delivery. Verified against a live SMTP server: `EHLO`,
+  `AUTH LOGIN` with correctly base64-encoded credentials, `MAIL FROM`,
+  `RCPT TO`, `DATA`, `QUIT`, and a well-formed multipart MIME message with a
+  RFC 2047-encoded subject.
+- **`log`** — writes the complete message to `storage/mail/*.eml`. **Not a
+  stub.** An approval must not fail because nobody has entered credentials yet,
+  and an install without them can still demonstrate the whole flow. It never
+  pretends: `mailLive` is `false` and the staff screen says so.
+
+The rejection reason staff type is sent verbatim, which is why `decide.php`
+refuses a rejection without one — a decision the applicant cannot understand is
+one they cannot act on.
+
+**`storage/` is not public.** It holds the full text of every email sent, with
+recipients' names, addresses and business details. The directory listing was
+already refused, which is what made it dangerous — it looked protected while a
+direct request for a filename returned **200 and the whole message**.
+`storage/.htaccess` now denies everything; verified 200 → 403.
+
+---
+
+### GET `b2b/list.php`
+
+Requires `b2b.review`.
+
+**Query:** `page`, `limit`, `search` (business, applicant or email), `status`
+(`pending`/`approved`/`rejected`).
+
+---
+
+### POST `b2b/decide.php`
+
+Requires `b2b.review`.
+
+**Body:** `{ "app_id": "APP-2026-008", "decision": "approved"|"rejected",
+"tier": "Bronze"|"Silver"|"Gold", "reason": "…" }`
+
+`app_id` is the human-facing `app_id_code`, not the numeric primary key.
+
+Approving is a **two-table change in one transaction**: the application is
+settled and the applicant's customer record is promoted to `retailer`, which is
+what unlocks wholesale pricing and credit terms elsewhere. A rejection requires
+`reason` — the applicant is told it, so "no reason given" is not an option the
+endpoint offers.
+
+**A decision is final.** Re-deciding a settled application answers 409. Silently
+changing someone's commercial terms after they have been notified is not an
+operation this exposes; issue a new application instead.
+
+**An approval that would produce an account nobody can enter is refused (409).**
+The promotion fills the customer's credentials from the application with
+`COALESCE`, which keeps whatever is already there — so when the customer row has
+`password` NULL *and* the application carries none, both branches do nothing and
+a retailer is promoted with no way in. Nothing said so. That became reachable
+when applications from signed-in customers were allowed to omit username and
+password, because a signed-in customer was assumed to already have one; a
+staff-created record has not (see `canSignIn` under `customers/list.php`).
+
+Checked **before** the transaction, so the application stays pending. The
+message names the fix: the applicant registers at the storefront with that
+email, which sets a password and **claims the existing row** (the claim path in
+`shop/register.php`), after which approval works unchanged.
+
+A set-password link was the alternative and was not built: it needs a token
+table, an expiry, a public claim page and mail that is allowed to fail, none of
+which exists here, and inventing all four inside an approval endpoint would be
+the largest untested surface in the change. The claim path already does the job
+and the applicant controls it.
+
+**Errors:** 404 unknown application · 409 already decided · 422 unknown
+`decision`, missing `tier` on approval, or missing `reason` on rejection.
+
+---
+
+## Batches
+
+### POST `batches/save.php`
+
+Requires `batches.manage`. Omit `id` to create.
+
+**Body:** `{ "id"?, "lot_code", "product_id", "harvest_date",
+"production_date", "expiry_date", "total_qty", "quality_grade", "lab_status",
+"qa_inspector", "notes" }`
+
+**Registering a batch does not add its quantity to product stock.** Stock moves
+only through `inventory/adjust.php`, which records a reason and writes an audit
+row. A batch is the provenance record for units, not the act of receiving them —
+doing both here would double-count every restock that opens a lot.
+
+**`total_qty` is not editable on update.** `remaining_qty` is derived from it by
+every disposal and sale recorded against the lot, so rewriting the original
+quantity would make those movements stop adding up.
+
+Lot codes are the traceability key a customer types into the public lookup, so a
+duplicate answers 409 rather than making that lookup ambiguous. Setting
+`lab_status` to `failed` while units remain in stock succeeds but says so in the
+audit note — the units are on a shelf and somebody has to pull them.
+
+**Errors:** 404 unknown batch on update · 409 duplicate lot code · 422 expiry on
+or before production date, harvest after production, unknown product.
+
+---
+
+## Landing page content
+
+### GET `content/get.php`
+
+**Public** — no session. Feeds the storefront's About/Vision/Mission panels,
+contact block, FAQ accordion, hero slides and featured products.
+
+Returns `{ about, vision, mission, contact, faqs: [{q,a}], hero: [{title,img}],
+featured: [productId] }`. `hero[].img` is a data URL or `""`; the storefront
+supplies its own gradient panels when empty.
+
+---
+
+### POST `content/save.php`
+
+Requires `landing.manage`.
+
+**Body:** `{ "about"?, "vision"?, "mission"?, "contact"?: {…}, "faqs"?: [{q,a}] }`
+
+**Only the keys present in the request are written**, so saving one panel cannot
+blank the others — a partial form post is the normal case, not an error. FAQs are
+the exception: they are an ordered list, so supplying them replaces the set
+wholesale, inside a transaction.
+
+---
+
+## Customers
+
+### POST `customers/save.php`
+
+Requires `users.manage`. Omit `id` to create.
+
+**Body, create:** `{ "name", "email", "contact", "status" }`
+**Body, update:** `{ "id", "status" }` — plus `name`, `email` and `contact`,
+which must **match what is stored**.
+
+**An administrator cannot change a customer's name, email or contact number.**
+A customer record belongs to the customer; they maintain those three fields
+themselves through Profile (`shop/profile.php`). The update path refuses a
+different value in any of them with 422.
+
+The reasoning is the same one that keeps passwords out of this file: whoever
+controls the email address controls the password reset, so an administrator who
+can change it can take the account. **A customer's password is never touched
+here** either — credentials are set through `shop/register.php`.
+
+**Refused, not ignored.** Silently writing the stored value back would leave the
+caller believing the rename worked. Round-tripping the *current* values is fine
+and is not an error — a client that posts back a record it just read has changed
+nothing.
+
+The Edit button that needed this has been removed from Customer Accounts in the
+portal. That removal is presentation; this refusal is the enforcement.
+
+`status` accepts `active` or `archived`. **Retailer status cannot be granted
+here** — it comes from approving a B2B application, which reviews the business,
+records a tier and says why. Retailer status unlocks wholesale pricing and credit
+terms, so allowing it here would let anyone holding `users.manage` hand out trade
+credit with no application and no audit trail.
+
+Posting `status: "retailer"` for a customer who already holds it is accepted;
+promoting a customer who does not answers 422.
+
+**Archiving is not done here** — see `customers/archive.php` below. It used to
+be: the portal posted the whole record back with `status: "archived"` to change
+one field, which is the only reason this endpoint ever accepted identity fields
+on an update.
+
+**Errors:** 404 unknown customer · 409 duplicate email · 422 missing name,
+malformed email, malformed contact number, or an attempt to change name, email
+or contact on an existing customer.
+
+---
+
+### POST `customers/archive.php`
+
+Requires `users.manage`.
+
+**Body:** `{ "id": "cus-01", "archived": true }`
+
+Changes `customers.status` and **nothing else** — there is no name, email or
+contact parameter to send. An absent `archived` flag is a 400, never read as
+"restore", the same rule `products/archive.php` and `users/archive.php` apply.
+
+**A restore does not go to `active`.** `users/archive.php` can hardcode that
+because `users.status` is only ever `active` or `archived`. Here the same column
+also carries `retailer`, so archiving overwrites the answer to *what kind of
+customer is this* with the answer to *is this account open*. Restoring a
+retailer to `active` would strip their wholesale pricing and credit terms with
+nothing saying so — they would find out at checkout, when Net 30 stopped being
+offered.
+
+So the previous value is **recorded**, in `customers.status_before_archive`
+(migration 008), and read back on restore. Recording beats inferring: "do they
+have an approved `b2b_applications` row?" is wrong in both directions — a
+partnership that was later ended still has its approved row, and a retailer
+granted by any future route that does not write an application would not be
+restored at all.
+
+A row archived before migration 008 has `NULL` there and comes back as `active`.
+That under-grants rather than over-grants, which is the right way round for a
+value that unlocks trade credit.
+
+**Errors:** 400 missing `archived` · 404 unknown customer · 409 already in the
+requested state.
+
+---
+
+## Notifications
+
+### GET `notifications/list.php`
+
+Any signed-in staff member.
+
+**Query:** `page`, `limit` (default 50), `type` (`new-order`/`payment`/`hold`/
+`completed`/`return`/`inventory`/`audit`), `priority`
+(`critical`/`warning`/`info`), `unread_only`.
+
+An unknown `priority` is a 400, not an empty list: "nothing is critical" and
+"you spelled the level wrong" must not look the same.
+
+#### Order
+
+`is_read ASC, FIELD(priority,'critical','warning','info') ASC, created_at DESC,
+id DESC` — unread first, then urgency, then newest. It comes from
+`Notify::orderBy()` and is the order the bell, the dashboard's System
+Notifications panel and the Notifications module all render in.
+
+**Unread outranks urgency deliberately.** Read state is shared across the team
+(see `notifications/read.php`), so "read" means somebody handled it. A critical
+alert already dealt with should not sit above the thing that just happened.
+
+It was `created_at DESC` alone, which made every notification equal: a batch
+that had already expired sorted underneath an order somebody completed an hour
+later.
+
+#### Response
+
+Each row carries `priority`. It is a **stored column**, written by
+`api/core/Notify.php` at the moment the event happens — not derived in the
+browser. Three screens read these rows and a rule living in one screen's script
+is a rule the other two do not have; it also has to survive paging, and a client
+cannot order rows it has not been sent. Migration `010-notification-priority.sql`
+carries the reasoning and the type→level mapping.
+
+#### Meta
+
+| Field | |
+|---|---|
+| `unread` | whole-set unread count — what the bell badge shows. Counting the current page would make the badge shrink as you paged forward |
+| `unreadByPriority` | `{critical, warning, info}`, every key always present. The bell shows the total count and marks itself separately when `critical > 0`, so a glance at the topbar separates "three things happened" from "something is on fire" |
+| `levels` | the three levels in display order |
+| `priorityMap` | the whole type→level table. The portal derives some notifications in the browser from live records (expiring batches, failed QA lots, retailer payment schemes); those have no row here but appear in the same lists and must sort on the same scale. Serving the map means the browser keeps no second copy to drift from |
+
+#### This endpoint writes
+
+It calls `Notify::syncExpiredBatches()` before reading. A batch expiring is the
+one Critical event with no user action to hang a producer off, and this project
+has no scheduler — XAMPP ships no cron and the MySQL event scheduler is off by
+default. The rows are materialised lazily instead, keyed on `CONCAT('nx-', b.id)`
+with a `NOT EXISTS` guard, so a batch gets one row however many times this runs
+and marking it read does not resurrect it. `shop/cart.php` already establishes
+the pattern of a GET reconciling what it is about to return.
+
+`created_at` is the **expiry date**, not the moment it was noticed — stamping it
+with now would make an old problem look new and reshuffle the feed on every page
+load.
+
+The 30-day "expiring soon" Warning is deliberately **not** stored. It is a
+countdown that has to be recomputed against today, nothing is wrong yet, and it
+stays derived in the browser.
+
+#### Producers
+
+Every `INSERT INTO notifications` goes through `Notify::create()`, which reads
+the level from one table. There is deliberately no way to pass a level in: a
+caller able to override it is a caller able to disagree.
+
+| Site | Type | Level |
+|---|---|---|
+| `shop/checkout.php` | `new-order` | Warning |
+| `shop/confirm-received.php` | `completed` | Info |
+| `b2b/apply.php` | `audit` | Info |
+| `Stock::sell()` (`api/core/Stock.php`) | `inventory` | Critical |
+| `Notify::syncExpiredBatches()` | `inventory` | Critical |
+
+`Stock::sell()` is new and closes a gap: nothing created a notification when
+stock crossed into critical or out-of-stock, so the whole Critical level was
+empty of the events it exists for. It fires on the **transition** into a band,
+not on every sale of an already-critical product — comparing
+`Inventory::levelForProduct()` on either side of the movement — because a bell
+that rings for every jar sold is a bell nobody reads.
+
+---
+
+### POST `notifications/read.php`
+
+Any signed-in staff member.
+
+**Body:** `{ "id": "n01" }` or `{ "all": true }`
+
+**Read state is shared, not per-user.** This is one operations team working one
+queue, and a notification a colleague has already dealt with should not still be
+shouting at everyone else. Per-user read state needs its own table and is a
+different product decision.
+
+---
+
+## Payments
+
+### GET `payments/list.php`
+
+Requires `payments.manage`. Retailer credit accounts.
+
+**Query:** `page`, `limit` (default 10).
+
+`meta` carries whole-set figures, not page ones: `penaltyRate` (from `settings`),
+`outstanding` (total owed including penalties) and `overdueCount`. Penalties are
+computed server-side from the stored rate and each account's due date — the
+client displays the figure, it does not decide it.
+
+---
+
+### POST `payments/settle.php`
+
+Requires `payments.manage`.
+
+**Body:** `{ "id": "pay-01", "paid": true, "note"?: "…" }`
+
+**The amount written to the audit trail is computed here**, penalty included,
+rather than taken from the request. A client that could name the settled amount
+could settle a ₱12,800 debt for ₱1.
+
+---
+
+## Reports
+
+### GET `reports/sales.php`
+
+Requires `sales.report`.
+
+**Query:** `range` (`today`/`week`/`month`/`year`/`custom`), `from`, `to`.
+
+**Cancelled orders are excluded from revenue.** The client used to sum the loaded
+orders array with no status filter, so every period containing a cancellation was
+overstated. Aggregation happens in SQL, which also means the figures stay right
+once the order list is paged and the browser no longer holds every row.
+
+Returns `meta.totals` — `orders`, `revenue`, `average`, `units`,
+`walkinRevenue`, `onlineRevenue` — plus the resolved `range`, `credit`,
+`refunds`, `series` and `topProducts`.
+
+**`byMethod` is gone.** The response used to carry a payment-method split, fed
+by two extra `GROUP BY` queries. The panel that showed it has been removed from
+the Sales Report and nothing else read the key, so the queries went with it
+rather than running on every report load for a field no caller looks at. The
+Method column of `reports/transactions.php` answers the same question per
+order, and Payment Schemes answers it for Net accounts.
+
+---
+
+### GET `reports/top-products.php`
+
+Requires **any** of `inventory.report`, `inventory.manage`, `sales.report`.
+
+**Query:** `range` (any name `Dates::ranges()` offers, default `week`, or
+`custom` with `from`/`to`), `limit` (1–20, default 5).
+
+What sold most in the period, **by units**, with what is left on the shelf. It
+exists beside `reports/sales.php` because the Sales Report is behind
+`sales.report` — a permission an inventory user does not hold and should not,
+since that response also carries revenue, average order value and what is owed
+on Net accounts. **No money appears in this payload.**
+
+Rows come from `Revenue::productTotals()`, the same method that produces the
+Sales Report's Best Sellers panel, over the same rows, dated the same way —
+only the `ORDER BY` differs. The period comes from `Dates::range()`, the same
+resolver. The two screens therefore cannot disagree about what "this week"
+covers or about what sold in it.
+
+`stock`, `stockLevel`, `stockLabel` and `daysCover` come from the same
+three-layer stack as `products/list.php`, so a product's band here is the band
+the Inventory Report shows for it.
+
+```json
+{ "id": "bg-bayo", "name": "Ba-yo (Bangus & Tuyo)", "units": 58,
+  "stock": 33, "stockLevel": "ok", "stockLabel": "Safe", "daysCover": null }
+```
+
+`meta`: `range` (`name`, `from`, `to`), `limit`, `windowLabel`.
+
+---
+
+## Returns
+
+### GET `returns/list.php`
+
+Requires `orders.returns`.
+
+**Query:** `page`, `limit`, `search`, `status`.
+
+---
+
+### POST `returns/advance.php`
+
+Requires `orders.returns`.
+
+**Body:** `{ "id": "RET-…", "status": "…", "note"?, "refund_amount"?,
+"refund_method"?, "rejected_reason"? }`
+
+Same principle as `orders/status.php`: `RETURN_STATUS_STEP` in `engine.js`
+decides which buttons appear, and that is a rendering decision. **The pipeline is
+enforced here.** A return that jumps straight to `processed` skips eligibility
+assessment and approval — which is how a refund gets paid on a claim nobody
+checked. Illegal transitions answer 409.
+
+---
+
+## Settings
+
+### POST `settings/save.php`
+
+**Permission is per key**, and only the ones actually present in the body are
+demanded. Asking for every permission on every request would mean the union of
+them, which is a role nobody holds — and a cashier who may record a settlement
+has no business redefining what "Critical" means.
+
+**Body:** any subset of the keys below.
+
+| Key | Permission | Range | Notes |
+|---|---|---|---|
+| `penalty_rate` | `payments.manage` | 0–100 | % per month. |
+| `velocity_window_days` | `inventory.manage` | 7–730 | Trailing window sales rate is measured over. |
+| `restock_lead_days` | `inventory.manage` | 1–365 | How long a restock takes. Cover below this is `crit`; below twice it is `warn`. |
+| `movement_fast_per_month` | `inventory.manage` | > 0 | Must exceed the slow threshold. |
+| `movement_slow_per_month` | `inventory.manage` | > 0 | |
+| `stock_floor_critical` | `inventory.manage` | ≥ 0 | The absolute floor. `warn` floor is three times it. |
+
+The penalty rate previously lived only in `adminState.penaltyRate` in the
+browser, so it reset on every reload and the penalties shown were computed from
+a number nobody had saved. The inventory thresholds were worse: they were
+constants in two files that had to be edited together.
+
+**Only known keys are writable.** A settings endpoint that accepts arbitrary
+key/value pairs from the client is a way to write anything into the table.
+
+**Validated whole, then written.** A request setting the fast threshold below
+the slow one fails entirely rather than leaving one of the two applied — the
+bands would overlap and "slow moving" would become unreachable.
+
+**An unchanged value is not rewritten**, so the audit log records decisions
+rather than form submissions.
+
+**Errors:** 422 out-of-range, non-numeric, non-integer where a whole number is
+required, or fast ≤ slow · 400 when the body contains no recognised setting.
+
+---
+
+## Storefront — customer accounts
+
+### POST `shop/login.php`
+
+**Public.** CSRF-exempt, like `auth/login.php` — there is no session to protect
+yet.
+
+**Body:** `{ "email", "password" }`
+
+Separate from `auth/login.php`, which is staff only. **A customer session grants
+no permissions and satisfies no `Rbac` check.** The two identities live in
+different session keys (`eb_customer_id` vs `eb_user_id`) precisely so that a
+shopper can never be mistaken for a staff member by code that only asks "is
+somebody signed in?".
+
+A wrong password and an unregistered address return the identical message, with a
+dummy `password_verify()` on the miss so the two take the same time. A seeded
+customer whose `password` is `NULL` cannot sign in at all until they register.
+
+**Errors:** 401 wrong credentials or no password set · 403 archived account ·
+429 throttled after repeated failures.
+
+---
+
+### POST `shop/register.php`
+
+**Public.** CSRF-exempt.
+
+**Body:** `{ "name", "email", "password", "contact"?, "address" }`
+
+**The address is now saved.** This line documented `"address"?` for as long as
+the endpoint existed, the Create Account form sent it and required it — and
+nothing read it. Every address typed at sign-up was discarded, and the new
+customer met an empty checkout. It is the shared object (see **Philippine
+addresses**) in `location` mode: region through barangay required, as the form
+always required an address; street and ZIP optional, as its old box never asked
+for them. It is resolved **before** the account is written, so a half-picked
+address cannot leave a half-made account.
+
+**An email matching a seeded customer claims that record** rather than creating a
+duplicate, so their existing order history follows them — the response sets
+`claimedExistingRecord` so the page can say "welcome back". An address that
+already has a password answers 409 and points at signing in, which reveals only
+what a failed sign-in would.
+
+Signs the customer straight in on success.
+
+---
+
+### GET `shop/me.php`
+
+Requires a customer session. Returns the signed-in customer and a CSRF token.
+401 when there is none — the storefront treats that as "signed out" and clears
+its cached copy.
+
+**`shop/login.php` and `shop/register.php` return `status` too**, and for the
+same reason. They did not, and `signIn()` in `site.js` built `state.auth`
+without it while the page-load restore path built it *with* it — two shapes for
+one object. A retailer who signed in through the modal had
+`state.auth.status === undefined` for the whole of that session, so the Payment
+Schemes link stayed hidden and the credit tiles at checkout never rendered.
+Reloading fixed it, which is what made it look intermittent rather than broken.
+`state.auth` is now built by one helper, `setAuthState()`, from whichever
+endpoint answered.
+
+---
+
+### GET `shop/cart.php`
+
+**Requires a customer session.** The signed-in customer's saved cart.
+
+**Returns:** `{ items: [...], count, changes: [...] }`. Each item carries the
+quantity *and* the product fields the drawer draws with — `name`, `price`,
+`image`, `tint`, `cat`, plus the same `stock` / `stockLevel` / `stockLabel`
+trio `shop/products.php` sends, worded by the same `Inventory::shopLabel()`.
+The storefront can therefore render the cart from this response alone, without
+waiting on the catalogue request to resolve first — and the drawer's quantity
+stepper caps at the same number the product card capped at, rather than falling
+back to the flat 99.
+
+**The cart lives on the account, not in the browser.** `state.cart` in
+`assets/js/public/site.js` was a plain in-memory array: a reload emptied it, a
+sign-out emptied it, and a second device never saw it. `#cart-badge` rendering
+`0` was the honest answer, not a display defect. Storage is `cart_items`, added
+by `db/migrations/007-persistent-cart.sql`.
+
+**Not `localStorage`, for the reason recorded above `_savedAuth` in `site.js`.**
+The signed-in flag used to be restored from `localStorage`, which made typing
+the right JSON into the console a login; it is deliberately not restored any
+more. A cart in `localStorage` is the same mistake one size down — per-browser
+rather than per-account, so it misses the device change that is most of the
+point, and shared by everyone who uses the machine.
+
+**Reconciles against the current catalogue, and writes the reconciliation
+back.** A saved cart can sit for a week; the catalogue does not. A line whose
+product has been archived or gone out of stock is dropped, and a line whose
+quantity now exceeds stock is clamped to it. `shop/checkout.php` already
+re-checks both, but the shopper meets that refusal at the last step, after
+filling in an address. The changes are persisted rather than only applied to
+the response — otherwise the next load would put them back and the same line
+would have to be fixed twice.
+
+`changes` reports every drop and clamp with the product name and a reason, so
+the page can say what happened. A cart that quietly loses a line is worse than
+the stale line was.
+
+Scoped to the session customer throughout. There is no parameter that could
+carry an id.
+
+---
+
+### POST `shop/cart-save.php`
+
+**Requires a customer session.** Upserts **one** cart line.
+
+**Body:** `product_id`, `qty` (0–99).
+
+**`qty: 0` deletes the row.** That is the whole delete API. A separate
+`cart-remove.php` would carry the same auth, the same scoping and the same
+validation and differ only in the SQL verb, and the storefront already treats
+"none of this" as a quantity — pressing minus at 1 removes the line.
+
+**One line, not the whole cart.** A "replace my cart with this array" endpoint
+is the obvious alternative and is worse: every add and every stepper click
+would post the entire cart, so two tabs open on the same account would each
+overwrite the other with whatever they last saw. A per-line upsert means two
+tabs editing different products both land.
+
+`INSERT … ON DUPLICATE KEY UPDATE` on the `(customer_id, product_id)` primary
+key, so the database decides insert-or-update atomically and two requests
+racing on the same line cannot both choose insert.
+
+Refuses an archived or out-of-stock product, and a quantity above current
+stock, with the count — saving a line that can never be bought only moves the
+disappointment to checkout, and `shop/cart.php` would strip it on the next
+load, which reads as the cart losing things by itself.
+
+**`customer_id` in the body is refused, not ignored** — the same rule
+`shop/checkout.php` applies. A caller that believes it can name the account
+must be told it cannot.
+
+**99 is written down three times**: `CART_MAX_QTY` in `site.js`, the validation
+here, and the `chk_cart_qty` CHECK on the table. The client's copy stops the
+request being made, this one stops the request, and the CHECK stops a
+hand-written `INSERT`.
+
+The client writes optimistically — the drawer redraws first and this call
+follows — and rolls the line back with a toast if it is refused.
+
+---
+
+### GET `shop/dashboard.php`
+
+Requires a customer session. Everything the account dashboard draws, in **one**
+request: order counts, the tracking timeline, recent orders and payment history.
+
+**Why one endpoint and not four.** Assembled from the existing endpoints this
+would be four round trips (`my-orders` twice over, `my-payments`, `profile`),
+four loading states to choreograph, and four ways for the page to be
+half-drawn. It would also give a *wrong* order count — `my-orders.php` pages
+its results, and a count taken from a page is a count of that page.
+
+It does **not** replace `my-orders.php` or `my-payments.php`. Those are the
+full, paged, filterable lists; this returns the five most recent of each plus
+the totals.
+
+**`counts`** — `pending`, `active`, `total`, `lifetimeSpend`.
+
+`pending` and `active` are **disjoint**, so the two tiles never count the same
+order twice: `pending` is `pending` + `on-hold` (placed, not moving yet, still
+cancellable), `active` is `accepted` + `shipping` + `delivered`. `delivered`
+stays active because the order is not finished until it auto-completes an hour
+later. `lifetimeSpend` uses `Revenue::clause()` — the one revenue definition
+(D2), not a second opinion about what counts.
+
+**`tracking`** — the most recent unfinished order, or `null`. Carries a `steps`
+array (`pending → accepted → shipping → delivered → completed`) with `done` and
+`now` already decided. The sequence is sent from the server so it lives beside
+the statuses it describes; a step order hardcoded in a template is a step order
+nobody updates when a status is added. `on-hold` is reported through `held`
+rather than as a step — it is a pause on the first one, not a stage the order
+passes through.
+
+**`payments` + `paymentsKind`** — two different things behind one heading:
+
+| | `paymentsKind` | contents |
+|---|---|---|
+| Retailer | `credit` | `payment_accounts` rows: scheme, balance, due date, penalty, standing |
+| Regular customer | `orders` | what they actually paid: method, reference number, amount, **and whether staff have verified it** |
+
+A regular customer has no credit accounts and never will, so the retailer query
+would return an empty list for ever. Their payment history is the one thing the
+site could not previously answer: *did my GCash transfer go through?*
+
+`credit` is `null` for a regular customer rather than an object of zeroes — a
+zeroed summary reads as "you owe nothing on the terms you hold", which is a
+different and wrong statement.
+
+**Credit standing is `Payments::accountStanding()`** — the same call
+`shop/my-payments.php` and portal `payments/list.php` make. A retailer shown a
+total here that differs by a peso from their Payment Schemes page will not
+assume a rounding rule.
+
+Every query is bound to the session's customer id; there is no parameter that
+could carry one.
+
+---
+
+### GET `shop/my-orders.php`
+
+Requires a customer session.
+
+**Takes no id parameter, by design.** The order list is scoped to
+`$_SESSION['eb_customer_id']` and nothing else. An `?id=` here would be a broken
+object level authorisation hole: change the number, read somebody else's orders.
+
+---
+
+### GET `shop/trace.php`
+
+**Public** — the batch traceability lookup a customer runs from the product
+label.
+
+**Query:** `code` (lot code).
+
+Returns `{ found, code, product, category, harvestDate, productionDate,
+expiryDate, qualityGrade, labStatus, labPassed, origin }`. Deliberately exposes
+no stock figures, costs or customer data — it answers "what is in this jar", not
+"how is the business doing".
+
+**An unknown code answers 200 with `found: false`, not 404.** "We have no record
+of that code" is a legitimate answer to a legitimate question, and the page
+renders it as a result rather than as an error — a 404 would send the client
+down its failure path for a normal outcome. A missing `code` parameter *is* an
+error and answers 422.
+
+---
+
+## System
+
+### GET `system/dates.php`
+
+Any signed-in staff member. No permission gate: it exposes the calendar, not
+business data, and every portal screen needs it.
+
+Returns `{ today, timezone, ranges: {name: {from, to}}, mysqlAgrees, drift }`.
+
+**The client formats dates; it does not compute them** (D1). Range boundaries
+used to be worked out in JavaScript *and* in PHP, in parallel, and the two
+disagreed: `strtotime('monday this week')` against
+`d.setDate(d.getDate() - d.getDay())` put the start of "This Week" a day apart,
+so the Sales Report headline and the table beneath it measured different
+periods. `api/core/Dates.php` is now the only place a range is defined, and this
+endpoint hands the answer to the browser at start-up.
+
+Ranges offered: `today`, `yesterday`, `week`, `lastweek`, `month`, `lastmonth`,
+`year`, `lastyear`, `all`. **The week begins Monday** — ISO, and what the server
+already used.
+
+`mysqlAgrees` compares PHP's date under Asia/Manila with MySQL's `CURDATE()`.
+They should match, but any endpoint mixing `CURDATE()` with a PHP date straddles
+a day boundary if they do not, so it is reported rather than assumed. When it is
+false the portal logs the drift and warns the operator.
+
+---
+
+## Permissions
+
+The 17 permission keys, from the `permissions` table. A role's grants live in
+`role_permissions`, which the Roles & Permissions screen edits — so changing a
+grant there changes real access, immediately, without a code change.
+
+| Area | Keys |
+|---|---|
+| Maintenance | `users.manage`, `b2b.review`, `landing.manage`, `products.manage` |
+| System | `rbac.manage` |
+| Inventory | `inventory.report`, `inventory.manage` |
+| Reports | `sales.report`, `batches.manage` |
+| Finance | `payments.manage`, `transactions.view`, `audit.view` |
+| Point of Sale | `pos.use` |
+| Online Orders | `orders.view`, `orders.accept`, `orders.status`, `orders.returns` |
+
+A role flagged `is_system` (Super Admin) holds every permission unconditionally
+and owns no `role_permissions` rows.
+
+---
+
+## Writing a new endpoint
+
+```php
+<?php
+declare(strict_types=1);
+require __DIR__ . '/../core/bootstrap.php';
+
+Response::requireMethod('POST');
+$user = Rbac::require('products.manage');      // auth + permission, or it stops here
+
+$in = Response::input();                        // JSON body, or form-encoded
+$data = Validate::check($in)
+    ->required('name', 'Product name')
+    ->decimal('price', 'Price', 0)
+    ->int('stock', 'Stock', 0)
+    ->values();                                 // 422 with field errors, or clean values
+
+Database::run('INSERT INTO products (name, price, stock) VALUES (?, ?, ?)',
+              [$data['name'], $data['price'], $data['stock']]);
+
+Response::created(['id' => Database::pdo()->lastInsertId()]);
+```
+
+Rules, all non-negotiable:
+
+- **Prepared statements only.** No string-concatenated SQL, ever. Where an
+  identifier genuinely cannot be bound (sort columns, table names), resolve it
+  through a whitelist.
+- `Rbac::require()` before any work, not after.
+- Validate everything from the client, including ids and prices.
+- Never echo warnings or `var_dump` into the body — it corrupts the JSON.
+  `bootstrap.php` buffers output and converts warnings to exceptions to make
+  that hard to do by accident.
+- Compute money server-side.
+
+---
+
+## Front-end client
+
+`assets/js/core/api.js` is the only place in the project that calls `fetch()`.
+It resolves the base path, unwraps the envelope, normalises errors and applies a
+15-second timeout.
+
+```js
+const { data, meta } = await EbApi.get("products/list.php", { page: 1, search: "pesto" });
+
+try {
+  await EbApi.post("products/save.php", { name, category_id, price });
+} catch (err) {
+  if (err.isValidation) showFieldErrors(err.fields);
+  else if (err.isForbidden) toast(err.message);
+  else throw err;
+}
+```
+
+`assets/js/core/session.js` wraps the auth endpoints and caches the current user
+and permissions for the life of the page: `EbSession.bootstrap()`,
+`.login(email, password, portalRole)`, `.logout()`, `.user`, `.can(permission)`.
+
+**Note on module format:** these are classic scripts publishing `window.EbApi`
+and `window.EbSession`, not ES modules. `engine.js` and its three companions are
+classic scripts sharing globals, and an `import` cannot reach them. Converting
+all four is Phase 5's work; it was not a prerequisite for getting passwords out
+of the browser. The surface is deliberately import-shaped so the change is one
+line per caller.

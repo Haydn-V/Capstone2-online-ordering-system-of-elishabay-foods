@@ -1,0 +1,259 @@
+/* ===== BECOME A RETAILER PARTNER (layered on styles.css) ===== */
+
+.partner-hero {
+  background: var(--bg);
+  padding-top: calc(var(--nav-h) + clamp(28px,4vw,44px));
+  padding-bottom: clamp(36px,5vw,52px);
+  text-align: center;
+}
+.partner-hero .breadcrumb {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-family: "Montserrat", sans-serif;
+  font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 24px;
+}
+.partner-hero .breadcrumb a { color: var(--text-muted); transition: color var(--t); }
+.partner-hero .breadcrumb a:hover { color: var(--red); }
+.partner-hero .breadcrumb .sep { opacity: .5; }
+
+.partner-eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 18px 8px 14px; margin-bottom: 22px;
+  border-radius: var(--r-pill);
+  background: var(--gold-dim); color: color-mix(in srgb, var(--gold) 65%, #3a2405);
+  font-family: "Montserrat",sans-serif; font-size: var(--fs-sm); font-weight: 700;
+}
+.partner-eyebrow svg { width: 15px; height: 15px; flex: none; }
+
+.partner-title {
+  font-family: "Montserrat","Karla",sans-serif;
+  font-size: clamp(2.1rem,4.6vw,3.2rem); font-weight: 800; line-height: 1.2;
+  letter-spacing: -.01em;
+  color: var(--text); margin: 0 0 18px;
+  max-width: 32ch; margin-inline: auto;
+}
+.partner-sub {
+  font-size: var(--fs-lg); color: var(--text-muted); line-height: 1.78;
+  max-width: 58ch; margin: 0 auto;
+}
+
+/* Stepper — stays on one line; scrolls horizontally only if truly cramped */
+.partner-stepper {
+  display: flex; align-items: center; justify-content: center;
+  gap: clamp(6px,1.4vw,16px); flex-wrap: nowrap;
+  max-width: var(--maxw); margin: 36px auto 0; padding-inline: 16px;
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+}
+.ps-step { display: flex; align-items: center; gap: 10px; }
+.ps-num {
+  flex: none; width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: "Montserrat",sans-serif; font-size: var(--fs-sm); font-weight: 700;
+  background: var(--border-lift); color: var(--text-muted);
+  transition: background var(--t), color var(--t);
+}
+.ps-step.active .ps-num { background: var(--red); color: #fff; }
+.ps-step.done .ps-num { background: var(--ok); color: #fff; }
+.ps-label {
+  font-family: "Montserrat",sans-serif; font-size: var(--fs-xs); font-weight: 700;
+  letter-spacing: .02em; color: var(--text-muted); white-space: nowrap;
+}
+.ps-step.active .ps-label { color: var(--red); }
+.ps-step.done .ps-label { color: var(--ok); }
+.ps-rule { width: clamp(24px,4vw,56px); height: 1px; background: var(--border-lift); flex: none; }
+
+/* Two-column layout, wider than the default container. */
+.partner-section { background: var(--bg-soft); }
+.partner-container { max-width: 1360px; }
+/* More width goes to the form, and the sidebar is sticky so it stays beside the form while scrolling. */
+.partner-layout {
+  display: grid; grid-template-columns: .62fr 1.38fr;
+  gap: clamp(32px,4vw,56px); align-items: start;
+}
+.partner-aside {
+  position: sticky;
+  /* Clear of the fixed navbar, with a little air. */
+  top: calc(var(--nav-h) + 20px);
+  /* If the sidebar is taller than the window it scrolls on its own. */
+  max-height: calc(100vh - var(--nav-h) - 40px);
+  max-height: calc(100dvh - var(--nav-h) - 40px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Sidebar */
+.partner-sidebar-head {
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--red); margin: 0 0 6px;
+}
+.partner-sidebar-head::after {
+  content: ""; display: block; width: 24px; height: 2px; margin-top: 8px;
+  background: var(--gold); border-radius: 2px;
+}
+.partner-benefit { display: flex; gap: 16px; margin-top: 26px; }
+.pb-icon {
+  flex: none; width: 44px; height: 44px; border-radius: 50%;
+  background: var(--surface); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--red); box-shadow: var(--shadow-sm);
+}
+.pb-icon svg { width: 19px; height: 19px; }
+.partner-benefit b { display: block; font-size: var(--fs-lg); color: var(--text); margin-bottom: 5px; }
+.partner-benefit p { font-size: var(--fs-md); color: var(--text-muted); line-height: 1.68; margin: 0; }
+
+.partner-callout {
+  margin-top: 32px; padding: 20px 22px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.partner-callout-head {
+  display: flex; align-items: center; gap: 9px;
+  font-size: var(--fs-md); font-weight: 700; color: var(--text); margin-bottom: 10px;
+}
+.partner-callout-head svg { width: 17px; height: 17px; color: var(--red); flex: none; }
+.partner-callout p { font-size: var(--fs-md); color: var(--text-muted); line-height: 1.75; margin: 0; }
+.partner-callout a { color: var(--red); font-weight: 700; }
+
+/* Form card */
+.partner-form-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-xl); box-shadow: var(--shadow-md);
+  padding: clamp(30px,4.5vw,46px);
+}
+/* h3/h4 use the plain sans font so the form is easy to scan. */
+.partner-form-title {
+  font-family: "Montserrat","Karla",sans-serif;
+  font-size: var(--fs-3xl); font-weight: 700; color: var(--text); margin: 0 0 10px;
+}
+.partner-form-sub { font-size: var(--fs-md); color: var(--text-muted); line-height: 1.65; margin: 0 0 30px; }
+
+/* One vertical rhythm like the checkout: 20px under every field and hairline-separated sections; .pf-row has no row gap (only an 18px column gap) so stacked halves do not double up. */
+.pf-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+
+/* The separator belongs to the credentials section wrapper, so it hides with it for signed-in applicants. */
+/* Numbered sections: a divider and a header between each group. */
+#partner-form { counter-reset: pfsec; }
+.pf-sec { counter-increment: pfsec; padding: 26px 0 6px; border-top: 1px solid var(--border); }
+.pf-sec:first-of-type { border-top: 0; padding-top: 8px; }
+.pf-sec-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
+.pf-sec-num {
+  flex: none; width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: color-mix(in srgb, var(--gold) 16%, transparent); color: var(--gold);
+  font: 700 var(--fs-sm) "Montserrat", sans-serif;
+}
+.pf-sec-num::before { content: counter(pfsec); }
+.pf-sec-title {
+  margin: 0; font: 700 var(--fs-base) "Montserrat", sans-serif; letter-spacing: .02em; color: var(--text);
+}
+.pf-sec-desc { margin: 3px 0 0; font-size: var(--fs-sm); color: var(--text-muted); }
+#partner-form > .btn-block { margin-top: 18px; }
+.pf-group-label {
+  font-family: "Montserrat","Karla",sans-serif;
+  font-size: var(--fs-sm); font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--red); margin: 0 0 12px;
+}
+
+/* Marks a field prefilled from the saved profile (still editable; the marker goes once touched). */
+.auth-input.is-prefilled {
+  border-color: var(--gold);
+  background-image: linear-gradient(0deg, var(--gold-dim), var(--gold-dim));
+}
+.auth-input.is-prefilled:focus { background-image: none; }
+
+/* Shows which account the application will be attached to (only when signed in). */
+.pf-account-note {
+  display: flex; align-items: flex-start; gap: 11px;
+  padding: 13px 15px; margin: 0 0 26px;
+  border: 1px solid var(--gold-line); border-radius: var(--r-md);
+  background: var(--gold-dim);
+  font-size: var(--fs-base); line-height: 1.55; color: var(--text);
+}
+.pf-account-note .pf-account-ic { flex: none; width: 18px; height: 18px; color: var(--gold); margin-top: 2px; }
+.pf-account-note .pf-account-ic svg { width: 18px; height: 18px; display: block; }
+.pf-account-note strong { font-weight: 700; }
+
+/* Larger fields with bold labels; required ones get a red * (theme.js). */
+.partner-form-card .auth-field { margin-bottom: 16px; }
+.partner-form-card .auth-field label {
+  font-size: var(--fs-sm); font-weight: 700; color: var(--text);
+  margin-bottom: 9px;
+}
+.partner-form-card .auth-input { font-size: var(--fs-lg); padding: 15px 14px 15px 44px; }
+.partner-form-card select.auth-input { padding-right: 38px; }
+.partner-form-card .auth-input-icon { width: 18px; height: 18px; }
+.partner-form-card .field-error { font-size: var(--fs-base); }
+
+/* The business address fieldset follows the same spacing, with its legend styled like the checkout's .co-subtitle. */
+.partner-form-card .auth-addr { margin: 0; }
+.partner-form-card .auth-addr-legend {
+  font-size: var(--fs-sm); font-weight: 700; letter-spacing: .02em; text-transform: none;
+  color: var(--text); margin-bottom: 10px;
+}
+
+/* Make EbSelect triggers the same height as the other fields (an extra .ebs class beats EbSelect's later-loaded styles). */
+.partner-form-card .ebs .ebs-trigger {
+  font-size: var(--fs-lg);
+  min-height: 0;
+  padding: 15px 38px 15px 14px;
+}
+/* Except address picker fields, which keep the icon well like other fields (restated here one class deeper). */
+.partner-form-card .addr-picker--auth .ebs .ebs-trigger { padding-left: 44px; }
+
+/* Confirmation panel — mirrors the batch-traceability "verified" result card */
+.partner-confirm {
+  text-align: center; padding: clamp(20px,3vw,30px) 0;
+  animation: pageIn .4s var(--ease) both;
+}
+.partner-confirm-icon {
+  width: 56px; height: 56px; margin: 0 auto 18px; border-radius: 50%;
+  background: rgba(24,169,87,.12); color: var(--ok);
+  display: flex; align-items: center; justify-content: center;
+}
+.partner-confirm-icon svg { width: 28px; height: 28px; }
+.partner-confirm h3 { font-size: var(--fs-xl); font-weight: 700; color: var(--text); margin: 0 0 10px; }
+.partner-confirm p { font-size: var(--fs-base); color: var(--text-muted); line-height: 1.7; max-width: 46ch; margin: 0 auto 24px; }
+
+@media (max-width: 860px) {
+  /* minmax(0, …) so the column can shrink on a 360px phone. */
+  .partner-layout { grid-template-columns: minmax(0, 1fr); }
+  .pf-row { grid-template-columns: minmax(0, 1fr); }
+  .ps-label { display: none; }
+  /* One column: the sidebar is no longer sticky or height-limited. */
+  .partner-aside {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+  }
+}
+
+/* Phones: the form comes first, with "Why Partner With Us?" after it. */
+@media (max-width: 640px) {
+  .partner-aside { order: 2; }
+  #partner-form-wrap { order: 1; }
+}
+
+/* Phones: add side padding to the hero. */
+@media (max-width: 640px) {
+  .partner-hero { padding: calc(var(--nav-h) + 36px) 22px 32px; }
+  .partner-eyebrow { margin-bottom: 18px; font-size: .8rem; padding: 7px 16px 7px 12px; }
+  .partner-title { font-size: clamp(1.7rem, 7.4vw, 2.1rem); line-height: 1.22; margin-bottom: 14px; }
+  .partner-sub { font-size: 1rem; line-height: 1.65; }
+}
+
+/* Phones: "Wholesale Application Form" on one line — sized to the card width. */
+@media (max-width: 640px) {
+  .partner-form-title { font-size: min(1.45rem, 4.8vw); white-space: nowrap; letter-spacing: -.01em; }
+}
+
+/* Sign-in gate shown in place of the form to a visitor with no account. */
+.pf-gate { text-align: center; padding: 28px 8px 12px; }
+.pf-gate-ic {
+  display: inline-grid; place-items: center; width: 56px; height: 56px; border-radius: 50%;
+  background: var(--gold-dim); color: color-mix(in srgb, var(--gold) 70%, var(--text)); margin-bottom: 14px;
+}
+.pf-gate-ic svg { width: 24px; height: 24px; }
+.pf-gate-title { font-family: "Montserrat", sans-serif; font-size: 1.35rem; font-weight: 800; margin: 0 0 8px; color: var(--text); }
+.pf-gate-text { color: var(--text-muted); line-height: 1.65; max-width: 46ch; margin: 0 auto 20px; }
+.pf-gate-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.pf-gate-actions .btn { min-width: 150px; min-height: 46px; }

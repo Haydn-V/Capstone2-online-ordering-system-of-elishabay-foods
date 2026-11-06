@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>landing module</title>
+  <!-- Module partial for section mod-landing, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
+  </head>
+  <body>
+<!-- ── LANDING PAGE MAINTENANCE ── -->
+<section
+  id="mod-landing"
+  class="mod-panel"
+  aria-label="Landing Page Maintenance"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Maintenance</div>
+      <h2>Landing Page</h2>
+    </div>
+    <div class="actions">
+      <button class="btn btn-ghost" id="view-landing-btn" type="button">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path
+            d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
+          />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+        View Live Page
+      </button>
+      <button class="btn btn-gold" id="save-landing-btn">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path
+            d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"
+          />
+          <polyline points="17 21 17 13 7 13 7 21" />
+          <polyline points="7 3 7 8 15 8" />
+        </svg>
+        Save Changes
+      </button>
+    </div>
+  </div>
+  <div id="landing-editor"></div>
+</section>
+  </body>
+</html>

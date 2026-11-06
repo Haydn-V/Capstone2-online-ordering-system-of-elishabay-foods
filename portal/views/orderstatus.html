@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>orderstatus module</title>
+  <!-- Module partial for section mod-orderstatus, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
+  </head>
+  <body>
+<!-- ── ONLINE ORDERS: ORDER STATUS ── -->
+<section
+  id="mod-orderstatus"
+  class="mod-panel"
+  aria-label="Order Status"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Online Orders</div>
+      <h2>Order Status</h2>
+    </div>
+  </div>
+  <div class="view-toolbar view-toolbar-filters">
+    <div class="search-box">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="11" cy="11" r="8" />
+        <path d="M21 21l-4.35-4.35" />
+      </svg>
+      <input
+        id="status-search"
+        type="search"
+        placeholder="Search order ID or customer…"
+        aria-label="Search orders"
+        data-refilters="orderStatus"
+      />
+    </div>
+    <!-- Everything before this sits left, everything after it right. -->
+    <span class="vt-spacer" aria-hidden="true"></span>
+    <select
+      class="filter-select"
+      id="status-filter"
+      data-refilters="orderStatus"
+    >
+      <option value="">All Statuses</option>
+      <option value="pending">Pending</option>
+      <option value="accepted">Accepted</option>
+      <option value="shipping">Shipping</option>
+      <option value="delivered">Delivered</option>
+      <option value="completed">Completed</option>
+      <option value="cancelled">Cancelled</option>
+    </select>
+  </div>
+  <div id="status-content"></div>
+</section>
+  </body>
+</html>

@@ -1,0 +1,327 @@
+/* ===== Inventory Management (extends portal.css; inventory-only additions) ===== */
+
+/* ===== EXPIRY STATUS BADGES / INDICATORS ===== */
+.expiry-ok   { background: rgba(24,169,87,.12);  color: var(--ok-ink);   }
+.expiry-warn { background: rgba(232,163,23,.14); color: #b07a08;     }
+.expiry-crit { background: rgba(234,88,12,.14);  color: var(--crit); }
+.expiry-gone { background: rgba(220,38,38,.12);  color: var(--out-ink);  }
+
+[data-theme="dark"] .expiry-warn { color: var(--gold-ink); }
+
+/* Countdown chip */
+.days-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: var(--r-pill);
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+/* ===== EXPIRY PROGRESS BAR ===== */
+.expiry-bar-wrap {
+  width: 100%; height: 5px; background: var(--bg-tint);
+  border-radius: var(--r-pill); overflow: hidden;
+}
+.expiry-bar-fill {
+  height: 100%; border-radius: var(--r-pill);
+  transition: width .5s var(--ease);
+}
+
+/* ===== BULK REPLENISH TABLE ===== */
+.replenish-table {
+  width: 100%; border-collapse: collapse; font-size: var(--fs-base);
+}
+.replenish-table thead th {
+  padding: 10px 12px; font-size: var(--fs-2xs); font-weight: 700;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted);
+  background: var(--bg-soft); border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.replenish-table tbody tr { border-bottom: 1px solid var(--border); }
+.replenish-table tbody tr:last-child { border-bottom: none; }
+.replenish-table td { padding: 10px 12px; vertical-align: middle; }
+.replenish-table .qty-input {
+  width: 80px; padding: 6px 10px; font-size: var(--fs-base); font-family: inherit;
+  background: var(--surface); color: var(--text);
+  border: 1.5px solid var(--border-lift); border-radius: var(--r-md);
+  transition: border-color var(--t); text-align: center;
+}
+.replenish-table .qty-input:focus {
+  outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-dim);
+}
+.replenish-table .check-col { width: 36px; }
+.replenish-table input[type="checkbox"] {
+  width: 17px; height: 17px; accent-color: var(--gold-ink); cursor: pointer;
+}
+
+/* ===== ADJUSTMENT FORM ===== */
+
+/* Adjustment form plus a preview column, wrapping with flex-wrap based on its own width (not the window). */
+.adj-split {
+  /* Two border weights for the whole column: edge for box outlines, rule for dividers. */
+  --adj-edge: color-mix(in srgb, var(--text) 16%, transparent);
+  --adj-rule: color-mix(in srgb, var(--text) 11%, transparent);
+
+  display: flex; flex-wrap: wrap;
+  gap: 18px;
+  /* stretch so the preview matches the form's height, with the lot table taking the extra space. */
+  align-items: stretch;
+}
+/* The form keeps a max width so spare space goes to the preview. */
+.adj-form-col    { flex: 1 1 420px; max-width: 560px; margin: 0; }
+.adj-preview-col {
+  flex: 1 1 360px; min-width: 0; margin: 0;
+  display: flex; flex-direction: column;
+}
+.adj-preview-col > #adj-preview-body {
+  display: flex; flex-direction: column; flex: 1; min-height: 0;
+}
+
+/* Product heading with category and band, large enough to notice the wrong product. */
+.adj-prev-product {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  padding-bottom: 14px; margin-bottom: 16px;
+  border-bottom: 1px solid var(--adj-rule);
+}
+.adj-prev-id { min-width: 0; }
+.adj-prev-cat {
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px;
+}
+.adj-prev-name {
+  margin: 0; min-width: 0;
+  font-family: var(--font-display, inherit);
+  font-size: var(--fs-2xl); font-weight: 700; line-height: 1.2; color: var(--text);
+}
+
+/* Before and after figures side by side, so a typo is visible before submitting. */
+.adj-prev-figures {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 14px 16px; margin-bottom: 14px;
+  border: 1px solid var(--adj-edge);
+  border-radius: var(--r-md);
+}
+.adj-prev-fig { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.adj-prev-fig span {
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.adj-prev-fig b {
+  font-family: var(--font-number); font-size: var(--fs-3xl); font-weight: 800;
+  font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.01em;
+  color: var(--text);
+}
+.adj-prev-fig.is-bad b { color: var(--out-ink); }
+.adj-prev-arrow { color: var(--text-muted); display: flex; }
+.adj-prev-arrow svg { width: 20px; height: 20px; }
+
+.adj-prev-warn {
+  padding: 10px 12px; margin-bottom: 14px;
+  border: 1px solid var(--out); border-radius: var(--r-sm);
+  background: rgba(220,38,38,.08); color: var(--out-ink);
+  font-size: var(--fs-sm); line-height: 1.5;
+}
+
+/* Three facts for a disposal: days of cover, speed, and lot count. */
+.adj-prev-facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px; margin-bottom: 14px;
+}
+.adj-prev-fact {
+  padding: 10px 12px; border-radius: var(--r-sm);
+  border: 1px solid var(--adj-edge);
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+}
+.adj-prev-fact span {
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.adj-prev-fact b {
+  font-family: var(--font-number); font-size: var(--fs-lg); font-weight: 800;
+  font-variant-numeric: lining-nums tabular-nums; color: var(--text);
+}
+
+/* Warn when the earliest lot will not sell before it expires. */
+.adj-prev-risk {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 10px 12px; margin-bottom: 14px;
+  border: 1px solid var(--crit); border-radius: var(--r-sm);
+  background: rgba(234,88,12,.08); color: var(--crit);
+  font-size: var(--fs-sm); line-height: 1.5;
+}
+.adj-prev-risk svg { width: 16px; height: 16px; flex: none; margin-top: 1px; }
+
+/* The lot list fills the remaining height and scrolls inside. */
+.adj-prev-lots {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column; gap: 6px;
+}
+/* The caption is a label above the box, not a second header band. */
+.adj-prev-lots-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; flex: none;
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.adj-prev-lots-count { font-weight: 600; letter-spacing: .04em; text-transform: none; }
+/* The border now wraps only the table. */
+.adj-prev-lots-box {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  border: 1px solid var(--adj-edge);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+/* Fill the container with one lot and cap the height so many lots scroll. */
+.adj-prev-lots-body { flex: 1; min-height: 0; max-height: 360px; overflow-y: auto; }
+
+/* Table fills its box with a sticky header. */
+.adj-lot-table { width: 100%; border-collapse: collapse; }
+/* No background here, since glass.css styles .data-table headers and loads later. */
+/* line-height: 1 so the header band hugs its labels. */
+.adj-lot-table thead th {
+  position: sticky; top: 0; z-index: 1;
+  padding: 10px 14px; line-height: 1;
+  border-bottom: 1px solid var(--adj-rule);
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+/* Square header corners inside the rounded box, which clips them. */
+.adj-lot-table thead th:first-child,
+.adj-lot-table thead th:last-child { border-radius: 0; }
+.adj-lot-table td, .adj-lot-table th { padding: 10px 14px; }
+.adj-lot-table tbody tr + tr > td {
+  border-top: 1px solid var(--adj-rule);
+}
+
+/* Only the first cell draws the highlight bar. */
+.adj-prev-lots tr.is-selected > td { background: var(--gold-dim); }
+.adj-prev-lots tr.is-selected > td:first-child { box-shadow: inset 3px 0 0 var(--gold); }
+
+/* Show old → new quantity with an arrow. */
+.adj-lot-was { color: var(--text-muted); }
+.adj-lot-arrow { color: var(--text-muted); margin: 0 4px; }
+
+.adj-type-row {
+  display: flex; gap: 10px; margin-bottom: 4px; flex-wrap: wrap;
+}
+.adj-type-btn {
+  flex: 1; padding: 10px 14px; border-radius: var(--r-md);
+  border: 2px solid var(--border-lift); background: transparent;
+  color: var(--text-muted); font-family: var(--font-ui);
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  cursor: pointer; transition: all var(--t); text-align: center;
+}
+.adj-type-btn:hover { border-color: var(--gold); color: var(--text); }
+.adj-type-btn.active.disposal { border-color: var(--out); background: rgba(220,38,38,.07); color: var(--out-ink); }
+.adj-type-btn.active.return   { border-color: var(--ok);  background: rgba(24,169,87,.07);  color: var(--ok-ink); }
+
+/* ===== EXPIRY ALERT LIST ===== */
+.expiry-alert-list { display: flex; flex-direction: column; gap: 10px; }
+.expiry-alert-item {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 14px; border-radius: var(--r-md);
+  background: var(--bg-soft); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent, var(--warn));
+  transition: background var(--t);
+}
+.expiry-alert-item:hover { background: var(--bg-tint); }
+.expiry-alert-item.crit  { --accent: var(--out); }
+.expiry-alert-item.warn  { --accent: var(--warn); }
+
+.ea-icon {
+  width: 34px; height: 34px; border-radius: var(--r-md); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-tint); color: var(--accent, var(--warn));
+}
+.ea-icon svg { width: 16px; height: 16px; }
+.ea-info { flex: 1; min-width: 0; }
+.ea-name { font-size: var(--fs-base); font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ea-batch { font-size: var(--fs-xs); color: var(--text-muted); margin: 2px 0; }
+.ea-days  { font-size: var(--fs-xs); font-weight: 700; color: var(--accent, var(--warn)); }
+
+/* ===== ADJUSTMENTS LOG ===== */
+.adj-type-tag {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: var(--r-pill);
+  font-size: var(--fs-2xs); font-weight: 700; text-transform: uppercase;
+}
+.adj-disposal { background: rgba(220,38,38,.1);  color: var(--out-ink); }
+.adj-return   { background: rgba(24,169,87,.1);  color: var(--ok-ink);  }
+.adj-restock  { background: rgba(59,130,246,.1); color: var(--info);}
+
+/* ===== MODULE TAB VARIANTS ===== */
+.inv-action-tabs {
+  display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 22px;
+}
+/* Uses the shared tab pill block in portal.css with no extra rule. */
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 600px) {
+  .replenish-table .qty-input { width: 60px; }
+  .inv-action-tabs { gap: 4px; }
+  /* Narrow screens only change sizes through the shared custom properties. */
+  .inv-action-btn  { --pill-py: 7px; --pill-px: 12px; --pill-fs: var(--fs-xs); }
+}
+
+/* ---- "What this affects" — refreshed layout ---- */
+.adj-prev-product {
+  padding: 14px 16px; border-radius: var(--r-md);
+  background: linear-gradient(135deg, rgba(232,163,23,.10), transparent 70%);
+  border: 1px solid rgba(232,163,23,.25);
+}
+/* Before -> after: tinted by direction, with the change as a pill. */
+.adj-prev-figures { position: relative; align-items: center; }
+.adj-prev-figures.is-out { background: linear-gradient(90deg, transparent, rgba(214,40,40,.06)); }
+.adj-prev-figures.is-in  { background: linear-gradient(90deg, transparent, rgba(24,169,87,.07)); }
+.adj-prev-figures.is-out .adj-prev-fig:last-of-type b { color: #c0392b; }
+.adj-prev-figures.is-in  .adj-prev-fig:last-of-type b { color: #1e9e57; }
+.adj-prev-arrow {
+  width: 34px; height: 34px; border-radius: 50%; align-items: center; justify-content: center;
+  background: var(--surface); border: 1px solid var(--border); flex: none;
+}
+.adj-prev-arrow svg { width: 16px; height: 16px; }
+.adj-prev-delta {
+  margin-left: auto; align-self: center; padding: 6px 12px; border-radius: 999px;
+  font-weight: 800; font-size: var(--fs-sm); letter-spacing: .02em; white-space: nowrap;
+}
+.is-out .adj-prev-delta { color: #c0392b; background: rgba(214,40,40,.10); border: 1px solid rgba(214,40,40,.25); }
+.is-in  .adj-prev-delta { color: #1e9e57; background: rgba(24,169,87,.10); border: 1px solid rgba(24,169,87,.25); }
+
+/* Fact tiles: icon + label/value, movement tinted. */
+.adj-prev-fact { flex-direction: row !important; align-items: center; gap: 12px; }
+.adj-prev-fact > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.adj-prev-fact-ic {
+  width: 36px; height: 36px; flex: none; border-radius: 10px; display: grid; place-items: center;
+  background: rgba(232,163,23,.13); color: #b7791f;
+}
+.adj-prev-fact-ic svg { width: 17px; height: 17px; }
+.adj-prev-fact.is-good .adj-prev-fact-ic { background: rgba(24,169,87,.12); color: #1e9e57; }
+.adj-prev-fact.is-good b { color: #1e9e57; }
+.adj-prev-fact.is-warn .adj-prev-fact-ic { background: rgba(214,120,20,.14); color: #c26a0d; }
+.adj-prev-fact.is-warn b { color: #c26a0d; }
+
+/* Lots: remaining bar + expiry countdown. */
+.adj-lot-table td { vertical-align: middle; }
+.adj-lot-qty { display: inline-flex; align-items: baseline; gap: 4px; justify-content: flex-end; }
+.adj-lot-qty b { font-weight: 800; color: var(--text); }
+.adj-lot-of { font-size: .72rem; color: var(--text-muted); }
+.adj-lot-bar { width: 90px; height: 5px; margin: 5px 0 0 auto; border-radius: 99px; background: rgba(120,100,60,.15); overflow: hidden; }
+.adj-lot-bar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #e8a317, #f0b429); }
+.adj-lot-date { color: var(--text); }
+.adj-lot-when {
+  display: inline-block; margin-top: 4px; padding: 1px 8px; border-radius: 999px;
+  font-size: .68rem; font-weight: 700; letter-spacing: .02em;
+}
+.adj-lot-when.is-ok      { color: #1e9e57; background: rgba(24,169,87,.10); }
+.adj-lot-when.is-near    { color: #b7791f; background: rgba(232,163,23,.14); }
+.adj-lot-when.is-soon    { color: #c26a0d; background: rgba(214,120,20,.16); }
+.adj-lot-when.is-expired { color: #c0392b; background: rgba(214,40,40,.12); }
+.adj-lot-table tbody tr:nth-child(even):not(.is-selected) > td { background: rgba(120,100,60,.035); }
+
+/* Clickable lot rows (Adjustment → What this affects) */
+.adj-lot-table tr.adj-lot-row { cursor: pointer; transition: background var(--t); }
+.adj-lot-table tr.adj-lot-row:not(.is-selected):hover { background: var(--gold-dim); }
+.adj-lot-table tr.adj-lot-row:not(.is-selected):hover td:first-child { box-shadow: inset 3px 0 0 rgba(232,163,23,.5); }
+.adj-lot-table tr.adj-lot-row:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
+.adj-lot-table tr.adj-lot-row.is-selected { cursor: default; }

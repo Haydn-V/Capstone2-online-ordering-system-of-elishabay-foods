@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>returns module</title>
+  <!-- Module partial for section mod-returns, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
+  </head>
+  <body>
+<!-- ── ONLINE ORDERS: RETURN MODULE ── -->
+<section
+  id="mod-returns"
+  class="mod-panel"
+  aria-label="Return Module"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Online Orders</div>
+      <h2>Return Module</h2>
+      <p class="field-hint" style="margin-top: 6px">
+        7-step return processing: Receive → Validate → Eligibility →
+        Approve → Process → Record
+      </p>
+    </div>
+  </div>
+  <!-- Tabs on the left, filters on the right in one band (see .view-toolbar in portal.css). -->
+  <div class="view-toolbar view-toolbar--stack">
+    <div class="return-tabs" id="return-tabs" role="tablist" aria-label="Return request stage"></div>
+    <div class="view-toolbar-filters">
+    <div class="search-box">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="11" cy="11" r="8" />
+        <path d="M21 21l-4.35-4.35" />
+      </svg>
+      <input
+        id="return-search"
+        type="search"
+        placeholder="Search return ID, order, customer, product…"
+        aria-label="Search returns"
+        data-refilters="returns"
+      />
+    </div>
+    </div>
+  </div>
+  <!-- Large-refund limit (Super Admin can change it) — orders.js -->
+  <div class="ret-limit" id="ret-limit"></div>
+  <div id="returns-content" class="returns-scroll"></div>
+</section>
+  </body>
+</html>

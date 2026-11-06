@@ -1,0 +1,468 @@
+/* ===== Online Orders (extends portal.css) ===== */
+
+/* Compact stat chips — used by Transaction History's summary row */
+.mini-stat-group { display: flex; gap: 10px; flex-wrap: wrap; }
+.mini-stat {
+  display: flex; flex-direction: column; justify-content: center; gap: 2px;
+  padding: 10px 18px; border-radius: var(--r-lg);
+  background: var(--surface); border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm); min-width: 108px;
+}
+.mini-stat-label {
+  font-family: var(--font-ui); font-size: var(--fs-3xs); font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted);
+}
+.mini-stat-val {
+  font-family: var(--font-number); font-size: var(--fs-xl); font-weight: 800;
+  color: var(--text); line-height: 1.15; letter-spacing: -.01em;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.mini-stat-val.gold { color: var(--gold-ink); }
+
+/* ===== NOTIFICATIONS ===== */
+.notif-panel { padding: 18px 22px 6px; }
+.notif-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 6px;
+}
+.notif-toolbar .return-tabs { margin-bottom: 0; }
+
+.notif-row {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 16px 10px; border-bottom: 1px solid var(--border);
+  border-radius: var(--r-md);
+  transition: background var(--t);
+  cursor: pointer;
+}
+.notif-row:last-child { border-bottom: none; }
+.notif-row:hover { background: var(--bg-soft); }
+.notif-row.unread { background: var(--gold-dim); }
+.notif-row.unread:hover { background: var(--gold-line); }
+
+.notif-row-icon {
+  width: 38px; height: 38px; border-radius: var(--r-pill);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.notif-row-icon svg { width: 18px; height: 18px; }
+.notif-row-icon.type-new-order { background: rgba(232,163,23,.15); color: var(--gold-ink); }
+.notif-row-icon.type-payment   { background: rgba(59,130,246,.12); color: #3b82f6; }
+.notif-row-icon.type-return    { background: rgba(239,68,68,.1);   color: var(--out-ink); }
+.notif-row-icon.type-hold      { background: rgba(249,115,22,.1);  color: var(--warn-ink); }
+.notif-row-icon.type-completed { background: rgba(24,169,87,.1);   color: var(--ok-ink); }
+.notif-row-icon.type-inventory { background: rgba(139,92,246,.12); color: #8b5cf6; }
+.notif-row-icon.type-audit     { background: rgba(100,116,139,.12);color: #64748b; }
+/* Chip colours for the Cashier/Inventory notification types, chosen to differ from the existing ones. */
+.notif-row-icon.type-scheme-due    { background: rgba(99,102,241,.13);  color: #6366f1; }
+.notif-row-icon.type-expiry        { background: rgba(219,39,119,.12);  color: #db2777; }
+.notif-row-icon.type-batch-qa      { background: rgba(14,165,233,.13);  color: #0ea5e9; }
+.notif-row-icon.type-sales-summary { background: rgba(20,184,166,.13);  color: #14b8a6; }
+
+/* Same type→color mapping, applied to the topbar bell dropdown's icon chips */
+.nd-item-icon.type-new-order { background: rgba(232,163,23,.15); color: var(--gold-ink); }
+.nd-item-icon.type-payment   { background: rgba(59,130,246,.12); color: #3b82f6; }
+.nd-item-icon.type-return    { background: rgba(239,68,68,.1);   color: var(--out-ink); }
+.nd-item-icon.type-hold      { background: rgba(249,115,22,.1);  color: var(--warn-ink); }
+.nd-item-icon.type-completed { background: rgba(24,169,87,.1);   color: var(--ok-ink); }
+.nd-item-icon.type-inventory { background: rgba(139,92,246,.12); color: #8b5cf6; }
+.nd-item-icon.type-audit     { background: rgba(100,116,139,.12);color: #64748b; }
+.nd-item-icon.type-scheme-due    { background: rgba(99,102,241,.13);  color: #6366f1; }
+.nd-item-icon.type-expiry        { background: rgba(219,39,119,.12);  color: #db2777; }
+.nd-item-icon.type-batch-qa      { background: rgba(14,165,233,.13);  color: #0ea5e9; }
+.nd-item-icon.type-sales-summary { background: rgba(20,184,166,.13);  color: #14b8a6; }
+
+/* Audit sub-kinds share type "audit" but get different chips so activity is easy to scan. */
+.notif-row-icon.type-restock,   .nd-item-icon.type-restock   { background: rgba(5,150,105,.13);  color: #059669; }
+.notif-row-icon.type-replenish, .nd-item-icon.type-replenish { background: rgba(101,163,13,.14); color: #65a30d; }
+.notif-row-icon.type-adjust,    .nd-item-icon.type-adjust    { background: rgba(217,119,6,.13);  color: #d97706; }
+.notif-row-icon.type-archive,   .nd-item-icon.type-archive   { background: rgba(100,116,139,.14);color: #475569; }
+
+/* Lighter slate in dark mode, since #475569 is under 3:1 contrast there. */
+[data-theme="dark"] .notif-row-icon.type-archive,
+[data-theme="dark"] .nd-item-icon.type-archive {
+  background: rgba(148,163,184,.16); color: #94a3b8;
+}
+
+/* Default chip so an unmapped type gets neutral slate instead of a bare black glyph. */
+.notif-row-icon,
+.nd-item-icon {
+  background: rgba(100,116,139,.10);
+  color: #64748b;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+.notif-row-icon svg,
+.nd-item-icon svg { opacity: .95; }
+
+.notif-row-body { flex: 1; min-width: 0; }
+.notif-row-top {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+}
+.notif-row-msg { font-size: var(--fs-base); color: var(--text); line-height: 1.4; }
+.notif-row.unread .notif-row-msg { font-weight: 700; }
+.notif-unread-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--gold);
+  flex-shrink: 0; margin-top: 6px;
+}
+.notif-row-meta { display: flex; align-items: center; gap: 12px; margin-top: 5px; flex-wrap: wrap; }
+.notif-row-time { font-size: var(--fs-xs); color: var(--text-muted); }
+
+/* Urgency pill (from notifLevelChip() in orders.js) looks the same in the bell, dashboard and Notifications page, always with an icon and word, never colour alone. */
+.notif-level {
+  display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
+  padding: 2px 9px; border-radius: var(--r-pill);
+  font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .04em;
+  text-transform: uppercase; white-space: nowrap;
+  /* The label uses --text for contrast in both themes, while the level colour goes on the icon and border. */
+  color: var(--text);
+  border: 1px solid var(--level-ink, var(--border-lift));
+  background: var(--level-bg, var(--bg-tint));
+}
+.notif-level svg { width: 11px; height: 11px; flex-shrink: 0; color: var(--level-ink, var(--text-muted)); }
+.notif-level-critical { --level-ink: var(--out-ink);    --level-bg: rgba(220,38,38,.10); }
+.notif-level-warning  { --level-ink: var(--warn-ink);   --level-bg: rgba(232,163,23,.14); }
+.notif-level-info     { --level-ink: var(--border-lift); --level-bg: var(--bg-tint); }
+.notif-row-action { font-size: var(--fs-xs); font-weight: 700; color: var(--gold-ink); cursor: pointer; }
+.notif-row-action:hover { text-decoration: underline; }
+
+/* ===== ORDER CARDS (Queue view) ===== */
+.queue-list { display: flex; flex-direction: column; gap: 12px; }
+.order-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--t), box-shadow var(--t);
+}
+.order-card:hover { border-color: var(--gold-dim); box-shadow: var(--shadow-md); }
+.order-card.urgent { border-left: 3px solid var(--out); }
+.order-card.hold   { border-left: 3px solid var(--warn); }
+
+.order-card-header {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 12px; flex-wrap: wrap;
+}
+.order-card-id {
+  font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: 700;
+  color: var(--text-muted); background: var(--bg-soft);
+  padding: 3px 8px; border-radius: var(--r-sm);
+}
+.order-card-customer { font-size: var(--fs-md); font-weight: 700; flex: 1; }
+.order-card-date     { font-size: var(--fs-sm); color: var(--text-muted); }
+
+.order-card-items {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;
+}
+.order-item-chip {
+  font-size: var(--fs-xs); font-weight: 600;
+  background: var(--bg-soft); border: 1px solid var(--border);
+  border-radius: var(--r-pill); padding: 3px 10px;
+  color: var(--text);
+}
+
+.order-card-footer {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  border-top: 1px solid var(--border); padding-top: 12px;
+}
+.order-card-total {
+  font-family: var(--font-number);
+  font-size: var(--fs-xl); font-weight: 800; color: var(--gold-ink);
+  font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.01em;
+}
+.order-card-method { font-size: var(--fs-sm); color: var(--text-muted); flex: 1; }
+.order-card-actions { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+
+/* ===== PAYMENT VERIFICATION ===== */
+/* List is a table now; the card opens in the modal from View. */
+.pv-modal-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.pv-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+.pv-card-body {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 0;
+}
+@media (max-width: 760px) { .pv-card-body { grid-template-columns: 1fr; } }
+.pv-section {
+  padding: 16px 18px;
+}
+.pv-section + .pv-section {
+  border-left: 1px solid var(--border);
+}
+@media (max-width: 760px) { .pv-section + .pv-section { border-left: none; border-top: 1px solid var(--border); } }
+.pv-section-label {
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px;
+}
+.pv-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 5px 0; font-size: var(--fs-base);
+}
+.pv-row-label { color: var(--text-muted); }
+.pv-row-val   { font-weight: 700; }
+.pv-row-val.match   { color: var(--ok-ink); }
+.pv-row-val.mismatch { color: var(--out-ink); }
+
+.proof-box {
+  background: var(--bg-soft); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 14px;
+  margin-top: 10px; display: flex; flex-direction: column; gap: 8px;
+}
+.proof-ref {
+  font-family: var(--font-mono); font-size: var(--fs-base); font-weight: 700;
+  color: var(--text); background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 6px 10px;
+  word-break: break-all;
+}
+.proof-status {
+  display: flex; align-items: center; gap: 6px;
+  font-size: var(--fs-sm); font-weight: 700;
+}
+.proof-status.uploaded   { color: var(--ok-ink); }
+.proof-status.not-uploaded { color: var(--out-ink); }
+
+.pv-actions { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* ===== STATUS CHIP / DOT (card views; tables use .badge) ===== */
+/* .status-chip and .status-dot now live in portal.css, shared by every portal. */
+
+/* Status buttons in the modal use their own colour (--c) for dot, border and hover. */
+.status-move-heading {
+  font-size: .78rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--text-muted); margin: 4px 0 10px;
+  padding-top: 14px; border-top: 1px solid rgba(110,78,28,.18);
+}
+.status-transition-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr));
+  gap: 10px;
+}
+.status-transition-btn {
+  --c: var(--gold);
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  min-height: 52px; padding: 12px 14px; border-radius: var(--r-md);
+  border: 1.5px solid rgba(110,78,28,.28);
+  border-left: 4px solid var(--c);
+  background: var(--surface); cursor: pointer;
+  font-family: var(--font-ui); font-size: .82rem; font-weight: 700;
+  letter-spacing: .05em; text-transform: uppercase;
+  color: var(--text); transition: background var(--t), border-color var(--t), box-shadow var(--t), transform var(--t);
+}
+.status-transition-btn .status-dot {
+  width: 10px; height: 10px; background: var(--c);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 18%, transparent);
+}
+.status-transition-btn.dest-accepted  { --c: #3b82f6; }
+.status-transition-btn.dest-shipping  { --c: #8b5cf6; }
+.status-transition-btn.dest-delivered { --c: #14b8a6; }
+.status-transition-btn.dest-completed { --c: var(--ok); }
+.status-transition-btn.dest-on-hold   { --c: #f97316; }
+.status-transition-btn.dest-cancelled { --c: var(--red); }
+.status-transition-btn:hover:not(:disabled),
+.status-transition-btn:focus-visible {
+  border-color: var(--c); outline: none;
+  background: color-mix(in srgb, var(--c) 9%, var(--surface));
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--c) 18%, transparent);
+  transform: translateY(-1px);
+}
+.status-transition-btn:disabled { opacity: .6; cursor: progress; }
+[data-theme="dark"] .status-transition-btn { border-color: var(--border-lift); border-left-color: var(--c); }
+
+/* ===== ORDER DETAIL VIEW (in modal) ===== */
+/* Each section is its own card so Customer, Items and Payment read as separate blocks. */
+.order-detail-section {
+  margin-bottom: 14px; padding: 14px 18px;
+  background: rgba(255,255,255,.72);
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+.order-detail-section:last-child { margin-bottom: 0; }
+[data-theme="dark"] .order-detail-section { background: rgba(255,255,255,.04); }
+.order-detail-heading {
+  display: flex; align-items: center; gap: 8px;
+  font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--gold-ink);
+  margin: 0 -18px 8px; padding: 0 18px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.order-detail-heading::before {
+  content: ""; width: 3px; height: 12px; border-radius: 2px; background: var(--gold);
+}
+.detail-row {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 10px; padding: 5px 0; font-size: var(--fs-base);
+}
+.order-detail-section .detail-row { padding: 8px 0; border-bottom: 1px dashed var(--border); }
+.order-detail-section .detail-row:last-child { border-bottom: none; }
+.order-detail-section .detail-row-label { font-weight: 500; }
+.detail-row-label { color: var(--text-muted); flex-shrink: 0; }
+.detail-row-val   { font-weight: 600; text-align: right; }
+
+.order-items-list { display: flex; flex-direction: column; gap: 6px; }
+.order-item-row {
+  display: flex; align-items: center; gap: 10px;
+  font-size: var(--fs-base); padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.order-item-row:last-child { border-bottom: none; }
+/* Qty sits right after the name ("Tuyo Delizioso ×2"), price alone on the right. */
+.order-item-name { flex: 0 1 auto; font-weight: 600; }
+.order-item-qty  { color: var(--text-muted); }
+.order-item-sub  { font-weight: 700; min-width: 70px; text-align: right; margin-left: auto; }
+
+.receipt-addr { font-size: var(--fs-sm); color: var(--text-muted); margin-top: 4px; text-align: left; }
+
+/* ===== RETURN MODULE ===== */
+.return-tabs {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+/* Shape, hover and active come from THE ONE TAB PILL block in portal.css. */
+
+.return-step-indicator {
+  display: flex; align-items: center; gap: 0;
+  margin-bottom: 20px; overflow-x: auto; padding-bottom: 4px;
+}
+.return-step {
+  display: flex; align-items: center; gap: 6px;
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--text-muted);
+  white-space: nowrap;
+}
+.return-step.done    { color: var(--ok-ink); }
+.return-step.active  { color: var(--gold-ink); }
+.return-step.blocked { color: var(--out-ink); }
+.step-num {
+  width: 22px; height: 22px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--fs-2xs); font-weight: 800;
+  border: 2px solid currentColor; flex-shrink: 0;
+  background: transparent;
+}
+.return-step.done .step-num { background: var(--ok-ink); color: #fff; border-color: var(--ok); }
+.return-step.active .step-num { background: var(--gold); color: #1E1A0E; border-color: var(--gold); }
+.step-connector {
+  flex: 0 0 24px; height: 2px;
+  background: var(--border-lift); margin: 0 2px;
+}
+
+.returns-scroll {
+  max-height: calc(100svh - 390px);
+  min-height: 240px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.return-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); margin-bottom: 12px;
+  overflow: hidden; box-shadow: var(--shadow-sm);
+}
+.return-card-header {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 14px 18px; background: var(--bg-soft);
+  border-bottom: 1px solid var(--border);
+}
+.return-card-body { padding: 16px 18px; }
+/* ---- Return View popup: header strip + one card per concern ---- */
+.ret-detail-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-bottom: 14px;
+}
+.ret-detail-customer { font-size: var(--fs-md); font-weight: 700; }
+.ret-detail-sub { font-size: var(--fs-xs); font-family: var(--font-mono, monospace); margin-top: 2px; }
+.ret-detail-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 32px; }
+@media (max-width: 700px) { .ret-detail-grid { grid-template-columns: 1fr; } }
+.ret-detail-grid > div > .detail-row:last-child { border-bottom: 1px dashed var(--border); }
+@media (min-width: 701px) { .ret-detail-grid > div > .detail-row:last-child { border-bottom: none; } }
+
+/* Stepper: 7 equal columns, number over label, a line joining them. */
+.ret-stepper {
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+  align-items: start;   /* circles on one line whether the label is 1 or 2 lines */
+  margin: 4px 0 0; padding: 4px 0 0; overflow: visible;
+}
+.ret-stepper .return-step {
+  position: relative; flex-direction: column; align-items: center;
+  justify-content: flex-start; gap: 8px;
+  text-align: center; white-space: normal; line-height: 1.35;
+}
+.ret-stepper .step-num { width: 26px; height: 26px; position: relative; z-index: 1; background: var(--surface); }
+.ret-stepper .return-step.done .step-num { background: var(--ok-ink); }
+.ret-stepper .return-step.active .step-num { background: var(--gold); box-shadow: 0 0 0 4px var(--gold-dim); }
+.ret-stepper .return-step:not(:last-child)::after {
+  content: ""; position: absolute; top: 13px; left: calc(50% + 17px); right: calc(-50% + 17px);
+  height: 2px; background: var(--text-muted); opacity: .35;
+}
+.ret-stepper .return-step.done:not(:last-child)::after { background: var(--ok-ink); opacity: 1; }
+.ret-stepper .step-label { padding: 0 4px; }
+@media (max-width: 700px) {
+  .ret-stepper { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 14px; }
+  .ret-stepper .return-step::after { display: none; }
+}
+
+.ret-detail .return-reason { margin-bottom: 8px; }
+.ret-detail .return-reason:last-child { margin-bottom: 0; }
+.ret-detail .return-reason strong {
+  display: block; margin-bottom: 3px; color: var(--text);
+  font-size: var(--fs-2xs); letter-spacing: .08em; text-transform: uppercase;
+}
+.return-reason.staff-notes { border-left-color: var(--ok-ink); }
+.ret-detail-actions {
+  display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;
+  padding-top: 14px; margin-top: 14px; border-top: 1px solid var(--border);
+}
+.return-card-footer {
+  padding: 12px 18px; border-top: 1px solid var(--border);
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+}
+.return-reason {
+  font-size: var(--fs-base); color: var(--text-muted);
+  background: var(--bg-soft); border-radius: var(--r-md);
+  padding: 8px 12px; border-left: 3px solid var(--border-lift);
+  margin-top: 8px;
+}
+.return-reason.rejected-reason { border-left-color: var(--out-ink); }
+
+/* ===== EMPTY STATE (card-based screens) ===== */
+.orders-empty {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 64px 24px; text-align: center;
+  color: var(--text-muted); gap: 12px;
+}
+.orders-empty svg { width: 48px; height: 48px; opacity: .25; }
+.orders-empty h3  { font-size: var(--fs-md); font-weight: 700; color: var(--text); margin: 0; }
+.orders-empty p   { font-size: var(--fs-base); margin: 0; max-width: 300px; }
+
+/* Large refund threshold bar + flags (orders.js renderLargeRefundBar). */
+.ret-limit:empty { display: none; }
+.ret-limit {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 0 12px; padding: 10px 14px; border-radius: 12px;
+  background: var(--gold-dim, rgba(232,163,23,.12)); border: 1px solid var(--gold-line, rgba(232,163,23,.3));
+  font-size: .85rem; color: var(--text);
+}
+.ret-limit-ic {
+  width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  background: var(--gold); color: #1e1a0e; font-weight: 800; font-size: .8rem;
+}
+.ret-limit-txt { flex: 1; min-width: 200px; }
+.ret-large-chip {
+  display: inline-block; margin-left: 4px; padding: 2px 8px; border-radius: 999px; vertical-align: middle;
+  font: 700 10px/1.4 "Montserrat", sans-serif; letter-spacing: .06em; text-transform: uppercase;
+  background: color-mix(in srgb, var(--red, #d62828) 14%, transparent); color: var(--red, #d62828);
+}
+.ret-large-note {
+  display: inline-block; padding: 6px 10px; border-radius: 8px; font-size: .78rem; font-weight: 600;
+  background: color-mix(in srgb, var(--red, #d62828) 10%, transparent); color: var(--red, #d62828);
+}
+
+/* Verify Payment: a long value (address, email) sits under its label at full width, justified, so it has room
+   instead of being squeezed into a narrow right-aligned column. Rows get a little more air too. */
+.pv-card-modal .pv-row { padding: 8px 0; }
+.pv-card-modal .pv-row + .pv-row:not(.pv-row-wrap) { border-top: 1px dashed rgba(110,78,28,.12); }
+.pv-row-wrap { flex-direction: column; align-items: stretch; gap: 4px; border-top: 1px dashed rgba(110,78,28,.12); }
+.pv-row-wrap .pv-row-val {
+  text-align: justify; text-align-last: left; hyphens: auto; overflow-wrap: anywhere;
+  font-weight: 600; line-height: 1.55;
+}
+[data-theme="dark"] .pv-card-modal .pv-row + .pv-row:not(.pv-row-wrap), [data-theme="dark"] .pv-row-wrap { border-top-color: rgba(255,255,255,.08); }

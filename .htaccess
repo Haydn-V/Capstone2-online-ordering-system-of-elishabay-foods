@@ -1,0 +1,53 @@
+# Elisha Bay — Apache config for the project root.
+#
+# The project now lives inside the web root, which means anything in the
+# folder is reachable over HTTP unless it is refused here. These rules block
+# the things that are on disk for the developer's benefit, not the visitor's.
+
+# 1. Editor/tooling config and archived source. .claude and .agents hold skill
+#    definitions, and _archive holds the pre-RBAC source zip — none of it
+#    should be downloadable.
+RedirectMatch 404 (?i)/\.(claude|agents|mcp\.json)
+RedirectMatch 404 (?i)/_archive/
+RedirectMatch 404 (?i)/skills-lock\.json
+
+# 2. SQL. schema.sql and seed.sql carry the table layout and, until Phase 2
+#    hashes them, credentials.
+RedirectMatch 404 (?i)/db/.*\.sql$
+
+# 3. Internal docs and tooling.
+RedirectMatch 404 (?i)/docs/
+RedirectMatch 404 (?i)/tools/(?!ui-test/)
+
+#    tools/ui-test/ is the exception: it is a test page that has to be OPENED
+#    in a browser, so a blanket 404 would make it useless. It carries the
+#    seeded test-account passwords, so it is restricted to the local machine
+#    by tools/ui-test/.htaccess. It must not be reachable from anywhere else,
+#    and it should not ship. (<Directory> is a server-config directive and
+#    causes a 500 in .htaccess, hence the child file.)
+
+# 4. Config. These files execute rather than being served as source while
+#    mod_php is active, so this is defence for the case where it is not —
+#    a disabled PHP module would otherwise hand out the DB password.
+RedirectMatch 404 (?i)/api/config/
+
+# 5. Development caching.
+#    Browsers hold on to .js and .css aggressively, which during development
+#    means editing a file and testing the previous version without realising
+#    it — an easy hour to lose chasing a bug that is already fixed on disk.
+#    Remove this block (or swap it for a long max-age) before deploying
+#    anywhere real; caching is desirable then, and cache-busting should move
+#    to versioned filenames.
+#    HTML is included deliberately. Changing the <script> tags in a portal page
+#    and then testing the cached previous version produced errors that looked
+#    like a broken module conversion but were a stale document — twice. The
+#    page is small; revalidating it costs nothing in development.
+<FilesMatch "\.(js|css|html)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+</FilesMatch>
+
+# 6. Directory listings stay off everywhere.
+Options -Indexes
+
+# 7. Land on the storefront rather than a listing.
+DirectoryIndex index.html index.php

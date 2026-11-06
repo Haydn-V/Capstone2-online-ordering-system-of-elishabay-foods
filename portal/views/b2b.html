@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>b2b module</title>
+  <!-- Module partial for section mod-b2b, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
+  </head>
+  <body>
+<!-- ── B2B RETAIL PARTNER APPLICATIONS ── -->
+<section
+  id="mod-b2b"
+  class="mod-panel"
+  aria-label="B2B Retail Partners"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Maintenance</div>
+      <h2>B2B Retail Partners</h2>
+      <p class="field-hint" style="margin-top: 6px">
+        Review wholesale onboarding submissions — verify the BIR TIN, then
+        approve to give the retailer every payment method.
+      </p>
+    </div>
+    <div class="actions">
+      <!-- Super Admin only (credit.limits): the Net credit budget for each retailer tier, kept beside the tier controls. -->
+      <button class="btn btn-gold" id="tier-budgets-btn" data-perm="credit.limits">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+        Tier Budgets
+      </button>
+      <button class="btn btn-ghost" id="export-b2b-btn">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path
+            d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"
+          />
+          <polyline points="17 21 17 13 7 13 7 21" />
+          <polyline points="7 3 7 8 15 8" />
+        </svg>
+        Export Applications CSV
+      </button>
+    </div>
+  </div>
+  <div class="view-toolbar view-toolbar-filters">
+    <div class="search-box">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="11" cy="11" r="8" />
+        <path d="M21 21l-4.35-4.35" />
+      </svg>
+      <input
+        type="search"
+        placeholder="Search app ID, business, applicant…"
+        id="search-b2b"
+        aria-label="Search applications"
+      />
+    </div>
+    <!-- Everything before this sits left, everything after it right. -->
+    <span class="vt-spacer" aria-hidden="true"></span>
+    <select
+      class="filter-select"
+      id="filter-b2b-status"
+      aria-label="Filter by status"
+    >
+      <option value="all">All Status</option>
+      <option value="pending">Pending Review</option>
+      <option value="approved">Approved</option>
+      <option value="rejected">Rejected</option>
+    </select>
+    <select
+      class="filter-select"
+      id="b2b-page-size"
+      aria-label="Rows per page"
+    >
+      <option value="10">10 per page</option>
+      <option value="25">25 per page</option>
+      <option value="50">50 per page</option>
+    </select>
+  </div>
+  <div class="table-wrap viewport-bound">
+    <table class="data-table sortable-table" id="b2b-table">
+      <thead>
+        <tr>
+          <th data-sort="appId">App ID</th>
+          <th data-sort="businessName">Business / Applicant</th>
+          <th>Contact Info</th>
+          <th data-sort="status">Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="b2b-tbody"></tbody>
+    </table>
+  </div>
+  <div class="table-toolbar" style="margin-top: 14px">
+    <span
+      class="muted"
+      id="b2b-showing"
+      style="font-size: 0.82rem"
+    ></span>
+    <div
+      class="pagination"
+      id="b2b-pagination"
+      style="margin-left: auto"
+    ></div>
+  </div>
+</section>
+  </body>
+</html>

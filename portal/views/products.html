@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>products module</title>
+  <!-- Module partial for section mod-products, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
+  </head>
+  <body>
+<!-- ── PRODUCTS (catalog + varieties) ── -->
+<section
+  id="mod-products"
+  class="mod-panel"
+  aria-label="Product Maintenance"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Maintenance</div>
+      <h2>Products</h2>
+    </div>
+    <div class="actions" id="products-header-actions"></div>
+  </div>
+  <!-- Wrapped so a tabs-only screen uses the same band and control height. -->
+  <div class="view-toolbar">
+    <div class="tabs" id="products-tabs" role="tablist">
+      <button
+        class="tab-btn active"
+        role="tab"
+        aria-selected="true"
+        data-products-tab="catalog"
+      >
+        Catalog
+      </button>
+      <button
+        class="tab-btn"
+        role="tab"
+        aria-selected="false"
+        data-products-tab="varieties"
+      >
+        Varieties
+      </button>
+    </div>
+  </div>
+  <div id="tab-catalog" class="tab-panel active">
+    <div class="product-admin-grid" id="product-admin-grid"></div>
+  </div>
+  <div id="tab-varieties" class="tab-panel">
+    <div class="table-wrap">
+      <table class="data-table" id="varieties-table">
+        <thead>
+          <tr>
+            <th>Category / Type</th>
+            <th>Products</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="varieties-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+  </body>
+</html>

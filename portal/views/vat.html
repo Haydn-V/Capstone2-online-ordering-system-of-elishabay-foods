@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>vat module</title>
+  <!-- Module partial for section mod-vat, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
+  </head>
+  <body>
+<section id="mod-vat" class="mod-panel" aria-label="VAT Maintenance">
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Maintenance</div>
+      <h2>VAT Maintenance</h2>
+      <p class="field-hint" style="margin-top: 6px">
+        The tax rules every Sales Invoice follows: the VAT rate, VAT-exempt
+        products, and retailer discounts. Super Admin only.
+      </p>
+    </div>
+    <!-- Filled by vat.js on the Retailer Discount tab (Save changes). -->
+    <div class="actions" id="vat-head-actions"></div>
+  </div>
+
+  <!-- Tabs on the left, the active tab's live count on the right (filled by vat.js). -->
+  <div class="view-toolbar">
+    <div class="vat-tabs" id="vat-tabs" role="tablist" aria-label="VAT Maintenance sections"></div>
+    <div class="view-toolbar-filters">
+      <span class="vat-tab-meta" id="vat-tab-meta" aria-live="polite"></span>
+    </div>
+  </div>
+
+  <div id="vat-content" aria-live="polite"></div>
+</section>
+  </body>
+</html>

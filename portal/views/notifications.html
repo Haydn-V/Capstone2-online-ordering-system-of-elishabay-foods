@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>notifications module</title>
+  <!-- Module partial for section mod-notifications, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
+  </head>
+  <body>
+<!-- ── ONLINE ORDERS: NOTIFICATIONS ── -->
+<section
+  id="mod-notifications"
+  class="mod-panel"
+  aria-label="Notifications"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Online Orders</div>
+      <h2>Notifications</h2>
+    </div>
+    <button class="btn btn-ghost" id="mark-all-read-btn">
+      Mark All Read
+    </button>
+  </div>
+  <div class="panel notif-panel">
+    <div class="notif-toolbar">
+      <div class="return-tabs" id="notif-tabs" role="tablist" aria-label="Notification category"></div>
+      <!-- Urgency is the default sort (matching the bell and dashboard); other orders stay available here. -->
+      <select class="filter-select" id="notif-sort" aria-label="Sort notifications">
+        <option value="urgency">Most Urgent First</option>
+        <option value="newest">Newest First</option>
+        <option value="oldest">Oldest First</option>
+        <option value="unread">Unread First</option>
+      </select>
+    </div>
+    <div id="notif-content"></div>
+  </div>
+</section>
+  </body>
+</html>

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>receipts module</title>
+  <!-- Module partial for section mod-receipts, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
+  </head>
+  <body>
+<!-- ── ONLINE ORDERS: RECEIPT GENERATION ── -->
+<section
+  id="mod-receipts"
+  class="mod-panel"
+  aria-label="Receipt Generation"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Online Orders</div>
+      <h2>Receipt Generation</h2>
+    </div>
+  </div>
+  <div class="view-toolbar view-toolbar-filters">
+    <div class="search-box">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="11" cy="11" r="8" />
+        <path d="M21 21l-4.35-4.35" />
+      </svg>
+      <input
+        id="receipt-search"
+        type="search"
+        placeholder="Search completed orders…"
+        aria-label="Search receipts"
+        data-refilters="receipts"
+      />
+    </div>
+    <!-- Channel filter: All / Online / Walk-in, sent to orders/list.php as type so it works with paging. -->
+    <select class="filter-select" id="receipt-channel" aria-label="Filter by channel" data-refilters="receipts">
+      <option value="">All channels</option>
+      <option value="online">Online</option>
+      <option value="walk-in">Walk-in</option>
+    </select>
+  </div>
+  <div id="receipts-content"></div>
+</section>
+  </body>
+</html>

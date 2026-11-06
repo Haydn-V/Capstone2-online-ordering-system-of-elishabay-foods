@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>online-txns module</title>
+  <!-- Module partial for section mod-online-txns, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
+  </head>
+  <body>
+<!-- ── ONLINE ORDERS: ONLINE TRANSACTIONS ── -->
+<section
+  id="mod-online-txns"
+  class="mod-panel"
+  aria-label="Online Transactions"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Online Orders</div>
+      <h2>Online Transactions</h2>
+    </div>
+  </div>
+  <!-- Tabs on the left, filters on the right in one band (see .view-toolbar in portal.css). -->
+  <div class="view-toolbar view-toolbar--stack">
+    <div class="tabs" id="txn-status-tabs" style="gap: 6px" role="tablist" aria-label="Online transaction status"></div>
+    <div class="view-toolbar-filters">
+    <div class="search-box">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="11" cy="11" r="8" />
+        <path d="M21 21l-4.35-4.35" />
+      </svg>
+      <input
+        id="txn-search"
+        type="search"
+        placeholder="Search by order ID, customer…"
+        aria-label="Search transactions"
+        data-refilters="onlineTxns"
+      />
+    </div>
+    </div>
+  </div>
+  <div id="txn-content"></div>
+</section>
+  </body>
+</html>

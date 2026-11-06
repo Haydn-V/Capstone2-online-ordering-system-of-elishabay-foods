@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>roles module</title>
+  <!-- Module partial for section mod-roles, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
+  </head>
+  <body>
+<!-- ── ROLES & PERMISSIONS ── -->
+<section
+  id="mod-roles"
+  class="mod-panel"
+  aria-label="Roles and Permissions"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">System</div>
+      <h2>Role &amp; Permission Matrix</h2>
+      <p class="field-hint" style="margin-top: 6px">
+        Granular Role-Based Access Control (RBAC). Check or uncheck
+        capabilities for each role and save instantly.
+      </p>
+    </div>
+    <div class="actions">
+      <button class="btn btn-red" id="add-role-btn">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        Create New Role
+      </button>
+    </div>
+  </div>
+  <div id="roles-matrix" class="role-card-grid"></div>
+</section>
+  </body>
+</html>

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Dashboard — Elisha Bay</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Satoshi isn't on Google Fonts — it's distributed via Fontshare. -->
+    <link rel="stylesheet" href="../../assets/css/portal/portal.css" />
+    <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=sentient@400,500,600,700&display=swap" />
+    <link rel="stylesheet" href="../../assets/css/portal/pos.css" />
+    <link rel="stylesheet" href="../../assets/css/portal/orders.css" />
+    <link rel="stylesheet" href="../../assets/css/portal/inventory.css" />
+    <!-- Must load last because it overrides the tokens above; remove this line to go back to the default look. -->
+    <link rel="stylesheet" href="../../assets/css/portal/glass.css" />
+      <!-- Theme before first paint: Light / Dark / System (no flash). -->
+    <script src="../../assets/js/theme.js"></script>
+    <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
+  </head>
+  <body>
+    <!-- Super Admin portal: intentionally almost empty, because module-loader.js injects portal/shell.html and the portal/views/ partials before calling init() (edit module markup in portal/views/, never here). -->
+    <div id="portal-root" data-portal-role="Super Admin"></div>
+
+    <!-- Core is ES modules and the bridge publishes globals for the classic scripts, so every classic script here needs defer (removing it breaks the portal with "EbFormat is not defined"). -->
+    <script type="module" src="../../assets/js/core/index.js"></script>
+    <script defer src="../../assets/js/portal/module-loader.js"></script>
+    <script defer src="../../assets/js/portal/engine.js"></script>
+    <script defer src="../../assets/js/portal/pos.js"></script>
+    <script defer src="../../assets/js/portal/orders.js"></script>
+    <script defer src="../../assets/js/portal/inventory.js"></script>
+    <script defer src="../../assets/js/portal/reviews.js"></script>
+    <script defer src="../../assets/js/portal/vat.js"></script>
+    <script defer src="../../assets/js/portal/shipping.js"></script>
+    <script defer src="../../assets/js/portal/role-gate.js"></script>
+    <script defer src="../../assets/js/portal/gates/super-admin.js"></script>
+  </body>
+</html>

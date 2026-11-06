@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>audit module</title>
+  <!-- Module partial for section mod-audit, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
+  </head>
+  <body>
+<!-- ── AUDIT LOG ── -->
+<section id="mod-audit" class="mod-panel" aria-label="Audit Log">
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">System</div>
+      <h2>Audit Log</h2>
+    </div>
+  </div>
+  <div class="view-toolbar view-toolbar-filters">
+    <div class="search-box">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="11" cy="11" r="8" />
+        <path d="M21 21l-4.35-4.35" />
+      </svg>
+      <input
+        type="search"
+        placeholder="Search log…"
+        id="search-audit"
+        aria-label="Search audit log"
+      />
+    </div>
+    <select
+      class="filter-select"
+      id="filter-audit-type"
+      aria-label="Filter by action type"
+    >
+      <option value="all">All Actions</option>
+      <option value="restock">Restock</option>
+      <option value="user">User</option>
+      <option value="product">Product</option>
+      <option value="order">Order</option>
+      <option value="system">System</option>
+    </select>
+    <select
+      class="filter-select"
+      id="audit-page-size"
+      aria-label="Rows per page"
+    >
+      <option value="10">10 per page</option>
+      <option value="25">25 per page</option>
+      <option value="50">50 per page</option>
+    </select>
+  </div>
+  <div class="table-wrap viewport-bound">
+    <table class="data-table" id="audit-table">
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Actor</th>
+          <th>Action Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody id="audit-tbody"></tbody>
+    </table>
+  </div>
+  <div class="table-toolbar" style="margin-top: 14px">
+    <span class="muted" id="audit-showing" style="font-size: 0.82rem"></span>
+    <div class="pagination" id="audit-pagination" style="margin-left: auto"></div>
+  </div>
+</section>
+  </body>
+</html>

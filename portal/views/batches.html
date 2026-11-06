@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>batches module</title>
+  <!-- Module partial for section mod-batches, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
+  </head>
+  <body>
+<!-- ── BATCH TRACKING & QA TRACEABILITY ── -->
+<section
+  id="mod-batches"
+  class="mod-panel"
+  aria-label="Batch Tracking and QA Traceability"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Reports</div>
+      <h2>Batch Tracking &amp; QA Traceability</h2>
+      <p class="field-hint" style="margin-top: 6px">
+        Register production lot codes (<code>JBF-2026-BXXX</code>),
+        monitor remaining quantity, and confirm QA inspector
+        certification.
+      </p>
+    </div>
+    <div class="actions">
+      <!-- Recall look-up: who bought a batch (openBatchTrace in engine.js, api/batches/trace.php). -->
+      <button class="btn btn-ghost" id="trace-batch-btn">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="11" cy="11" r="7" />
+          <path d="m21 21-4.3-4.3" />
+          <path d="M8 11h6M11 8v6" />
+        </svg>
+        Trace Batch
+      </button>
+      <button class="btn btn-ghost" id="export-batches-btn">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path
+            d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"
+          />
+          <polyline points="17 21 17 13 7 13 7 21" />
+          <polyline points="7 3 7 8 15 8" />
+        </svg>
+        Export CSV
+      </button>
+      <button class="btn btn-gold" id="add-batch-btn">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        Register New Batch
+      </button>
+    </div>
+  </div>
+  <div class="view-toolbar view-toolbar-filters">
+    <div class="search-box">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="11" cy="11" r="8" />
+        <path d="M21 21l-4.35-4.35" />
+      </svg>
+      <input
+        type="search"
+        placeholder="Search lot code, product, SKU…"
+        id="search-batches"
+        aria-label="Search batches"
+      />
+    </div>
+    <!-- Everything before this sits left, everything after it right. -->
+    <span class="vt-spacer" aria-hidden="true"></span>
+    <select
+      class="filter-select"
+      id="filter-batch-qa"
+      aria-label="Filter by QA status"
+    >
+      <option value="all">All QA Status</option>
+      <option value="passed">Certified</option>
+      <option value="pending">Pending</option>
+      <option value="failed">Failed</option>
+    </select>
+    <select
+      class="filter-select"
+      id="batch-page-size"
+      aria-label="Rows per page"
+    >
+      <option value="10">10 per page</option>
+      <option value="25">25 per page</option>
+      <option value="50">50 per page</option>
+    </select>
+  </div>
+  <div class="table-wrap viewport-bound">
+    <table class="data-table sortable-table" id="batches-table">
+      <thead>
+        <tr>
+          <th data-sort="lotCode">Lot Code</th>
+          <th data-sort="productName">Linked Product</th>
+          <th data-sort="prodDate">Production</th>
+          <th data-sort="expiryDate">Expiration</th>
+          <th data-sort="remainingQty">Remaining Qty</th>
+          <th data-sort="qaStatus">QA Certification</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="batches-tbody"></tbody>
+    </table>
+  </div>
+  <div class="table-toolbar" style="margin-top: 14px">
+    <span
+      class="muted"
+      id="batches-showing"
+      style="font-size: 0.82rem"
+    ></span>
+    <div
+      class="pagination"
+      id="batches-pagination"
+      style="margin-left: auto"
+    ></div>
+  </div>
+</section>
+  </body>
+</html>

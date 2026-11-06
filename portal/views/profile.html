@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Profile module</title>
+  </head>
+  <body>
+<!-- My Profile: the signed-in staff member's own account, with no data-perm or MOD_PERM so every staff member can open it; role and status are read-only (api/users/me-save.php refuses changes). -->
+<section class="mod-panel" id="mod-profile">
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Account</div>
+      <h2>My Profile</h2>
+      <p class="field-hint" style="margin-top: 6px">
+        Your own name, sign-in email and password. Only you can change these.
+      </p>
+    </div>
+  </div>
+
+  <div class="dash-grid" style="align-items: start">
+    <div>
+      <!-- ── Details ───────────────────────────────────────────── -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title"
+            style="font-size: 1rem; font-weight: 700; font-family: var(--font-ui)"
+            >Your Details</span
+          >
+        </div>
+
+        <form id="profile-form" novalidate>
+          <div class="field">
+            <label for="pf-name">Full Name</label>
+            <input class="control" id="pf-name" maxlength="100" autocomplete="name" />
+            <span class="field-error" id="pf-name-err"></span>
+          </div>
+
+          <div class="field">
+            <label for="pf-email">Email Address</label>
+            <input class="control" id="pf-email" type="email" autocomplete="email" />
+            <span class="field-error" id="pf-email-err"></span>
+            <span class="field-hint">This is the address you sign in with.</span>
+          </div>
+
+          <div class="field">
+            <label for="pf-avatar">Avatar Initials</label>
+            <input class="control" id="pf-avatar" maxlength="2" style="max-width: 120px" />
+            <span class="field-hint">
+              Two letters, shown in the circle beside your name. Left blank, it
+              is taken from your name.
+            </span>
+          </div>
+
+          <button class="btn btn-gold" type="submit" id="pf-save">
+            Save Changes
+          </button>
+        </form>
+      </div>
+
+      <!-- ── Password ──────────────────────────────────────────── -->
+      <div class="panel" style="margin-top: 20px">
+        <div class="panel-header">
+          <span class="panel-title"
+            style="font-size: 1rem; font-weight: 700; font-family: var(--font-ui)"
+            >Change Password</span
+          >
+        </div>
+        <p class="field-hint" style="margin-bottom: 14px">
+          You will stay signed in here. Any other device signed in as you will
+          be signed out.
+        </p>
+
+        <form id="password-form" novalidate>
+          <div class="field">
+            <label for="pf-current">Current Password</label>
+            <div class="pw-wrap">
+              <input class="control" id="pf-current" type="password"
+                     autocomplete="current-password" />
+              <button type="button" class="pw-toggle" aria-label="Show password" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+            </div>
+            <span class="field-error" id="pf-current-err"></span>
+          </div>
+          <div class="field">
+            <label for="pf-new">New Password</label>
+            <div class="pw-wrap">
+              <input class="control" id="pf-new" type="password"
+                     autocomplete="new-password" />
+              <button type="button" class="pw-toggle" aria-label="Show password" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+            </div>
+            <span class="field-error" id="pf-new-err"></span>
+          </div>
+          <div class="field">
+            <label for="pf-confirm">Confirm New Password</label>
+            <div class="pw-wrap">
+              <input class="control" id="pf-confirm" type="password"
+                     autocomplete="new-password" />
+              <button type="button" class="pw-toggle" aria-label="Show password" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+            </div>
+            <span class="field-error" id="pf-confirm-err"></span>
+          </div>
+          <button class="btn btn-gold" type="submit" id="pf-pw-save">
+            Update Password
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- ── Read-only: what an administrator controls ───────────── -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title"
+          style="font-size: 1rem; font-weight: 700; font-family: var(--font-ui)"
+          >Account</span
+        >
+      </div>
+      <p class="field-hint" style="margin-bottom: 14px">
+        Set by an administrator. Shown here so you can see them.
+      </p>
+      <div class="field">
+        <label>Role</label>
+        <div class="control" aria-readonly="true" id="pf-role"
+             style="background: var(--bg-soft); color: var(--text-muted)"></div>
+      </div>
+      <div class="field">
+        <label>Account Status</label>
+        <div class="control" aria-readonly="true" id="pf-status"
+             style="background: var(--bg-soft); color: var(--text-muted)"></div>
+      </div>
+      <div class="field">
+        <label>Employee ID</label>
+        <div class="control mono" aria-readonly="true" id="pf-id"
+             style="background: var(--bg-soft); color: var(--text-muted)"></div>
+      </div>
+    </div>
+  </div>
+</section>
+  </body>
+</html>

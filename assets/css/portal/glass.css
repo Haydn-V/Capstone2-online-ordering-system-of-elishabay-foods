@@ -1,0 +1,394 @@
+/* Glassmorphism skin for all staff portals, loaded after each portal's own CSS: overrides surface tokens so panels become translucent and blurred over a colourful backdrop, while text stays opaque (remove the <link> to revert). */
+
+:root {
+  --glass-bg:        rgba(255, 255, 255, .38);
+  --glass-bg-strong: rgba(255, 255, 255, .58);
+  --glass-bg-soft:   rgba(255, 255, 255, .26);
+  /* Overlays (modals, dropdowns, toasts) get a much more opaque background so text behind them does not show through. */
+  --glass-bg-overlay: rgba(255, 255, 255, .94);
+  --glass-border:    rgba(255, 255, 255, .60);
+  /* Keep saturate() near 1 to avoid visible colour seams at pane edges. */
+  --glass-blur:      blur(16px) saturate(106%);
+  --glass-blur-lg:   blur(22px) saturate(110%);
+  --glass-shadow:    0 8px 32px rgba(46, 32, 12, .12);
+  --glass-shadow-lg: 0 20px 56px rgba(46, 32, 12, .20);
+
+  --border:      rgba(255,255,255,.45);
+  --border-lift: rgba(255,255,255,.55);
+  /* Darker muted text to keep enough contrast on translucent panes. */
+  --text-muted:  #5C5343;
+  --shadow-sm:   var(--glass-shadow);
+  --shadow-md:   var(--glass-shadow);
+  --shadow-lg:   var(--glass-shadow-lg);
+
+  /* Override the --surface/--bg-soft tokens so every portal's panels become translucent without per-file edits. */
+  --surface: var(--glass-bg);
+  --bg-soft: var(--glass-bg-soft);
+}
+
+[data-theme="dark"] {
+  --glass-bg:        rgba(28, 30, 38, .52);
+  --glass-bg-strong: rgba(28, 30, 38, .72);
+  --glass-bg-soft:   rgba(28, 30, 38, .38);
+  --glass-bg-overlay: rgba(22, 24, 30, .96);
+  --glass-border:    rgba(255, 255, 255, .14);
+  --glass-shadow:    0 8px 32px rgba(0, 0, 0, .38);
+  --glass-shadow-lg: 0 20px 56px rgba(0, 0, 0, .55);
+
+  --border:      rgba(255,255,255,.12);
+  --border-lift: rgba(255,255,255,.18);
+  --text-muted:  #ADB1B7;
+
+  --surface: var(--glass-bg);
+  --bg-soft: var(--glass-bg-soft);
+}
+
+/* ── The backdrop everything is frosted against ──────────────── */
+body { background: transparent; }
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1;
+  background:
+    /* Light theme backdrop: a yellow light from the top-left with a beam, edge sheen and bounce highlight. */
+    /* Sized in viewport units so the glow covers the same share of any screen. */
+    /* Each layer shifts from white to cream to gold to ochre for depth. */
+    /* Specular core + beam — the direct light. */
+    radial-gradient(190px 170px at 0% 0%,
+      rgba(255,253,244,.62) 0%, rgba(255,246,214,.44) 42%, rgba(255,222,150,.22) 70%, transparent 84%),
+    linear-gradient(135deg,
+      rgba(255,250,232,.34) 0%, rgba(255,240,200,.18) 16%, rgba(244,192,90,.09) 32%, transparent 52%),
+    radial-gradient(26vw 30vh at 0% 0%,
+      rgba(255,226,160,.42) 0%, rgba(250,196,96,.26) 46%, rgba(226,152,26,.12) 74%, transparent 88%),
+    /* Edge sheen along the top and left borders. */
+    linear-gradient(to bottom, rgba(255,250,228,.30) 0%, rgba(255,232,176,.12) 9%, transparent 24%),
+    linear-gradient(to right,  rgba(255,250,228,.26) 0%, rgba(255,232,176,.10) 7%, transparent 20%),
+    /* Main glow falloff (about 40vw by 72vh). */
+    radial-gradient(44vw 76vh at 0% 0%,
+      rgba(240,183,60,.34) 0%, rgba(232,163,23,.26) 40%, rgba(198,126,14,.15) 72%, transparent 88%),
+    /* Darker ochre shadow just past the glow. */
+    radial-gradient(52vw 84vh at -3% -4%, transparent 42%, rgba(176,112,12,.14) 74%, transparent 92%),
+    /* Softer bounce highlight down-right of the light source. */
+    radial-gradient(38vw 46vh at 14% 12%,
+      rgba(255,241,205,.20) 0%, rgba(246,205,120,.11) 52%, transparent 74%),
+    radial-gradient(62vw 38vh at -4% -2%,
+      rgba(243,186,64,.17) 0%, rgba(214,140,18,.10) 54%, transparent 78%),
+    radial-gradient(30vw 92vh at -2% -4%,
+      rgba(243,186,64,.16) 0%, rgba(214,140,18,.09) 54%, transparent 78%),
+    /* Cool, near-neutral base so white panes still read as glass. */
+    /* Base slightly darker than white so light panes stand out. */
+    radial-gradient(circle at 14% 14%, rgba(99,108,238,.34), transparent 46%),
+    radial-gradient(circle at 86% 12%, rgba(46,170,228,.32), transparent 44%),
+    radial-gradient(circle at 80% 86%, rgba(232,163,23,.24), transparent 44%),
+    radial-gradient(circle at 20% 84%, rgba(96,166,192,.28), transparent 46%),
+    linear-gradient(150deg, #DFE6F3 0%, #C9D6EB 46%, #BACAE4 100%);
+}
+[data-theme="dark"] body::before {
+  background:
+    /* Dark theme: the same top-left light, dimmer and warmer. */
+    radial-gradient(70px 60px at 0% 0%, rgba(255,240,200,.34), transparent 74%),
+    radial-gradient(180px 150px at 0% 0%, rgba(255,206,120,.26), transparent 70%),
+    radial-gradient(420px 340px at 0% 0%, rgba(232,163,23,.22), transparent 64%),
+    radial-gradient(900px 320px at -6% -2%, rgba(232,163,23,.12), transparent 66%),
+    radial-gradient(340px 950px at -2% -6%, rgba(232,163,23,.10), transparent 66%),
+    radial-gradient(circle at 12% 16%, rgba(232,163,23,.34), transparent 46%),
+    radial-gradient(circle at 88% 10%, rgba(214,40,40,.24), transparent 44%),
+    radial-gradient(circle at 78% 88%, rgba(24,169,87,.20), transparent 46%),
+    radial-gradient(circle at 22% 84%, rgba(59,130,246,.24), transparent 46%),
+    linear-gradient(140deg, #0E1014 0%, #14171D 48%, #0B0D11 100%);
+}
+
+/* Add side padding to the content column so card shadows and glows are not clipped. */
+.content {
+  padding-left: 6px;
+  padding-right: 10px;
+}
+
+/* ── Shell: nearest to the viewer, so most opaque + most blur ── */
+.app-topbar,
+.sidebar {
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: var(--glass-blur-lg);
+  backdrop-filter: var(--glass-blur-lg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+/* ── Cards / panels ──────────────────────────────────────────── */
+.panel,
+.mod-header,
+.dash-welcome,
+.stat-card,
+.role-card,
+.alert-panel,
+.mini-stat,
+.order-card,
+.pv-card,
+.return-card,
+.faq-entry,
+.lp-section {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+/* Light mode: a diagonal sheen on each pane so it looks like lit glass. */
+[data-theme="light"] .panel,
+[data-theme="light"] .stat-card,
+[data-theme="light"] .role-card,
+[data-theme="light"] .alert-panel,
+[data-theme="light"] .mini-stat,
+[data-theme="light"] .order-card,
+[data-theme="light"] .pv-card,
+[data-theme="light"] .return-card,
+[data-theme="light"] .faq-entry,
+[data-theme="light"] .lp-section {
+  background: linear-gradient(135deg, rgba(255,255,255,.50) 0%, rgba(255,255,255,.24) 100%);
+  border-top-color: rgba(255,255,255,.85);
+  border-left-color: rgba(255,255,255,.72);
+}
+
+/* Header banner gets only a faint gold tint. */
+[data-theme="light"] .dash-welcome,
+[data-theme="light"] .mod-header {
+  background: linear-gradient(135deg, rgba(255,255,255,.60) 0%, rgba(232,163,23,.09) 100%);
+  border-top-color: rgba(255,255,255,.85);
+  border-left-color: rgba(255,255,255,.72);
+}
+[data-theme="light"] .app-topbar,
+[data-theme="light"] .sidebar {
+  background: linear-gradient(150deg, rgba(255,255,255,.66) 0%, rgba(255,255,255,.44) 100%);
+  border-top-color: rgba(255,255,255,.85);
+  border-left-color: rgba(255,255,255,.72);
+}
+[data-theme="dark"] .dash-welcome,
+[data-theme="dark"] .mod-header {
+  background:
+    linear-gradient(135deg, rgba(40,44,54,.66) 0%, rgba(232,163,23,.16) 100%);
+}
+
+/* Inner dividers become light hairlines rather than dark rules. */
+.panel-header,
+.nd-header,
+.modal-header,
+.modal-footer,
+.nav-group + .nav-group { border-color: var(--glass-border); }
+
+/* ── Buttons ─────────────────────────────────────────────────── */
+.btn-ghost,
+.btn-ghost-danger {
+  background: var(--glass-bg-soft);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--glass-border);
+}
+.btn-ghost:hover { background: var(--glass-bg); }
+/* Solid accent buttons stay solid — they're the anchor points. */
+.btn-gold, .btn-red, .btn-ok { border: 1px solid rgba(255,255,255,.28); }
+
+.icon-btn {
+  background: var(--glass-bg-soft);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--glass-border);
+}
+.icon-btn:hover { background: var(--glass-bg); }
+
+/* ── Inputs ──────────────────────────────────────────────────── */
+.control,
+.search-box,
+.filter-select,
+.replenish-table .qty-input,
+.penalty-input {
+  background: var(--glass-bg-soft);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--glass-border);
+  color: var(--text);
+}
+.control:focus,
+.filter-select:focus,
+.search-box:focus-within {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-dim);
+}
+.search-box input { background: transparent; border: none; }
+
+/* Date range pill: group the two date inputs and arrow into one glass pill and restyle the calendar icon. */
+.date-range-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--glass-bg-soft);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-pill);
+  padding: 3px 6px;
+}
+.date-range-group .control {
+  background: transparent;
+  border: none;
+  border-radius: var(--r-pill);
+  padding: 6px 10px;
+  max-width: 132px;
+  font-variant-numeric: tabular-nums;
+  transition: background var(--t);
+}
+.date-range-group .control:hover   { background: rgba(255,255,255,.24); }
+.date-range-group .control:focus   { box-shadow: none; background: rgba(255,255,255,.34); }
+[data-theme="dark"] .date-range-group .control:hover,
+[data-theme="dark"] .date-range-group .control:focus { background: rgba(255,255,255,.08); }
+
+/* Recolour the native calendar icon (via filter) and give it a hover state. */
+.date-range-group .control::-webkit-calendar-picker-indicator {
+  filter: opacity(.55) sepia(1) saturate(4) hue-rotate(2deg);
+  border-radius: 50%;
+  padding: 3px;
+  cursor: pointer;
+  transition: filter var(--t), background var(--t);
+}
+.date-range-group .control::-webkit-calendar-picker-indicator:hover {
+  filter: opacity(.9) sepia(1) saturate(4) hue-rotate(2deg);
+  background: rgba(232,163,23,.16);
+}
+
+.date-range-group .date-sep {
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--gold-dim);
+  color: var(--gold);
+}
+.date-range-group .date-sep svg { width: 12px; height: 12px; }
+
+/* ── Sidebar nav ─────────────────────────────────────────────── */
+.nav-item { background: transparent; }
+.nav-item:hover { background: rgba(255,255,255,.34); transform: none; }
+.nav-item.active {
+  background: linear-gradient(90deg, rgba(232,163,23,.34), rgba(232,163,23,.10));
+  border: 1px solid rgba(255,255,255,.42);
+}
+[data-theme="dark"] .nav-item:hover { background: rgba(255,255,255,.08); }
+[data-theme="dark"] .nav-item.active { border-color: rgba(255,255,255,.16); }
+
+.sidebar-user {
+  background: var(--glass-bg-soft);
+  border: 1px solid var(--glass-border);
+}
+
+/* ── Tables: frosted shell, hairline rows ────────────────────── */
+.table-wrap {
+  background: var(--glass-bg-soft);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  /* Rounded corners still clip, but a table wider than the screen scrolls sideways instead of being cut off. */
+  border-radius: var(--r-lg); overflow: hidden; overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+/* Sticky table header uses heavier blur with moderate opacity so rows scrolling under it are unreadable but it still looks like glass. */
+.data-table thead th {
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: blur(34px) saturate(115%);
+  backdrop-filter: blur(34px) saturate(115%);
+  border-bottom: 1px solid var(--glass-border);
+}
+[data-theme="dark"] .data-table thead th { background: rgba(28,30,38,.68); }
+.data-table tbody tr { border-bottom: 1px solid rgba(255,255,255,.30); }
+[data-theme="dark"] .data-table tbody tr { border-bottom-color: rgba(255,255,255,.07); }
+.data-table tbody tr:hover { background: rgba(255,255,255,.30); }
+[data-theme="dark"] .data-table tbody tr:hover { background: rgba(255,255,255,.06); }
+
+/* Tabs become rounded pills instead of underline tabs. */
+.tabs {
+  border-bottom: none;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* Only the frosted body is set here; shape, hover and active come from the shared tab pill block in portal.css so all tab rows behave the same. */
+.tab-btn,
+.return-tab-btn,
+.alert-tab,
+.inv-action-btn,
+.range-btn,
+.rs-basis-btn {
+  background: var(--glass-bg-soft);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border-color: var(--glass-border);
+  margin-bottom: 0;
+}
+/* On hover keep the frosted fill; the gold edge comes from the shared block. */
+.tab-btn:hover,
+.return-tab-btn:hover,
+.alert-tab:hover,
+.inv-action-btn:hover,
+.range-btn:hover,
+.rs-basis-btn:hover { background: var(--glass-bg); }
+
+/* Overlays are near-opaque (still blurred) so content underneath does not show through. */
+.modal,
+.notif-dropdown,
+.user-dropdown,
+.preview-panel,
+.toast {
+  background: var(--glass-bg-overlay);
+  -webkit-backdrop-filter: var(--glass-blur-lg);
+  backdrop-filter: var(--glass-blur-lg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow-lg);
+}
+/* Darker, blurrier scrim behind modals. */
+.modal-overlay,
+.preview-overlay { background: rgba(15,12,4,.55); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.nd-list, .nd-header, .nd-empty, .nd-footer { background: transparent; }
+.nd-item { background: transparent; border-bottom: 1px solid var(--glass-border); }
+.nd-item:hover { background: rgba(255,255,255,.30); }
+[data-theme="dark"] .nd-item:hover { background: rgba(255,255,255,.06); }
+
+/* Overlay text is heavier and fully opaque for legibility. */
+.modal-header h3, .modal-title,
+.nd-header span, .detail-row-label, .detail-row-val,
+.field label { font-weight: 700; }
+.modal, .notif-dropdown, .user-dropdown, .preview-panel, .toast,
+.modal .control, .modal textarea { color: var(--text); }
+.modal .control::placeholder, .modal textarea::placeholder { color: var(--text-muted); opacity: .85; }
+
+/* ── Misc ────────────────────────────────────────────────────── */
+.stock-bar-wrap, .expiry-bar-wrap { background: rgba(255,255,255,.34); }
+/* No toggle track background here (portal.css handles it legibly), and the hairline is an inset shadow so the thumb stays centred. */
+.switch-track { box-shadow: inset 0 0 0 1px var(--glass-border); }
+
+/* Skip backdrop-filter on long scrolling lists to save GPU work. */
+.alert-row, .notif-row, .nd-item { -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+/* Light mode popups: use a visible warm border colour, since the light glass border is white on white. */
+:root:not([data-theme="dark"]) .modal {
+  --border:      rgba(110, 78, 28, .20);
+  --border-lift: rgba(110, 78, 28, .32);
+}
+:root:not([data-theme="dark"]) .modal .modal-header,
+:root:not([data-theme="dark"]) .modal .modal-footer {
+  border-color: rgba(110, 78, 28, .16);
+}
+/* Section cards: a touch of edge and lift so each block reads as a box. */
+:root:not([data-theme="dark"]) .modal .order-detail-section {
+  background: #fff;
+  border-color: rgba(110, 78, 28, .20);
+  box-shadow: 0 1px 3px rgba(60, 40, 10, .06);
+}
+/* Section headings: a gold hairline under the title, like dark mode's. */
+:root:not([data-theme="dark"]) .modal .order-detail-heading {
+  border-bottom-color: rgba(232, 163, 23, .45);
+}
+/* Same fix for ghost buttons, the close button and cards inside popups. */
+:root:not([data-theme="dark"]) .modal .btn-ghost,
+:root:not([data-theme="dark"]) .modal .btn-ghost-danger,
+:root:not([data-theme="dark"]) .modal .modal-close,
+:root:not([data-theme="dark"]) .modal .pv-card {
+  border-color: rgba(110, 78, 28, .22);
+}
+:root:not([data-theme="dark"]) .modal .btn-ghost:hover,
+:root:not([data-theme="dark"]) .modal .modal-close:hover { border-color: rgba(232, 163, 23, .6); }
+:root:not([data-theme="dark"]) .modal .btn-ghost-danger { border-color: rgba(214, 40, 40, .35); }

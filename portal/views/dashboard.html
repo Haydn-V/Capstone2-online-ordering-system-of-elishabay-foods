@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>dashboard module</title>
+  <!-- Module partial for section mod-dashboard, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
+  </head>
+  <body>
+<!-- ── DASHBOARD ── -->
+<section
+  id="mod-dashboard"
+  class="mod-panel active"
+  aria-label="Dashboard"
+>
+  <div class="dash-welcome" id="dash-welcome">
+    <div>
+      <div class="dash-greeting" id="dash-greeting">Welcome back</div>
+      <div class="dash-date" id="dash-date"></div>
+    </div>
+    <div class="dash-welcome-right" id="dash-quick-stats">
+      <button
+        class="dash-shortcut-btn"
+        data-mod="roles"
+        data-perm="rbac.manage"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <rect x="3" y="11" width="18" height="11" rx="2" />
+          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+        </svg>
+        RBAC
+        <span class="dash-shortcut-badge">Admin</span>
+      </button>
+      <!-- Payment Schemes shortcut, shown only with payments.manage and styled quieter than the gold RBAC button (initSidebar() wires data-mod). -->
+      <button
+        class="dash-shortcut-btn is-quiet"
+        data-mod="payments"
+        data-perm="payments.manage"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <rect x="1" y="4" width="22" height="16" rx="2" />
+          <path d="M1 10h22" />
+        </svg>
+        Payment Schemes
+        <span class="dash-shortcut-badge" id="dash-pay-badge"></span>
+      </button>
+    </div>
+  </div>
+  <!-- One section for both dashboards: renderDashboard() shows or hides panels by permission (see isInventoryDashboard() in engine.js). -->
+  <div class="stat-grid" id="dash-stats"></div>
+  <!-- Online orders waiting for approval, shown to anyone with orders.accept and filled by renderApprovalPanel() in engine.js. -->
+  <div class="panel hide" id="dash-approval-panel" style="margin-bottom: 20px">
+    <div class="panel-header">
+      <span class="panel-title">Orders Waiting for Approval</span>
+      <button class="btn btn-ghost btn-sm" data-goto="ordersqueue" data-filter-status="pending" data-perm="orders.accept">
+        Open Queue
+      </button>
+    </div>
+    <div class="appr-stats" id="dash-appr-stats"></div>
+    <div class="appr-list" id="dash-appr-list"></div>
+  </div>
+  <div class="dash-grid">
+    <div>
+      <div class="panel" id="dash-sales-panel" style="margin-bottom: 20px">
+        <div class="panel-header">
+          <span class="panel-title">Sales This Week</span>
+          <div style="display: flex; align-items: center; gap: 10px">
+            <span class="badge badge-ok" id="dash-week-total"></span>
+            <div class="chart-toggle" id="chart-type-toggle">
+              <button
+                class="chart-toggle-btn"
+                data-chart="line"
+                title="Line chart"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline
+                    points="22 12 18 12 15 21 9 3 6 12 2 12"
+                  />
+                </svg>
+              </button>
+              <button
+                class="chart-toggle-btn"
+                data-chart="bar"
+                title="Bar chart"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <rect x="3" y="12" width="4" height="9" rx="1" />
+                  <rect x="10" y="7" width="4" height="14" rx="1" />
+                  <rect x="17" y="3" width="4" height="18" rx="1" />
+                </svg>
+              </button>
+              <button
+                class="chart-toggle-btn"
+                data-chart="area"
+                title="Area chart"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path
+                    d="M2 20 L6 12 L10 16 L14 8 L18 14 L22 6 L22 20 Z"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="sparkline-wrap">
+          <svg
+            class="sparkline-chart"
+            id="sparkline-sales"
+            aria-label="Weekly sales chart"
+          ></svg>
+        </div>
+      </div>
+      <!-- Titled "Stock Levels" for managers and "Stock Overview" for inventory users (set by renderDashboard()). -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title" id="dash-stock-title">Stock Levels</span>
+        </div>
+        <div class="stock-bars" id="dash-stock-bars"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">System Notifications</span>
+        <span class="badge badge-out" id="dash-notif-count"></span>
+      </div>
+      <div class="notif-list" id="dash-notifs"></div>
+    </div>
+  </div>
+  <!-- Product Rankings for the inventory dashboard: top five by units sold this week with stock left, from api/reports/top-products.php (no money figures). -->
+  <div class="panel hide" id="dash-rank-panel" style="margin-top: 20px">
+    <div class="panel-header">
+      <span class="panel-title">Product Rankings</span>
+      <span class="lp-hint" id="dash-rank-note"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width: 52px">#</th>
+            <th>Product</th>
+            <th class="num">Units sold</th>
+            <th class="num">Stock on hand</th>
+            <th>Stock level</th>
+          </tr>
+        </thead>
+        <tbody id="dash-rankings"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel" id="dash-recent-panel" style="margin-top: 20px">
+    <div class="panel-header">
+      <span class="panel-title">Recent Transactions</span>
+      <!-- data-perm matches the destination module so the button only shows to roles that can open it. -->
+      <button
+        class="btn btn-ghost btn-sm"
+        data-goto="sales"
+        data-perm="sales.report"
+      >
+        View All
+      </button>
+    </div>
+    <div class="table-wrap scrollable">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>TX ID</th>
+            <th>Customer</th>
+            <th>Items</th>
+            <th>Total</th>
+            <th>Method</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody id="dash-recent-tx"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+  </body>
+</html>

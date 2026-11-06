@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>pos-payment module</title>
+  <!-- Module partial for section mod-pos-payment, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
+  </head>
+  <body>
+<!-- ── POINT OF SALE: PAYMENT ── -->
+<section id="mod-pos-payment" class="mod-panel" aria-label="Payment">
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Checkout</div>
+      <h2>Payment</h2>
+    </div>
+    <div class="actions">
+      <!-- data-perm matches the destination's permission. -->
+      <button class="btn btn-ghost btn-sm" data-goto="pos" data-perm="pos.use">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <polyline points="15 18 9 12 15 6" />
+        </svg>
+        Back to Order
+      </button>
+    </div>
+  </div>
+  <div class="payment-layout">
+    <div id="payment-form-col" class="payment-form-col"></div>
+    <div id="order-review-col" class="order-review-col"></div>
+  </div>
+</section>
+  </body>
+</html>

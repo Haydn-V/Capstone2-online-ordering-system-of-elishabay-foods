@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>expiry module</title>
+  <!-- Module partial for section mod-expiry, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
+  </head>
+  <body>
+<!-- ── EXPIRATION MONITORING ── -->
+<section
+  id="mod-expiry"
+  class="mod-panel"
+  aria-label="Expiration Monitoring"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Inventory</div>
+      <h2>Expiration Monitoring</h2>
+    </div>
+  </div>
+  <!-- Uses the shared toolbar row. -->
+  <div class="view-toolbar view-toolbar-filters">
+    <div
+      class="search-box"
+      style="flex: 1; min-width: 200px; max-width: 360px"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="11" cy="11" r="8" />
+        <path d="M21 21l-4.35-4.35" />
+      </svg>
+      <input
+        type="search"
+        id="search-expiry"
+        placeholder="Search batch or product…"
+        aria-label="Search expiry"
+      />
+    </div>
+    <!-- The status legend sits in the toolbar row as a key to the STATUS column. -->
+    <div class="inv-legend">
+      <span class="inv-legend-item"
+        ><span class="inv-dot inv-out"></span> Expired</span
+      >
+      <span class="inv-legend-item"
+        ><span class="inv-dot inv-crit"></span> Critical (&lt;30
+        d)</span
+      >
+      <span class="inv-legend-item"
+        ><span class="inv-dot inv-warn"></span> Warning (30–90 d)</span
+      >
+      <span class="inv-legend-item"
+        ><span class="inv-dot inv-ok"></span> Safe (&gt;90 d)</span
+      >
+    </div>
+    <!-- Everything before this sits left, everything after it right. -->
+    <span class="vt-spacer" aria-hidden="true"></span>
+    <select
+      class="filter-select"
+      id="filter-expiry-status"
+      aria-label="Filter expiry status"
+    >
+      <option value="all">All Status</option>
+      <option value="crit">Critical (&lt;30 days)</option>
+      <option value="warn">Warning (30–90 days)</option>
+      <option value="ok">Safe (&gt;90 days)</option>
+      <option value="gone">Expired</option>
+    </select>
+    <select
+      class="filter-select"
+      id="filter-expiry-sort"
+      aria-label="Sort"
+    >
+      <option value="soonest">Soonest First</option>
+      <option value="latest">Latest First</option>
+      <option value="product">Product Name</option>
+    </select>
+    <select
+      class="filter-select"
+      id="expiry-page-size"
+      aria-label="Rows per page"
+    >
+      <option value="10">10 per page</option>
+      <option value="25">25 per page</option>
+      <option value="50">50 per page</option>
+    </select>
+  </div>
+  <div class="table-wrap viewport-bound">
+    <table class="data-table" id="expiry-table">
+      <thead>
+        <tr>
+          <th>Lot Code</th>
+          <th>Product</th>
+          <th>Category</th>
+          <th>Prod. Date</th>
+          <th>Expiry Date</th>
+          <th>Days Left</th>
+          <th>Qty Left</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="expiry-tbody"></tbody>
+    </table>
+  </div>
+  <div class="table-toolbar" style="margin-top: 14px">
+    <span class="muted" id="expiry-showing" style="font-size: 0.82rem"></span>
+    <div class="pagination" id="expiry-pagination" style="margin-left: auto"></div>
+  </div>
+</section>
+  </body>
+</html>

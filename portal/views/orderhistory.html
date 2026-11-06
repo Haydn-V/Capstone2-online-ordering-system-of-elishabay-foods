@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>orderhistory module</title>
+  <!-- Module partial for section mod-orderhistory, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
+  </head>
+  <body>
+<!-- ── ONLINE ORDERS: TRANSACTION HISTORY ── -->
+<section
+  id="mod-orderhistory"
+  class="mod-panel"
+  aria-label="Transaction History"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Online Orders</div>
+      <h2>Transaction History</h2>
+    </div>
+  </div>
+  <div class="view-toolbar view-toolbar-filters">
+    <div class="search-box">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="11" cy="11" r="8" />
+        <path d="M21 21l-4.35-4.35" />
+      </svg>
+      <input
+        id="history-search"
+        type="search"
+        placeholder="Search order, customer, date…"
+        aria-label="Search history"
+        data-refilters="history"
+      />
+    </div>
+    <!-- Channel filter: All / Online / Walk-in, sent to orders/list.php as type so it works with paging. -->
+    <select class="filter-select" id="history-channel" aria-label="Filter by channel" data-refilters="history">
+      <option value="">All channels</option>
+      <option value="online">Online</option>
+      <option value="walk-in">Walk-in</option>
+    </select>
+    <div class="date-range-group">
+      <input
+        class="control"
+        id="history-from"
+        type="date"
+        aria-label="From date"
+        data-refilters="history"
+      />
+      <span class="date-sep" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </span>
+      <input
+        class="control"
+        id="history-to"
+        type="date"
+        aria-label="To date"
+        data-refilters="history"
+      />
+    </div>
+    <div class="mini-stat-group" id="history-stats"></div>
+    <!-- Everything before this sits left, everything after it right. -->
+    <span class="vt-spacer" aria-hidden="true"></span>
+  </div>
+  <div id="history-content"></div>
+</section>
+  </body>
+</html>

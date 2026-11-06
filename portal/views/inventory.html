@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>inventory module</title>
+  <!-- Module partial for section mod-inventory, kept as a full HTML document so a dev server's live-reload script lands at the end (module-loader.js strips scripts); never write a literal closing body, head or svg tag inside a comment here. -->
+  </head>
+  <body>
+<!-- ── INVENTORY REPORT ── -->
+<section
+  id="mod-inventory"
+  class="mod-panel"
+  aria-label="Inventory Report"
+>
+  <div class="mod-header">
+    <div>
+      <div class="eyebrow">Inventory</div>
+      <h2>Inventory Report</h2>
+    </div>
+    <!-- Super Admin only (inventory.thresholds): edit the stock-level and movement baselines. -->
+    <div class="actions">
+      <!-- Export the report measured over a chosen window (assets/js/portal/inventory-export.js). -->
+      <button class="btn btn-ghost btn-sm" id="inv-export-csv" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg>
+        Export CSV
+      </button>
+      <button class="btn btn-gold btn-sm" id="inv-export-pdf" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        Export PDF
+      </button>
+    </div>
+  </div>
+  <!-- The automatic rules (paintInvLegend() in engine.js), worded from meta.inventoryModel on each load. -->
+  <div class="inv-legend" id="inv-legend">
+    <span class="inv-legend-item"><span class="inv-dot inv-ok"></span> Safe</span>
+    <span class="inv-legend-item"><span class="inv-dot inv-warn"></span> Low</span>
+    <span class="inv-legend-item"><span class="inv-dot inv-crit"></span> Critical</span>
+    <span class="inv-legend-item"><span class="inv-dot inv-out"></span> Out of Stock</span>
+  </div>
+  <div class="view-toolbar view-toolbar-filters">
+    <div class="search-box">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="11" cy="11" r="8" />
+        <path d="M21 21l-4.35-4.35" />
+      </svg>
+      <input
+        type="search"
+        placeholder="Search products…"
+        id="search-inventory"
+        aria-label="Search inventory"
+      />
+    </div>
+    <select
+      class="filter-select"
+      id="filter-inventory"
+      aria-label="Filter by level"
+    >
+      <option value="all">All Levels</option>
+      <option value="ok">Safe</option>
+      <option value="warn">Low</option>
+      <option value="crit">Critical</option>
+      <option value="out">Out of Stock</option>
+    </select>
+    <select
+      class="filter-select"
+      id="filter-movement"
+      aria-label="Filter by movement"
+    >
+      <option value="all">All Movement</option>
+      <option value="fast">Fast Moving</option>
+      <option value="slow">Slow Moving</option>
+      <option value="non">Non-Moving</option>
+    </select>
+    <!-- Expiry risk is its own filter, not a stock level. -->
+    <select
+      class="filter-select"
+      id="filter-expiring"
+      aria-label="Filter by expiry risk"
+    >
+      <option value="all">All Products</option>
+      <option value="1">Expiry Risk Only</option>
+    </select>
+    <!-- The window select changes what the bands are measured over (session only), and the caption under the table names the window used. -->
+    <select
+      class="filter-select"
+      id="filter-inv-window"
+      aria-label="Sales window the stock bands are measured over"
+    >
+      <option value="month">Measured: Last 30 days</option>
+      <option value="week">Measured: Last 7 days</option>
+      <option value="yesterday">Measured: Yesterday</option>
+    </select>
+    <select
+      class="filter-select"
+      id="inv-report-page-size"
+      aria-label="Rows per page"
+    >
+      <option value="10">10 per page</option>
+      <option value="25">25 per page</option>
+      <option value="50">50 per page</option>
+    </select>
+  </div>
+  <div class="table-wrap viewport-bound">
+    <table class="data-table" id="inventory-table">
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Category</th>
+          <th>Stock</th>
+          <th>Level</th>
+          <th>Movement</th>
+          <th>Expiry Risk</th>
+          <th>Price</th>
+          <!-- Lifetime sold total is kept as information; Movement uses measured sales. -->
+          <th>Total Sold</th>
+        </tr>
+      </thead>
+      <tbody id="inventory-tbody"></tbody>
+    </table>
+  </div>
+  <div class="table-toolbar" style="margin-top: 14px">
+    <span class="muted" id="inv-report-showing" style="font-size: 0.82rem"></span>
+    <span class="muted" id="inv-window-note" style="font-size: 0.78rem; margin-left: 12px"></span>
+    <div class="pagination" id="inv-report-pagination" style="margin-left: auto"></div>
+  </div>
+</section>
+  </body>
+</html>

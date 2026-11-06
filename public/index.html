@@ -1,0 +1,812 @@
+﻿<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      name="description"
+      content="Elisha Bay — Premium Deboned Bangus & Bottled Gourmet from Dagupan City. Order for pickup or delivery."
+    />
+    <title>Elisha Bay — Artisan Food from Dagupan</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Playfair+Display+SC:wght@400;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Karla:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <link rel="stylesheet" href="../assets/css/public/styles.css" />
+      <!-- Theme before first paint: Light / Dark / System (no flash). -->
+    <script src="../assets/js/theme.js"></script>
+    <link rel="icon" type="image/png" href="../assets/img/favicon.png" />
+  </head>
+  <body>
+    <!-- ===== NAVBAR — minimal editorial ===== -->
+    <header class="nav" id="nav">
+      <div class="nav-inner">
+        <a href="index.html" class="brand" aria-label="Elisha Bay home">
+          <img class="brand-logo" src="../assets/img/logo.webp" alt="Elisha Bay — Every mouthful is delightful!" width="495" height="386" decoding="async">
+          <span class="name">Elisha&nbsp;Bay<small>Juris Bay Foods</small></span>
+        </a>
+
+        <nav class="nav-links" id="navlinks" aria-label="Primary">
+          <span class="nav-indicator" id="nav-indicator"></span>
+          <a href="index.html" class="active">Home</a>
+          <a href="#best">Best Sellers</a>
+          <a href="shop.html">Shop</a>
+          <a href="#about">About Us</a>
+          <a href="#contact">Contact</a>
+        </nav>
+
+        <div class="nav-actions">
+          <button
+            class="icon-btn theme-toggle"
+            id="theme-btn"
+            aria-label="Toggle theme"
+          >
+            <svg
+              class="icon moon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="butt"
+              stroke-linejoin="round"
+              stroke-linejoin="round"
+            >
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+            <svg
+              class="icon sun"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="butt"
+              stroke-linejoin="round"
+              stroke-linejoin="round"
+            >
+              <circle cx="12" cy="12" r="4" />
+              <path
+                d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"
+              />
+            </svg>
+          </button>
+          <button
+            class="nav-cart-btn icon-btn"
+            id="cart-btn"
+            aria-label="Open cart"
+          >
+            <svg
+              class="icon"
+              id="cart-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="butt"
+              stroke-linejoin="round"
+              stroke-linejoin="round"
+            >
+              <circle cx="9" cy="21" r="1" />
+              <circle cx="20" cy="21" r="1" />
+              <path
+                d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"
+              />
+            </svg>
+            <span class="cart-badge" id="cart-badge">0</span>
+          </button>
+          <button
+            class="icon-btn mob-cart-btn"
+            id="cart-btn-mob"
+            aria-label="Open cart"
+          >
+            <svg
+              class="icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="butt"
+              stroke-linejoin="round"
+              stroke-linejoin="round"
+            >
+              <circle cx="9" cy="21" r="1" />
+              <circle cx="20" cy="21" r="1" />
+              <path
+                d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"
+              />
+            </svg>
+            <span class="cart-badge" id="cart-badge-mob">0</span>
+          </button>
+          <div id="account-slot">
+            <button class="nav-login-btn" id="login-btn">Login</button>
+          </div>
+          <button
+            class="icon-btn hamburger"
+            id="hamburger"
+            aria-label="Open menu"
+            aria-expanded="false"
+          ></button>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <!-- ===== HERO — split typographic stage ===== -->
+      <section class="hero" id="hero">
+        <div class="hero-canvas" aria-hidden="true">
+          <div class="jar-glow"></div>
+          <div class="jar-glow jar-glow-2"></div>
+          <img class="hero-fish-bg" src="../assets/img/bgfish-1600.webp"
+               srcset="../assets/img/bgfish-800.webp 800w, ../assets/img/bgfish-1600.webp 1600w"
+               sizes="(max-width: 640px) 88vw, 62vw" width="1600" height="1489"
+               alt="" draggable="false" decoding="async" fetchpriority="low" />
+        </div>
+
+        <div class="container hero-inner">
+          <div class="hero-grid">
+            <div class="hero-copy">
+              <div class="hero-split reveal">
+                <span class="hero-word">ELISHA</span>
+                <div class="hero-rule">
+                  <span class="hero-rule-text"
+                    >Premium Artisan Food &middot; Dagupan City,
+                    Pangasinan</span
+                  >
+                </div>
+                <span class="hero-word right">BAY</span>
+              </div>
+
+              <div class="hero-bottom reveal d1">
+                <!-- Up-next queue of hero tiles, built by renderHeroSlider() from HERO_PANELS; click a tile to bring it forward. -->
+                <div class="hero-thumbs" id="hero-thumbs" aria-label="Up next"></div>
+
+                <div class="hero-ctas">
+                  <a href="shop.html" class="btn btn-gold">
+                    Order Now
+                    <svg
+                      class="icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2.5"
+                      stroke-linecap="butt"
+                      stroke-linejoin="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M5 12h14M12 5l7 7-7 7" />
+                    </svg>
+                  </a>
+                  <a href="become-partner.html" class="btn btn-ghost-ink">
+                    Become a Retailer Partner
+                    <svg
+                      class="icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2.2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                      <circle cx="9" cy="7" r="4" />
+                      <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+                    </svg>
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            <div class="hero-visual reveal d2">
+              <div
+                class="hero-slider"
+                id="hero-slider"
+                aria-label="Product highlights"
+              >
+                <div class="hs-track" id="hs-track"></div>
+
+                <!-- Tagline over the image; .hs-scrim keeps it readable. -->
+                <div class="hs-scrim" aria-hidden="true"></div>
+                <div class="hs-overlay">
+                  <!-- Craft stats sit at the top of the overlay so they never hit the tagline. -->
+                  <div class="hero-stats" aria-label="At a glance">
+                    <div class="hero-stat" id="lp-live-stat1"><b>100%</b><span>Natural</span></div>
+                    <div class="hero-stat" id="lp-live-stat2"><b>9+</b><span>years of craft</span></div>
+                  </div>
+
+                  <p class="hero-tagline" id="lp-live-tagline">
+                    &ldquo;Every Mouthful is <em>Delightful</em>.&rdquo;
+                  </p>
+                  <p class="hero-lead" id="lp-live-lead">
+                    Every product starts with fresh, locally-sourced milkfish
+                    &mdash; hand-deboned or bottled in small batches.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== MARQUEE ===== -->
+      <div class="marquee-section" aria-hidden="true">
+        <div class="marquee-inner">
+          <div class="marquee-track">
+            <span class="mq-item">Deboned Bangus</span
+            ><span class="mq-sep">✦</span>
+            <span class="mq-item">Bottled Gourmet</span
+            ><span class="mq-sep">✦</span>
+            <span class="mq-item">Fresh from Dagupan</span
+            ><span class="mq-sep">✦</span>
+            <span class="mq-item">Sealed in Glass</span
+            ><span class="mq-sep">✦</span>
+            <span class="mq-item">All Natural</span
+            ><span class="mq-sep">✦</span>
+            <span class="mq-item">Artisan Crafted</span
+            ><span class="mq-sep">✦</span>
+            <span class="mq-item">Every Mouthful is Delightful</span
+            ><span class="mq-sep">✦</span>
+          </div>
+          <div class="marquee-track" aria-hidden="true">
+            <span class="mq-item">Deboned Bangus</span
+            ><span class="mq-sep">✦</span>
+            <span class="mq-item">Bottled Gourmet</span
+            ><span class="mq-sep">✦</span>
+            <span class="mq-item">Fresh from Dagupan</span
+            ><span class="mq-sep">✦</span>
+            <span class="mq-item">Sealed in Glass</span
+            ><span class="mq-sep">✦</span>
+            <span class="mq-item">All Natural</span
+            ><span class="mq-sep">✦</span>
+            <span class="mq-item">Artisan Crafted</span
+            ><span class="mq-sep">✦</span>
+            <span class="mq-item">Every Mouthful is Delightful</span
+            ><span class="mq-sep">✦</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== BEST SELLERS ===== -->
+      <section class="bestsellers-section section" id="best">
+        <div class="container">
+          <div class="section-head reveal">
+            <span class="eyebrow">Best Sellers</span>
+            <h2>Ready to Order</h2>
+            <p>
+              Add to cart and complete your order for same-day pickup or
+              delivery from Dagupan.
+            </p>
+          </div>
+        </div>
+        <!-- renderBestsellers() builds the carousel inside here; do not add another .bs-carousel/.bsc-stage wrapper. -->
+        <div id="bestsellers-track"></div>
+      </section>
+
+      <!-- ===== ABOUT: always-dark section, placed before the traceability promo in the markup (not just visually) ===== -->
+      <section class="about-section" id="about">
+        <div class="about-cinema-bg" aria-hidden="true">
+          <span class="cinema-word">BANGUS</span>
+          <span class="cinema-word right">CAPITAL</span>
+        </div>
+        <div class="container">
+          <div class="about-grid">
+            <div class="about-visual reveal">
+              <div class="about-jar-card" id="about-jar">
+                <svg
+                  class="jar-svg"
+                  viewBox="0 0 120 160"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  aria-label="Elisha Bay jar illustration"
+                >
+                  <!-- jar body -->
+                  <rect
+                    x="24"
+                    y="52"
+                    width="72"
+                    height="96"
+                    rx="12"
+                    fill="rgba(232,163,23,0.08)"
+                    stroke="rgba(232,163,23,0.3)"
+                    stroke-width="1.5"
+                  />
+                  <!-- jar lid -->
+                  <rect
+                    x="18"
+                    y="36"
+                    width="84"
+                    height="20"
+                    rx="6"
+                    fill="rgba(232,163,23,0.14)"
+                    stroke="rgba(232,163,23,0.4)"
+                    stroke-width="1.5"
+                  />
+                  <!-- label area -->
+                  <rect
+                    x="34"
+                    y="70"
+                    width="52"
+                    height="60"
+                    rx="6"
+                    fill="rgba(255,255,255,0.04)"
+                    stroke="rgba(232,163,23,0.18)"
+                    stroke-width="1"
+                  />
+                  <!-- fish silhouette -->
+                  <path
+                    d="M44 100c0-8.837 7.163-16 16-16s16 7.163 16 16"
+                    stroke="rgba(232,163,23,0.45)"
+                    stroke-width="1.5"
+                    stroke-linecap="butt"
+                    stroke-linejoin="round"
+                  />
+                  <ellipse
+                    cx="60"
+                    cy="110"
+                    rx="12"
+                    ry="7"
+                    fill="rgba(232,163,23,0.08)"
+                  />
+                  <!-- oil bubbles -->
+                  <circle cx="44" cy="80" r="3" fill="rgba(232,163,23,0.15)" />
+                  <circle cx="76" cy="86" r="2" fill="rgba(232,163,23,0.12)" />
+                  <circle
+                    cx="52"
+                    cy="130"
+                    r="2.5"
+                    fill="rgba(232,163,23,0.1)"
+                  />
+                  <!-- label text hint -->
+                  <rect
+                    x="42"
+                    y="122"
+                    width="36"
+                    height="3"
+                    rx="1.5"
+                    fill="rgba(255,255,255,0.08)"
+                  />
+                  <rect
+                    x="48"
+                    y="128"
+                    width="24"
+                    height="2"
+                    rx="1"
+                    fill="rgba(255,255,255,0.05)"
+                  />
+                </svg>
+                <div class="jar-card-label">
+                  <span class="jar-brand">Elisha Bay</span>
+                  <span class="jar-sub">Artisan · Dagupan</span>
+                </div>
+              </div>
+              <div class="about-est-tag">Est. 2017 — Bangus Capital</div>
+              <div class="about-certs-row" id="about-certs"></div>
+            </div>
+
+            <div class="about-content reveal d1">
+              <span class="eyebrow eyebrow-gold">Our Story</span>
+              <h2 class="about-h2">
+                From Dagupan's Fishponds<br /><em class="text-gold"
+                  >to Your Table.</em
+                >
+              </h2>
+              <p class="about-p" id="lp-live-about">
+                Elisha Bay is a family-owned artisan food brand rooted in
+                Dagupan City — the Bangus Capital of the Philippines. Every
+                product starts with fresh, locally-sourced milkfish,
+                meticulously deboned by hand and preserved in small batches
+                using time-honored techniques.
+              </p>
+              <p class="about-p">
+                No shortcuts. No preservatives. Just honest, delicious food —
+                sealed in glass and delivered to your door.
+              </p>
+
+              <div class="value-list">
+                <div class="value-row">
+                  <span class="value-dot"></span>
+                  <div>
+                    <strong>Locally Sourced</strong>
+                    <p>
+                      Fresh bangus from Dagupan's own fishponds, harvested
+                      daily.
+                    </p>
+                  </div>
+                </div>
+                <div class="value-row">
+                  <span class="value-dot"></span>
+                  <div>
+                    <strong>Hand Deboned</strong>
+                    <p>
+                      Every fish, every batch — meticulously deboned by skilled
+                      hands.
+                    </p>
+                  </div>
+                </div>
+                <div class="value-row">
+                  <span class="value-dot"></span>
+                  <div>
+                    <strong>Glass Sealed</strong>
+                    <p>
+                      No plastic. Preserved in glass to lock in freshness and
+                      flavor.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== TRACEABILITY PROMO ===== -->
+      <section class="trace-promo-section section">
+        <div class="container">
+          <div class="trace-promo reveal">
+            <svg
+              class="trace-promo-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+              <rect x="14" y="3" width="7" height="7" rx="1" />
+              <path d="M14 14h3v3h-3zM14 20h3M20 14v3M20 20v.01M17 17h.01" />
+            </svg>
+            <h2 class="trace-promo-title">
+              Verify Your Product Batch &amp; Traceability
+            </h2>
+            <p class="trace-promo-sub">
+              Every package of Juris Bay Foods bangus comes with a unique
+              Batch Code. Enter your code in our public verification portal
+              to inspect harvest dates, QA microbiological clearance, and
+              origin verification.
+            </p>
+            <a href="batch-traceability.html" class="btn btn-gold">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M12 22s8-4.5 8-11V5l-8-3-8 3v6c0 6.5 8 11 8 11z" />
+                <path d="M9 12l2 2 4-4" />
+              </svg>
+              Open Traceability Portal
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== VISION & MISSION ===== -->
+      <section class="vm-section section" id="mission-vision">
+        <div class="container">
+          <div class="section-head section-head-left reveal">
+            <span class="eyebrow">About Us</span>
+            <h2>Proudly local,<br />seriously gourmet</h2>
+          </div>
+
+          <div class="vm-grid">
+            <article class="vm-card vm-card-vision reveal">
+              <div class="vm-head">
+                <span class="vm-icon" aria-hidden="true">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </span>
+                <h3>Our Vision</h3>
+              </div>
+              <p id="lp-live-vision">
+                To bring Dagupan's gourmet bangus to every Filipino table — and
+                put Pangasinan's handcrafted bottled fish on the world map.
+              </p>
+            </article>
+
+            <article class="vm-card reveal d1">
+              <div class="vm-head">
+                <span class="vm-icon" aria-hidden="true">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <circle cx="12" cy="12" r="6" />
+                    <circle cx="12" cy="12" r="2" />
+                  </svg>
+                </span>
+                <h3>Our Mission</h3>
+              </div>
+              <p id="lp-live-mission">
+                To craft honest, high-quality fish products using local catch
+                and traditional methods, while supporting Dagupan's fishing
+                families and delighting every customer, one jar at a time.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== FAQ + CONTACT ===== -->
+      <section class="faq-section section" id="faq">
+        <div class="container">
+          <div class="faq-contact-grid">
+            <div class="faq-col reveal">
+              <h3 class="fc-title">Frequently asked questions</h3>
+              <div class="faq-list" id="faq-wrap"></div>
+            </div>
+
+            <aside class="git-card reveal d1" id="contact">
+              <h3 class="fc-title">Get in touch</h3>
+
+              <div class="git-item">
+                <span class="git-icon" aria-hidden="true">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z" />
+                    <circle cx="12" cy="10" r="3" />
+                  </svg>
+                </span>
+                <div>
+                  <b>Visit us</b>
+                  <span id="lp-live-address"
+                    >Juris Bay Foods Inc., Dagupan City, Pangasinan 2400</span
+                  >
+                </div>
+              </div>
+
+              <div class="git-item">
+                <span class="git-icon" aria-hidden="true">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path
+                      d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.38 2 2 0 0 1 3.6 1.22h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.96a16 16 0 0 0 6.29 6.29l1.18-.99a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"
+                    />
+                  </svg>
+                </span>
+                <div>
+                  <b>Call / SMS</b>
+                  <a href="tel:+639170000000" id="lp-live-phone">+63 917 000 0000</a>
+                </div>
+              </div>
+
+              <div class="git-item">
+                <span class="git-icon" aria-hidden="true">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path
+                      d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"
+                    />
+                    <polyline points="22,6 12,13 2,6" />
+                  </svg>
+                </span>
+                <div>
+                  <b>Email</b>
+                  <a href="mailto:hello@jurisbayfoods.ph" id="lp-live-email"
+                    >hello@jurisbayfoods.ph</a
+                  >
+                </div>
+              </div>
+
+              <div class="git-item">
+                <span class="git-icon" aria-hidden="true">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
+                  </svg>
+                </span>
+                <div>
+                  <b>Store hours</b>
+                  <span>Mon&ndash;Sat, 8:00 AM &ndash; 6:00 PM</span>
+                </div>
+              </div>
+
+              <a
+                class="btn-fb"
+                id="lp-live-facebook"
+                href="https://www.facebook.com"
+                target="_blank"
+                rel="noopener"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path
+                    d="M24 12c0-6.627-5.373-12-12-12S0 5.373 0 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078V12h3.047V9.356c0-3.007 1.792-4.668 4.533-4.668 1.312 0 2.686.234 2.686.234v2.953H15.83c-1.491 0-1.956.925-1.956 1.874V12h3.328l-.532 3.469h-2.796v8.385C19.612 22.954 24 17.99 24 12z"
+                  />
+                </svg>
+                Follow us on Facebook
+              </a>
+            </aside>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ===== FOOTER ===== -->
+    <footer class="footer">
+      <div class="container">
+        <div class="footer-grid">
+          <div class="footer-col-brand">
+            <a
+              href="index.html"
+              class="brand brand-footer"
+              aria-label="Elisha Bay home"
+            >
+              <img class="brand-logo" src="../assets/img/logo.webp" alt="Elisha Bay — Every mouthful is delightful!" width="495" height="386" decoding="async">
+          <span class="name">Elisha&nbsp;Bay<small>Juris Bay Foods</small></span>
+            </a>
+            <p class="footer-motto">
+              "Every Mouthful is Delightful." Premium artisan food from Dagupan
+              City, Pangasinan.
+            </p>
+          </div>
+          <div>
+            <h5>Explore</h5>
+            <nav class="footer-links">
+              <a href="shop.html">Shop All</a>
+              <a href="#best">Best Sellers</a>
+              <a href="#about">About Us</a>
+              <a href="#faq">FAQ</a>
+            </nav>
+          </div>
+          <div>
+            <h5>Support</h5>
+            <nav class="footer-links">
+              <a href="#contact">Contact Us</a>
+              <a href="#faq">Delivery &amp; Pickup</a>
+              <a href="#faq">Payment</a>
+              <a href="#faq">Returns</a>
+            </nav>
+          </div>
+          <div>
+            <h5>Certifications</h5>
+            <div class="foot-cert" id="foot-certs"></div>
+            <h5 style="margin-top: 20px">Find Us</h5>
+            <p
+              style="
+                color: rgba(255, 255, 255, 0.38);
+                font-size: 0.86rem;
+                line-height: 1.75;
+                margin: 0;
+              "
+            >
+              148 Brgy. Mangin,<br />Dagupan City, Pangasinan
+            </p>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <span
+            >© <span id="year"></span> Juris Bay Foods, Inc. — Elisha Bay. All
+            rights reserved.</span
+          >
+          <span>Capstone Project — STI College Fairview</span>
+        </div>
+      </div>
+    </footer>
+
+    <!-- ===== CART DRAWER ===== -->
+    <div class="scrim" id="cart-scrim"></div>
+    <aside
+      class="drawer"
+      id="cart-drawer"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Shopping cart"
+    >
+      <div class="drawer-head">
+        <h3>Your Cart</h3>
+        <button class="modal-close" id="cart-close" aria-label="Close cart">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="butt"
+            stroke-linejoin="round"
+            stroke-linejoin="round"
+            width="20"
+            height="20"
+          >
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="drawer-body" id="cart-body"></div>
+      <div class="drawer-foot" id="cart-foot"></div>
+    </aside>
+
+    <!-- ===== MODAL ===== -->
+    <div class="modal-scrim" id="modal-scrim">
+      <div
+        class="modal"
+        id="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+      >
+        <div class="modal-head">
+          <h3 id="modal-title"></h3>
+          <button
+            class="modal-close"
+            id="modal-close"
+            aria-label="Close dialog"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="butt"
+              stroke-linejoin="round"
+              stroke-linejoin="round"
+              width="20"
+              height="20"
+            >
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body" id="modal-body"></div>
+      </div>
+    </div>
+
+    <!-- ===== TOASTS ===== -->
+    <div
+      class="toast-wrap"
+      id="toast-wrap"
+      aria-live="polite"
+      aria-atomic="true"
+    ></div>
+
+    <script type="module" src="../assets/js/core/index.js"></script>
+    <script defer src="../assets/js/public/modal-shell.js"></script>
+    <script defer src="../assets/js/public/address-picker.js"></script>
+    <script defer src="../assets/js/public/site.js"></script>
+    <!-- The old inline localStorage content patch was removed; site.js loads content from content/get.php. -->
+  </body>
+</html>
